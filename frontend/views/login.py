@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QPixmap, QFont, QIcon
 from PySide6.QtCore import Qt
+from .logo_loader import load_logo
 
 from sesion import session
 
@@ -22,12 +23,7 @@ class LoginView(QWidget):
         
         # Logotipo
         self.logo_label = QLabel()
-        logo_path = os.path.join("assets", "UarcLogo.jpg")
-        if os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path)
-            pixmap = pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.logo_label.setPixmap(pixmap)
-        self.logo_label.setAlignment(Qt.AlignCenter)
+        load_logo(self.logo_label, "UarcLogo.jpg", 150, 150)
         self.content_layout.addWidget(self.logo_label)
         
         # Título

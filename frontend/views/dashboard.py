@@ -6,39 +6,33 @@ import requests
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, 
     QTableWidgetItem, QSplitter, QFrame, QTabWidget, QSpacerItem, QSizePolicy
 )
 from PySide6.QtGui import QPixmap, QFont, QIcon
 from PySide6.QtCore import Qt, Signal, QDateTime, QTimer
-
+from .logo_loader import load_logo
 from sesion import session
 
 class SidebarWidget(QWidget):
     """Widget para la barra lateral con menú de navegación"""
     navigation_requested = Signal(str)  # Señal para solicitar navegación
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setup_ui()
-    
+
     def setup_ui(self):
         # Layout principal
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 20, 10, 20)
-        
+
         # Logo
-        logo_label = QLabel()
-        logo_path = os.path.join("assets", "UarcLogo.jpg")
-        if os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path)
-            pixmap = pixmap.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            logo_label.setPixmap(pixmap)
-            logo_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(logo_label)
-        
+        self.logo_label = QLabel()
+        load_logo(self.logo_label, "UarcLogo.jpg", 200, 200)
+        layout.addWidget(self.logo_label)
+
         # Título
         title_label = QLabel("Tesorería UARC")
         title_font = QFont()
@@ -47,8 +41,9 @@ class SidebarWidget(QWidget):
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(title_label)
-        
+
         # Información del usuario
+        # ...
         if session.user_info:
             user_label = QLabel(f"<b>Usuario:</b> {session.user_info['nombre']}")
             user_label.setAlignment(Qt.AlignCenter)

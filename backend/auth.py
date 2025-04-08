@@ -21,9 +21,18 @@ def get_password_hash(password):
 
 def authenticate_user(db: Session, email: str, password: str):
     user = db.query(Usuario).filter(Usuario.email == email).first()
+    print(f"Usuario encontrado: {user}")
     if not user:
+        print("Usuario no encontrado")
         return False
-    if not verify_password(password, user.password_hash):
+    
+    print(f"Hash almacenado: {user.password_hash}")
+    print(f"Contraseña intentada: {password}")
+    
+    password_check = verify_password(password, user.password_hash)
+    print(f"Verificación de contraseña: {password_check}")
+    
+    if not password_check:
         return False
     return user
 

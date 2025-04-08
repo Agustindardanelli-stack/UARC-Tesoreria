@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: tesoreria-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: POSTGRES_USER
+        value: postgre
+      - key: POSTGRES_PASSWORD
+        value: tSNKhn2IphruoxNPXa07cnWQ8CurnDvd
+      - key: POSTGRES_HOST
+        value: dpg-cvqhle3ipnbc73ct6uvg-a.oregon-postgres.render.com
+      - key: POSTGRES_PORT
+        value: 5432
+      - key: POSTGRES_DB
+        value: tesoreria_bd
+      - key: JWT_SECRET_KEY
+        value: una_clave_secreta_larga_y_aleatoria
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+        
