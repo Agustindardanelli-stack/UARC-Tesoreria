@@ -1,0 +1,103 @@
+# Entornos virtuales
+venv/
+env/
+.env
+.venv
+ENV/
+
+# Archivos de caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Distribución / empaquetado
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Base de datos
+*.sqlite3
+*.db
+
+# Archivos de configuración locales
+.env.local
+.env.development
+.env.test
+.env.production
+config.local.json
+settings.local.json
+
+# Archivos de IDE y editores
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+.vs/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Archivos específicos del frontend (PySide/PyQt)
+*.ui.autosave
+*_ui.py
+*_rc.py
+ui_*.py
+
+# Archivos compilados de PySide/PyQt
+*.qmlc
+*.jsc
+*.qm
+
+# Archivos temporales y caché de PyInstaller
+_MEI*
+*.spec
+*.manifest
+*.exe
+*.msi
+
+# Archivos específicos de Qt
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.moc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+Makefile*
+*build-*
+
+# Directorios de Node.js (si usas algún componente JS)
+node_modules/
+jspm_packages/
+.npm
+.eslintcache
+
+# Archivos de dependencias y bloqueos
+package-lock.json
+yarn.lock
+pip-lock.txt
+
+# Archivos específicos de tu proyecto (añade aquí más patrones si es necesario)
+# ejemplo:
+# datos_sensibles.txt
+# archivos_de_prueba/
