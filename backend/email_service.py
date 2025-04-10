@@ -118,17 +118,6 @@ class EmailService:
         p.drawString(inch, height - 5.9*inch, "En concepto de:")
         p.line(3*inch, height - 5.9*inch, width - inch, height - 5.9*inch)
         p.drawString(3.2*inch, height - 5.9*inch, "Pago de arbitraje")
-        
-        # Items
-        p.drawString(inch, height - 6.7*inch, "Item: $")
-        p.line(2*inch, height - 6.7*inch, 3.5*inch, height - 6.7*inch)
-        
-        p.drawString(inch, height - 7.2*inch, "Item: $")
-        p.line(2*inch, height - 7.2*inch, 3.5*inch, height - 7.2*inch)
-        
-        p.drawString(inch, height - 7.7*inch, "Item: $")
-        p.line(2*inch, height - 7.7*inch, 3.5*inch, height - 7.7*inch)
-        
         # Monto total
         p.setFont("Helvetica-Bold", 14)
         p.drawString(4*inch, height - 7.7*inch, "$ ")
@@ -201,137 +190,101 @@ class EmailService:
         """Genera un PDF con el recibo del pago con diseño mejorado"""
         
         buffer = BytesIO()
-        p = canvas.Canvas(buffer, pagesize=letter)
-        width, height = letter
+        p = canvas.Canvas(buffer, pagesize=landscape(letter))
+        width, height = landscape(letter)
         
-        # Ruta al ícono usando rutas relativas desde el backend
+        # Cargar logo
         self.load_logo(p, width, height)
-
         
-        # Agregar color de fondo para encabezado
-        p.setFillColorRGB(0.95, 0.95, 0.95)  # Gris muy claro
-        p.rect(0, height - 2.2*inch, width, 2.2*inch, fill=1, stroke=0)
-        p.setFillColorRGB(0, 0, 0)  # Volver a negro para texto        
-       
+        # Título principal
+        p.setFont("Helvetica-Bold", 14)
+        p.drawCentredString(width/2, height - 1 * inch, "UNIDAD DE ÁRBITROS")
+        p.drawCentredString(width/2, height - 1.5 * inch, "DE RÍO CUARTO")
+        
+        # Subtítulo
+        p.setFont("Helvetica-Bold", 16)
+        p.drawCentredString(width/2, height - 2.2 * inch, "ORDEN DE PAGO")
+        
+        # Número de orden
+        p.setFont("Helvetica-Bold", 12)
+        p.drawCentredString(width/2, height - 2.6 * inch, f"N° {pago.id:06d}")
+        
+        # Línea horizontal decorativa
+        p.setStrokeColorRGB(0, 0, 0.8)  # Azul oscuro
+        p.setLineWidth(1)
+        p.line(margin + 0.5 * inch, height - 2.8 * inch, width - margin - 0.5 * inch, height - 2.8 * inch)
+        
         # Obtener usuario/árbitro
         usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()
         
         # Obtener retención
         retencion = db.query(models.Retencion).filter(models.Retencion.id == pago.retencion_id).first()
         
-        # Título
-        p.setFont("Helvetica-Bold", 16)
-        p.drawString(width/2 - 2.5*inch, height - 0.9*inch, "UNIDAD DE ÁRBITROS")
-        p.drawString(width/2 - 1.8*inch, height - 1.3*inch, "DE RÍO CUARTO")
+        # Definir márgenes y posiciones
+        margin = 1 * inch
         
-        # Línea separadora decorativa
-        p.setStrokeColorRGB(0.3, 0.3, 0.7)  # Azul oscuro
-        p.setLineWidth(2)
-        p.line(inch, height - 1.8*inch, width - inch, height - 1.8*inch)
-        p.setLineWidth(1)
-        p.setStrokeColorRGB(0, 0, 0)  # Volver a negro
+        # Configurar tabla
+        p.setFont("Helvetica", 11)
         
-        # Orden de pago
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(width/2 - 1.2*inch, height - 2.3*inch, "ORDEN DE PAGO")
-        p.setFont("Helvetica-Bold", 12)
-        p.drawString(width/2 - 0.6*inch, height - 2.7*inch, f"N° {pago.id:06d}")
+        # Encabezados de columnas
+        encabezados = ["N° RECIBO", "IMPORTE", "SE ABONARÁ A", "CONCEPTO A PAGAR"]
+        cols_width = [1.5 * inch, 1.5 * inch, 2 * inch, 2.5 * inch]
         
-        # Sombreado para sección principal
-        p.setFillColorRGB(0.98, 0.98, 1.0)  # Azul muy claro
-        p.rect(inch, height - 6*inch, width - 2*inch, 3*inch, fill=1, stroke=0)
-        p.setFillColorRGB(0, 0, 0)  # Volver a negro para texto
+        # Dibujar tabla
+        y_start = height - 3.5 * inch
         
-        # Dibujar el rectángulo principal con borde más estético
-        p.setStrokeColorRGB(0.3, 0.3, 0.7)  # Azul oscuro
-        p.setLineWidth(1.5)
-        p.rect(inch, height - 6*inch, width - 2*inch, 3*inch)
-        p.setLineWidth(0.8)
-        
-        # Líneas horizontales para las filas
-        y_start = height - 3*inch
-        p.line(inch, y_start - 0.75*inch, width - inch, y_start - 0.75*inch)
-        p.line(inch, y_start - 1.5*inch, width - inch, y_start - 1.5*inch)
-        p.line(inch, y_start - 2.25*inch, width - inch, y_start - 2.25*inch)
-        
-        # Líneas verticales para las columnas
-        p.line(inch + 1.5*inch, y_start, inch + 1.5*inch, y_start - 3*inch)  # N° recibo
-        p.line(inch + 3*inch, y_start, inch + 3*inch, y_start - 3*inch)      # Importe
-        p.line(inch + 4.5*inch, y_start, inch + 4.5*inch, y_start - 3*inch)  # Se abonará a
-        
-        # Títulos de columnas con fondo
-        p.setFillColorRGB(0.3, 0.3, 0.7)  # Azul oscuro
-        p.setFont("Helvetica-Bold", 10)
-        p.setFillColorRGB(1, 1, 1)  # Texto blanco
-        
-        # Rectángulos para títulos
-        for i, (pos, width_col) in enumerate([
-            (inch, 1.5*inch),  # N° recibo
-            (inch + 1.5*inch, 1.5*inch),  # Importe
-            (inch + 3*inch, 1.5*inch),  # Se abonará a
-            (inch + 4.5*inch, width - inch - (inch + 4.5*inch))  # Concepto
-        ]):
-            p.rect(pos, y_start - 0.6*inch, width_col, 0.6*inch, fill=1, stroke=0)
-        
-        # Textos de títulos
-        p.drawString(inch + 0.3*inch, y_start - 0.4*inch, "N° RECIBO")
-        p.drawString(inch + 2*inch, y_start - 0.4*inch, "IMPORTE")
-        p.drawString(inch + 3.5*inch, y_start - 0.4*inch, "SE ABONARÁ A")
-        p.drawString(inch + 5*inch, y_start - 0.4*inch, "CONCEPTO A PAGAR")
-        
-        # Volver a negro para el contenido
-        p.setFillColorRGB(0, 0, 0)
-        p.setFont("Helvetica", 10)
-        
-        # Información del pago
-        p.drawString(inch + 0.5*inch, y_start - 1.2*inch, f"{pago.id:06d}")
-        p.drawString(inch + 2*inch, y_start - 1.2*inch, f"$ {float(pago.monto):,.2f}")
-        p.drawString(inch + 3.5*inch, y_start - 1.2*inch, usuario.nombre if usuario else "")
-        
-        # Concepto
-        concepto = f"Pago de arbitraje - {retencion.nombre if retencion else 'Pago'}"
-        p.drawString(inch + 5*inch, y_start - 1.2*inch, concepto)
-        
-        # Sección inferior con sombreado
-        p.setFillColorRGB(0.96, 0.96, 0.98)  # Gris azulado muy claro
-        p.rect(inch, height - 6.7*inch, width - 2*inch, 0.7*inch, fill=1, stroke=0)
-        p.setFillColorRGB(0, 0, 0)  # Volver a negro
-        p.setStrokeColorRGB(0, 0, 0)  # Volver a negro
-        p.setLineWidth(1)
-        
-        # Campo para firma con estilo
-        p.setFont("Helvetica-Bold", 10)
-        p.drawString(1.5*inch, height - 6.3*inch, "Firma:")
+        # Dibujar cuadrícula
+        p.setStrokeColorRGB(0.7, 0.7, 0.7)  # Gris claro
         p.setLineWidth(0.5)
-        p.line(2.3*inch, height - 6.3*inch, 4*inch, height - 6.3*inch)
         
-        # Campo para monto con estilo
-        p.drawString(4.5*inch, height - 6.3*inch, "TOTAL: $")
-        p.setFillColorRGB(1, 1, 1)  # Blanco
-        p.setStrokeColorRGB(0.3, 0.3, 0.7)  # Azul oscuro
-        p.rect(5.3*inch, height - 6.5*inch, 1.2*inch, 0.4*inch, fill=1)
-        p.setFillColorRGB(0, 0, 0)  # Negro
+        # Dibujar líneas horizontales
+        for i in range(2):  # Una línea más para datos
+            p.line(margin, y_start - i * 0.5 * inch, width - margin, y_start - i * 0.5 * inch)
+        
+        # Dibujar líneas verticales
+        x_pos = margin
+        for ancho in cols_width:
+            p.line(x_pos, y_start, x_pos, y_start - 0.5 * inch)
+            x_pos += ancho
+        p.line(x_pos, y_start, x_pos, y_start - 0.5 * inch)
+        
+        # Escribir encabezados
         p.setFont("Helvetica-Bold", 10)
-        p.drawString(5.4*inch, height - 6.3*inch, f"{float(pago.monto):,.2f}")
+        x_pos = margin
+        for encabezado in encabezados:
+            p.drawCentredString(x_pos + cols_width[encabezados.index(encabezado)]/2, y_start - 0.25 * inch, encabezado)
+            x_pos += cols_width[encabezados.index(encabezado)]
         
-        # Fecha con estilo
-        p.setFont("Helvetica-Bold", 10)
-        p.setFillColorRGB(0, 0, 0)  # Negro
-        p.drawString(width - 2.5*inch, height - 6.3*inch, "Fecha:")
-        p.setFillColorRGB(1, 1, 1)  # Blanco
-        p.rect(width - 1.8*inch, height - 6.5*inch, 0.8*inch, 0.4*inch, fill=1)
-        p.setFillColorRGB(0, 0, 0)  # Negro
-        p.drawString(width - 1.7*inch, height - 6.3*inch, pago.fecha.strftime('%d/%m/%Y'))
+        # Escribir datos
+        p.setFont("Helvetica", 10)
+        y_start -= 0.5 * inch
         
-        # Añadir pie de página
+        p.drawCentredString(margin + cols_width[0]/2, y_start - 0.25 * inch, f"{pago.id:06d}")
+        p.drawCentredString(margin + cols_width[0] + cols_width[1]/2, y_start - 0.25 * inch, f"$ {float(pago.monto):,.2f}")
+        p.drawCentredString(margin + cols_width[0] + cols_width[1] + cols_width[2]/2, y_start - 0.25 * inch, usuario.nombre if usuario else "")
+        
+        concepto = f"Pago de arbitraje - {retencion.nombre if retencion else 'Pago'}"
+        p.drawCentredString(margin + cols_width[0] + cols_width[1] + cols_width[2] + cols_width[3]/2, y_start - 0.25 * inch, concepto)
+        
+        # Firma y total
+        y_pos = margin + 1.5 * inch
+        p.setFont("Helvetica", 10)
+        p.drawString(margin, y_pos, "Firma:")
+        p.line(margin + 1 * inch, y_pos - 0.1 * inch, margin + 4 * inch, y_pos - 0.1 * inch)
+        
+        p.drawRightString(width - margin, y_pos, f"TOTAL: $ {float(pago.monto):,.2f}")
+        
+        # Fecha
+        p.drawRightString(width - margin, margin + 0.5 * inch, f"Fecha: {pago.fecha.strftime('%d/%m/%Y')}")
+        
+        # Pie de página
         p.setFont("Helvetica-Oblique", 8)
-        p.setFillColorRGB(0.5, 0.5, 0.5)  # Gris medio
-        p.drawCentredString(width/2, 0.5*inch, "Unidad de Árbitros de Río Cuarto - Documento generado automáticamente")
+        p.setFillColorRGB(0.5, 0.5, 0.5)
+        p.drawCentredString(width/2, margin * 0.5, "Unidad de Árbitros de Río Cuarto - Documento generado automáticamente")
         
         p.save()
         buffer.seek(0)
         return buffer.getvalue()
-
     def send_payment_receipt_email(self, db: Session, pago, recipient_email):
         try:
             # Crear mensaje
