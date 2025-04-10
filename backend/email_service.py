@@ -193,6 +193,9 @@ class EmailService:
         p = canvas.Canvas(buffer, pagesize=landscape(letter))
         width, height = landscape(letter)
         
+        # Definir márgenes
+        margin = 1 * inch
+        
         # Cargar logo
         self.load_logo(p, width, height)
         
@@ -219,9 +222,6 @@ class EmailService:
         
         # Obtener retención
         retencion = db.query(models.Retencion).filter(models.Retencion.id == pago.retencion_id).first()
-        
-        # Definir márgenes y posiciones
-        margin = 1 * inch
         
         # Configurar tabla
         p.setFont("Helvetica", 11)
