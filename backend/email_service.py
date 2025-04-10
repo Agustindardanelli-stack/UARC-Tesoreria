@@ -415,20 +415,7 @@ class EmailService:
         p.setLineWidth(2)
         p.rect(margin, margin, content_width, width - (2 * margin))
         
-        # Intentar agregar ícono
-        try:
-            icono = ImageReader(ruta_icono)
-            icono_ancho = 0.8 * inch
-            icono_alto = 0.8 * inch
-            p.drawImage(
-                icono, 
-                margin + 0.5 * inch,
-                width - margin - 1.3 * inch,
-                width=icono_ancho, 
-                height=icono_alto
-            )
-        except Exception as e:
-            print(f"Error al cargar el ícono: {e}")
+       
         
         # Obtener usuario/árbitro
         usuario = db.query(models.Usuario).filter(models.Usuario.id == cuota.usuario_id).first()
