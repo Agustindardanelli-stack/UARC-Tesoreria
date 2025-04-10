@@ -372,9 +372,19 @@ class EmailService:
         p.translate(0, -width)
         
         # Ruta al ícono
-        ruta_icono = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                'frontend', 'assets', 'Uarclogo.jpg')
+        ruta_icono = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
+                          '..', 'frontend', 'assets', 'Uarclogo.jpg')
+        try:
+            print(f"Ruta del ícono: {ruta_icono}")
+            print(f"Ruta absoluta: {os.path.abspath(ruta_icono)}")
+            print(f"Archivo existe: {os.path.exists(ruta_icono)}")
         
+            icono = ImageReader(ruta_icono)
+        # Resto del código de dibujo...
+        except Exception as e:
+            
+        
+            print(f"Error al cargar el ícono: {e}")
         # Variables para posicionamiento
         margin = 1 * inch
         content_width = height - (2 * margin)
