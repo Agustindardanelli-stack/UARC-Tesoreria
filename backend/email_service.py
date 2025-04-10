@@ -50,28 +50,28 @@ class EmailService:
         raise FileNotFoundError("No se encontró el logo UarcLogo.jpg")
 
     def load_logo(self, pdf_canvas, width, height):
-            """Cargar y dibujar el logo en el PDF"""
-            try:
-                # Obtener la ruta del logo
-                ruta_icono = self.get_logo_path()
-                
-                # Leer el logo
-                icono = ImageReader(ruta_icono)
-                
-                # Dimensiones y posición del logo
-                icono_ancho = 1.5 * inch
-                icono_alto = 1.5 * inch
-                
-                # Dibujar el logo
-                pdf_canvas.drawImage(
-                    icono, 
-                    width/2 - icono_ancho/2,  # Centrar horizontalmente
-                    height - 1.5 * inch,      # Posición vertical
-                    width=icono_ancho, 
-                    height=icono_alto
-                )
-            except Exception as e:
-                print(f"Error al cargar el ícono: {e}")
+        """Cargar y dibujar el logo en el PDF"""
+        try:
+            # Obtener la ruta del logo
+            ruta_icono = self.get_logo_path()
+            
+            # Leer el logo
+            icono = ImageReader(ruta_icono)
+            
+            # Dimensiones y posición del logo
+            icono_ancho = 1.5 * inch
+            icono_alto = 1.5 * inch
+            
+            # Dibujar el logo
+            pdf_canvas.drawImage(
+                icono, 
+                0.5 * inch,  # Mover más a la izquierda
+                height - 1.5 * inch,  # Posición vertical
+                width=icono_ancho, 
+                height=icono_alto
+            )
+        except Exception as e:
+            print(f"Error al cargar el ícono: {e}")
             
     def generate_receipt_pdf(self, db: Session, cobranza):
         """Genera un PDF con el recibo de la cobranza"""
