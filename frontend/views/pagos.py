@@ -332,7 +332,44 @@ class PagosView(QWidget):
             )
             
             if response.status_code == 200 or response.status_code == 201:
-                QMessageBox.information(self, "Éxito", "Pago registrado exitosamente")
+                pago_respuesta = response.json()
+                
+                # Verificar si se envió el recibo por email
+                if pago_respuesta.get("email_enviado", False):
+                    QMessageBox.information(
+                        self, 
+                        "Éxito", 
+                        f"Pago registrado exitosamente.\nRecibo enviado por email a {pago_respuesta.get('email_destinatario')}"
+                    )
+                else:
+                    # Si no se envió el recibo, dar la opción de enviarlo manualmente
+                    arbitro_id = self.arbitro_combo.currentData()
+                    arbitro_nombre = self.arbitro_combo.currentText()
+                    arbitro_email = None
+                    
+                    # Buscar el email del árbitro
+                    for usuario in self.usuarios:
+                        if usuario.get('id') == arbitro_id:
+                            arbitro_email = usuario.get('email')
+                            break
+                    
+                    if arbitro_email:
+                        respuesta = QMessageBox.question(
+                            self,
+                            "Enviar Recibo",
+                            f"¿Desea enviar el recibo al email de {arbitro_nombre} ({arbitro_email})?",
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.Yes
+                        )
+                        
+                        if respuesta == QMessageBox.Yes:
+                            self.enviar_recibo_manualmente(pago_respuesta.get("id"), arbitro_email)
+                    else:
+                        QMessageBox.information(
+                            self, 
+                            "Éxito", 
+                            "Pago registrado exitosamente.\nNo se pudo enviar el recibo por email porque el árbitro no tiene email registrado."
+                        )
                 
                 # Limpiar formulario
                 self.arbitro_combo.setCurrentIndex(-1)
@@ -355,6 +392,36 @@ class PagosView(QWidget):
                 print(f"Error al registrar pago: {response.text}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al registrar pago: {str(e)}")
+
+    # Añadir esta función para enviar recibos manualmente
+    def enviar_recibo_manualmente(self, pago_id, email):
+        """Envía un recibo manualmente usando la API"""
+        try:
+            # Enviar solicitud para reenviar recibo
+            headers = session.get_headers()
+            
+            url = f"{session.api_url}/pagos/{pago_id}/reenviar-orden"
+            params = {"email": email}
+            
+            response = requests.post(url, headers=headers, params=params)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("success", False):
+                    QMessageBox.information(self, "Éxito", "Recibo enviado exitosamente")
+                else:
+                    QMessageBox.warning(self, "Advertencia", f"No se pudo enviar el recibo: {result.get('message', '')}")
+            else:
+                error_msg = "Error al enviar el recibo"
+                try:
+                    error_data = response.json()
+                    if "detail" in error_data:
+                        error_msg = error_data["detail"]
+                except:
+                    pass
+                QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al enviar recibo: {str(e)}")
     
     def on_buscar_pagos(self):
         """Busca pagos según los filtros seleccionados"""

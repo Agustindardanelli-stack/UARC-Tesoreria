@@ -570,6 +570,93 @@ async def reenviar_recibo_cobranza(request: Request, cobranza_id: int, email: Op
     finally:
         db.close()
 
+
+# Endpoint para reenviar orden de pago
+@app.post(f"{settings.API_PREFIX}/pagos/{{pago_id}}/reenviar-orden", response_model=None)
+async def reenviar_orden_pago(request: Request, pago_id: int, email: Optional[str] = None):
+    db = SessionLocal()
+    try:
+        # Extraer token manualmente
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        
+        # Verificar token manualmente
+        try:
+            # Decodificar token sin usar dependencias
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            user_id = payload.get("sub")
+            if user_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="No se pudieron validar las credenciales",
+                )
+                
+            # Obtener usuario directamente con la sesión
+            current_user = db.query(models.Usuario).filter(models.Usuario.id == user_id).first()
+            if current_user is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Usuario no encontrado",
+                )
+                
+        except JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token inválido",
+            )
+        
+        result = crud.reenviar_orden_pago(db=db, pago_id=pago_id, email=email)
+        if not result["success"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result["message"],
+            )
+        return {"message": "Orden de pago enviada exitosamente", "success": True}
+    finally:
+        db.close()
+
+# Endpoint para reenviar recibo de cuota
+@app.post(f"{settings.API_PREFIX}/cuotas/{{cuota_id}}/reenviar-recibo", response_model=None)
+async def reenviar_recibo_cuota(request: Request, cuota_id: int, email: Optional[str] = None):
+    db = SessionLocal()
+    try:
+        # Extraer token manualmente
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        
+        # Verificar token manualmente
+        try:
+            # Decodificar token sin usar dependencias
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            user_id = payload.get("sub")
+            if user_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="No se pudieron validar las credenciales",
+                )
+                
+            # Obtener usuario directamente con la sesión
+            current_user = db.query(models.Usuario).filter(models.Usuario.id == user_id).first()
+            if current_user is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Usuario no encontrado",
+                )
+                
+        except JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token inválido",
+            )
+        
+        result = crud.reenviar_recibo_cuota(db=db, cuota_id=cuota_id, email=email)
+        if not result["success"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result["message"],
+            )
+        return {"message": "Recibo de cuota enviado exitosamente", "success": True}
+    finally:
+        db.close()        
+
 # Endpoint para probar email
 @app.post(f"{settings.API_PREFIX}/email-test", response_model=None)
 async def test_email(request: Request, email: str):

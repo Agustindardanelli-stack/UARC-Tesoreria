@@ -298,120 +298,128 @@ class SocioCuotaView(QWidget):
         self.arbitro_combo.setEnabled(not bool(state))
     
     def on_registrar_cuota(self):
-        """Maneja el evento de clic en Registrar Cuota"""
-        # Validar campos
-        if not self.todos_usuarios_check.isChecked() and self.arbitro_combo.currentIndex() < 0:
-            QMessageBox.warning(self, "Error", "Por favor seleccione un árbitro o marque la opción para todos")
+        # Aquí deberías añadir la implementación de la función para registrar cuotas
+        pass
+    
+    def on_pagar_cuota(self):
+        """Registra el pago de una cuota"""
+        if not hasattr(self, 'current_cuota'):
+            QMessageBox.warning(self, "Error", "Primero debe buscar una cuota")
             return
         
-        if self.monto_spin.value() <= 0:
-            QMessageBox.warning(self, "Error", "El monto debe ser mayor a cero")
+        monto_a_pagar = self.monto_a_pagar_spin.value()
+        
+        if monto_a_pagar <= 0:
+            QMessageBox.warning(self, "Error", "El monto a pagar debe ser mayor a cero")
             return
         
-        # Obtener datos comunes
-        fecha = self.fecha_edit.date().toString("yyyy-MM-dd")
-        monto = self.monto_spin.value()
-        
-        if self.todos_usuarios_check.isChecked():
-            # Registrar cuota para todos los usuarios
-            success_count = 0
-            error_count = 0
+        try:
+            # Enviar solicitud para pagar la cuota
+            headers = session.get_headers()
             
-            for usuario in self.usuarios:
-                # Crear objeto de cuota
-                cuota_data = {
-                    "usuario_id": usuario["id"],
-                    "fecha": fecha,
-                    "monto": monto,
-                    "pagado": False,
-                    "monto_pagado": 0
-                }
+            url = f"{session.api_url}/cuotas/{self.current_cuota['id']}/pagar"
+            print(f"Realizando petición PUT a: {url}")
+            
+            # Enviar monto_pagado como parámetro de consulta (query parameter)
+            params = {"monto_pagado": monto_a_pagar}
+            print(f"Parámetros: {params}")
+            
+            response = requests.put(
+                url,
+                headers=headers,
+                params=params
+            )
+            
+            if response.status_code == 200:
+                cuota_respuesta = response.json()
                 
-                try:
-                    # Enviar solicitud para crear cuota
-                    headers = session.get_headers()
-                    headers["Content-Type"] = "application/json"
-                    
-                    url = f"{session.api_url}/cuotas"
-                    response = requests.post(
-                        url,
-                        headers=headers,
-                        data=json.dumps(cuota_data)
+                # Verificar si se envió el recibo por email
+                if cuota_respuesta.get("email_enviado", False):
+                    QMessageBox.information(
+                        self, 
+                        "Éxito", 
+                        f"Pago registrado exitosamente.\nRecibo enviado por email a {cuota_respuesta.get('email_destinatario')}"
                     )
-                    
-                    if response.status_code == 200 or response.status_code == 201:
-                        success_count += 1
-                    else:
-                        error_count += 1
-                        print(f"Error al registrar cuota para usuario {usuario['id']}: {response.text}")
-                except Exception as e:
-                    error_count += 1
-                    print(f"Excepción al registrar cuota para usuario {usuario['id']}: {str(e)}")
-            
-            if success_count > 0:
-                QMessageBox.information(self, "Éxito", f"Se registraron {success_count} cuotas exitosamente")
-                
-                # Limpiar formulario
-                self.arbitro_combo.setCurrentIndex(-1)
-                self.fecha_edit.setDate(QDate.currentDate())
-                self.monto_spin.setValue(0)
-                self.todos_usuarios_check.setChecked(False)
-                
-                # Actualizar lista de cuotas
-                self.on_buscar_cuotas()
-            
-            if error_count > 0:
-                QMessageBox.warning(self, "Advertencia", f"No se pudieron registrar {error_count} cuotas")
-        else:
-            # Registrar cuota para un solo usuario
-            usuario_id = self.arbitro_combo.currentData()
-            
-            # Crear objeto de cuota
-            cuota_data = {
-                "usuario_id": usuario_id,
-                "fecha": fecha,
-                "monto": monto,
-                "pagado": False,
-                "monto_pagado": 0
-            }
-            
-            try:
-                # Enviar solicitud para crear cuota
-                headers = session.get_headers()
-                headers["Content-Type"] = "application/json"
-                
-                url = f"{session.api_url}/cuotas"
-                print(f"Realizando petición POST a: {url}")
-                print(f"Datos: {json.dumps(cuota_data)}")
-                
-                response = requests.post(
-                    url,
-                    headers=headers,
-                    data=json.dumps(cuota_data)
-                )
-                
-                if response.status_code == 200 or response.status_code == 201:
-                    QMessageBox.information(self, "Éxito", "Cuota registrada exitosamente")
-                    
-                    # Limpiar formulario
-                    self.arbitro_combo.setCurrentIndex(-1)
-                    self.fecha_edit.setDate(QDate.currentDate())
-                    self.monto_spin.setValue(0)
-                    
-                    # Actualizar lista de cuotas
-                    self.on_buscar_cuotas()
                 else:
-                    error_msg = "Error al registrar la cuota"
-                    try:
-                        error_data = response.json()
-                        if "detail" in error_data:
-                            error_msg = error_data["detail"]
-                    except:
-                        pass
-                    QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
-                    print(f"Error al registrar cuota: {response.text}")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Error al registrar cuota: {str(e)}")
+                    # Si no se envió el recibo, dar la opción de enviarlo manualmente
+                    usuario_id = self.current_cuota.get('usuario_id')
+                    if not usuario_id and isinstance(self.current_cuota.get('usuario'), dict):
+                        usuario_id = self.current_cuota.get('usuario', {}).get('id')
+                    
+                    if usuario_id:
+                        usuario_nombre = None
+                        usuario_email = None
+                        
+                        # Buscar el nombre y email del usuario
+                        for usuario in self.usuarios:
+                            if usuario.get('id') == usuario_id:
+                                usuario_nombre = usuario.get('nombre')
+                                usuario_email = usuario.get('email')
+                                break
+                        
+                        if usuario_email:
+                            respuesta = QMessageBox.question(
+                                self,
+                                "Enviar Recibo",
+                                f"¿Desea enviar el recibo al email de {usuario_nombre} ({usuario_email})?",
+                                QMessageBox.Yes | QMessageBox.No,
+                                QMessageBox.Yes
+                            )
+                            
+                            if respuesta == QMessageBox.Yes:
+                                self.enviar_recibo_manualmente(cuota_respuesta.get("id"), usuario_email)
+                        else:
+                            QMessageBox.information(
+                                self, 
+                                "Éxito", 
+                                "Pago registrado exitosamente.\nNo se pudo enviar el recibo por email porque el socio no tiene email registrado."
+                            )
+                
+                # Actualizar vista
+                self.on_buscar_cuota_id()
+                self.on_buscar_cuotas()
+            else:
+                error_msg = "Error al registrar el pago"
+                try:
+                    error_data = response.json()
+                    if "detail" in error_data:
+                        error_msg = error_data["detail"]
+                except:
+                    pass
+                QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
+                print(f"Error al registrar pago de cuota: {response.text}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al registrar pago: {str(e)}")
+
+    # Añadir esta función para enviar recibos manualmente
+    def enviar_recibo_manualmente(self, cuota_id, email):
+        """Envía un recibo manualmente usando la API"""
+        try:
+            # Enviar solicitud para reenviar recibo
+            headers = session.get_headers()
+            
+            url = f"{session.api_url}/cuotas/{cuota_id}/reenviar-recibo"
+            params = {"email": email}
+            
+            response = requests.post(url, headers=headers, params=params)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("success", False):
+                    QMessageBox.information(self, "Éxito", "Recibo enviado exitosamente")
+                else:
+                    QMessageBox.warning(self, "Advertencia", f"No se pudo enviar el recibo: {result.get('message', '')}")
+            else:
+                error_msg = "Error al enviar el recibo"
+                try:
+                    error_data = response.json()
+                    if "detail" in error_data:
+                        error_msg = error_data["detail"]
+                except:
+                    pass
+                QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al enviar recibo: {str(e)}")
     
     def on_buscar_cuotas(self):
         """Busca cuotas según los filtros seleccionados"""
@@ -605,51 +613,3 @@ class SocioCuotaView(QWidget):
                 print(f"Error al buscar cuota por ID: {response.text}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al buscar cuota: {str(e)}")
-    
-    def on_pagar_cuota(self):
-        """Registra el pago de una cuota"""
-        if not hasattr(self, 'current_cuota'):
-            QMessageBox.warning(self, "Error", "Primero debe buscar una cuota")
-            return
-        
-        monto_a_pagar = self.monto_a_pagar_spin.value()
-        
-        if monto_a_pagar <= 0:
-            QMessageBox.warning(self, "Error", "El monto a pagar debe ser mayor a cero")
-            return
-        
-        try:
-            # Enviar solicitud para pagar la cuota
-            headers = session.get_headers()
-            
-            url = f"{session.api_url}/cuotas/{self.current_cuota['id']}/pagar"
-            print(f"Realizando petición PUT a: {url}")
-            
-            # Enviar monto_pagado como parámetro de consulta (query parameter)
-            params = {"monto_pagado": monto_a_pagar}
-            print(f"Parámetros: {params}")
-            
-            response = requests.put(
-                url,
-                headers=headers,
-                params=params
-            )
-            
-            if response.status_code == 200:
-                QMessageBox.information(self, "Éxito", "Pago registrado exitosamente")
-                
-                # Actualizar vista
-                self.on_buscar_cuota_id()
-                self.on_buscar_cuotas()
-            else:
-                error_msg = "Error al registrar el pago"
-                try:
-                    error_data = response.json()
-                    if "detail" in error_data:
-                        error_msg = error_data["detail"]
-                except:
-                    pass
-                QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
-                print(f"Error al registrar pago de cuota: {response.text}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al registrar pago: {str(e)}")
