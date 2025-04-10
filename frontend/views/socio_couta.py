@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QRadioButton, QButtonGroup
 )
 from PySide6.QtGui import QFont, QColor
-from PySide6.QtCore import Qt, Signal, QDate
+from PySide6.QtCore import Qt, Signal, QDate, QTimer
 
 from views.dashboard import SidebarWidget
 from sesion import session
@@ -25,6 +25,15 @@ class SocioCuotaView(QWidget):
         self.setup_ui()
         self.connect_signals()
         self.usuarios = []
+        
+        # Forzar carga inmediata
+        QTimer.singleShot(500, self.cargar_usuarios)
+    
+    def showEvent(self, event):
+        """Se ejecuta cuando el widget se hace visible"""
+        super().showEvent(event)
+        # Cargar datos cuando el widget se hace visible
+        self.refresh_data()
     
     def setup_ui(self):
         # Layout principal
@@ -79,7 +88,21 @@ class SocioCuotaView(QWidget):
         # Selección de árbitro
         self.arbitro_combo = QComboBox()
         self.arbitro_combo.setPlaceholderText("Seleccione un árbitro")
-        form_layout.addRow("Árbitro:", self.arbitro_combo)
+        self.arbitro_combo.setEditable(False)  # Hazlo no editable para mostrar menú desplegable
+        self.arbitro_combo.setMaxVisibleItems(15)  # Muestra más elementos visibles
+        
+        # Botón para mostrar desplegable
+        self.mostrar_desplegable_btn = QPushButton("▼")
+        self.mostrar_desplegable_btn.setMaximumWidth(30)
+        self.mostrar_desplegable_btn.clicked.connect(self.mostrar_desplegable)
+        
+        # Crear un layout horizontal para el combo y el botón
+        combo_layout = QHBoxLayout()
+        combo_layout.addWidget(self.arbitro_combo)
+        combo_layout.addWidget(self.mostrar_desplegable_btn)
+        
+        # Añadir al form_layout
+        form_layout.addRow("Árbitro:", combo_layout)
         
         # Opción para todos los usuarios
         self.todos_usuarios_check = QCheckBox("Generar para todos los usuarios")
@@ -168,26 +191,176 @@ class SocioCuotaView(QWidget):
         montos_layout.addWidget(self.monto_pendiente_label)
         
         layout.addLayout(montos_layout)
+
+    def on_buscar_cuotas(self):
+        """Busca cuotas según los filtros seleccionados"""
+        try:
+            # Preparar parámetros
+            estado = self.estado_combo.currentText()
+            
+            # Mapear valores de UI a valores esperados por la API
+            if estado == "Todas":
+                estado_filter = None
+            elif estado == "Pendientes":
+                estado_filter = False
+            elif estado == "Pagadas":
+                estado_filter = True
+            
+            # Obtener el ID del árbitro seleccionado (si hay uno)
+            arbitro_id = None
+            if self.arbitro_filtro_combo.currentIndex() > 0:  # Si no es "Todos"
+                arbitro_id = self.arbitro_filtro_combo.currentData()
+            
+            # Construir parámetros de consulta
+            params = {
+                "skip": 0,
+                "limit": 100
+            }
+            
+            # Añadir filtros opcionales solo si están seleccionados
+            if estado_filter is not None:
+                params["pagado"] = estado_filter
+            
+            # Construir URL base
+            if arbitro_id:
+                url = f"{session.api_url}/cuotas/usuario/{arbitro_id}"
+            else:
+                url = f"{session.api_url}/cuotas"
+            
+            # Obtener cuotas
+            headers = session.get_headers()
+            print(f"Realizando petición GET a: {url}")
+            print(f"Parámetros: {params}")
+            
+            response = requests.get(url, headers=headers, params=params)
+            
+            if response.status_code == 200:
+                cuotas_data = response.json()
+                print(f"Cuotas cargadas: {len(cuotas_data)}")
+                
+                # Limpiar tabla
+                self.cuotas_table.setRowCount(0)
+                
+                # Estadísticas
+                total_cuotas = len(cuotas_data)
+                cuotas_pagadas = 0
+                cuotas_pendientes = 0
+                monto_total = 0
+                monto_pendiente = 0
+                
+                # Llenar tabla con datos
+                for row, cuota in enumerate(cuotas_data):
+                    self.cuotas_table.insertRow(row)
+                    
+                    # ID
+                    self.cuotas_table.setItem(row, 0, QTableWidgetItem(str(cuota.get("id", ""))))
+                    
+                    # Fecha
+                    fecha_str = cuota.get('fecha', '')
+                    fecha_display = ""
+                    if fecha_str:
+                        try:
+                            fecha_display = datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y')
+                        except:
+                            fecha_display = fecha_str
+                    
+                    self.cuotas_table.setItem(row, 1, QTableWidgetItem(fecha_display))
+                    
+                    # Árbitro
+                    arbitro = ""
+                    if isinstance(cuota.get("usuario"), dict):
+                        arbitro = cuota.get("usuario", {}).get("nombre", "")
+                    
+                    self.cuotas_table.setItem(row, 2, QTableWidgetItem(arbitro))
+                    
+                    # Monto
+                    monto = cuota.get("monto", 0)
+                    monto_item = QTableWidgetItem(f"${monto:,.2f}")
+                    monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.cuotas_table.setItem(row, 3, monto_item)
+                    
+                    # Estado
+                    pagado = cuota.get("pagado", False)
+                    estado_text = "Pagada" if pagado else "Pendiente"
+                    estado_item = QTableWidgetItem(estado_text)
+                    if not pagado:
+                        estado_item.setForeground(Qt.red)
+                    else:
+                        estado_item.setForeground(Qt.darkGreen)
+                    
+                    self.cuotas_table.setItem(row, 4, estado_item)
+                    
+                    # Monto Pagado
+                    monto_pagado = cuota.get("monto_pagado", 0)
+                    monto_pagado_item = QTableWidgetItem(f"${monto_pagado:,.2f}")
+                    monto_pagado_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.cuotas_table.setItem(row, 5, monto_pagado_item)
+                    
+                    # Actualizar estadísticas
+                    monto_total += monto
+                    if pagado:
+                        cuotas_pagadas += 1
+                    else:
+                        cuotas_pendientes += 1
+                        monto_pendiente += monto - monto_pagado
+                
+                # Actualizar labels de estadísticas
+                self.total_cuotas_label.setText(f"Total cuotas: {total_cuotas}")
+                self.cuotas_pagadas_label.setText(f"Cuotas pagadas: {cuotas_pagadas}")
+                self.cuotas_pendientes_label.setText(f"Cuotas pendientes: {cuotas_pendientes}")
+                
+                self.monto_total_label.setText(f"Monto total: ${monto_total:,.2f}")
+                self.monto_pendiente_label.setText(f"Monto pendiente: ${monto_pendiente:,.2f}")
+                
+                # Ajustar columnas
+                self.cuotas_table.resizeColumnsToContents()
+            else:
+                error_msg = "No se pudieron cargar las cuotas"
+                try:
+                    error_data = response.json()
+                    if "detail" in error_data:
+                        error_msg = error_data["detail"]
+                except:
+                    pass
+                QMessageBox.warning(self, "Error", f"{error_msg}. Status code: {response.status_code}")
+                print(f"Error al cargar cuotas: {response.text}")
+        except Exception as e:
+            print(f"Excepción al buscar cuotas: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al buscar cuotas: {str(e)}")    
     
     def setup_tab_pagar(self):
         layout = QVBoxLayout(self.tab_pagar)
         
-        # Campo de búsqueda
+        # Campo de búsqueda por usuario (en lugar de por ID)
         busqueda_layout = QHBoxLayout()
         
-        self.id_search = QLineEdit()
-        self.id_search.setPlaceholderText("Ingrese ID de la cuota...")
+        # ComboBox para seleccionar usuario
+        self.usuario_search_combo = QComboBox()
+        self.usuario_search_combo.setPlaceholderText("Seleccione un árbitro")
+        self.usuario_search_combo.setEditable(False)
+        self.usuario_search_combo.setMaxVisibleItems(15)
         
         self.search_btn = QPushButton("Buscar")
-        self.search_btn.clicked.connect(self.on_buscar_cuota_id)
+        self.search_btn.clicked.connect(self.on_buscar_cuotas_usuario)
         
-        busqueda_layout.addWidget(QLabel("Buscar por ID:"))
-        busqueda_layout.addWidget(self.id_search)
+        busqueda_layout.addWidget(QLabel("Buscar por Árbitro:"))
+        busqueda_layout.addWidget(self.usuario_search_combo)
         busqueda_layout.addWidget(self.search_btn)
         
         layout.addLayout(busqueda_layout)
         
-        # Contenedor para resultados
+        # Tabla de cuotas del usuario seleccionado
+        self.cuotas_usuario_table = QTableWidget()
+        self.cuotas_usuario_table.setColumnCount(5)
+        self.cuotas_usuario_table.setHorizontalHeaderLabels(["ID", "Fecha", "Monto", "Estado", "Monto Pagado"])
+        self.cuotas_usuario_table.horizontalHeader().setStretchLastSection(True)
+        self.cuotas_usuario_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.cuotas_usuario_table.setAlternatingRowColors(True)
+        self.cuotas_usuario_table.clicked.connect(self.on_seleccionar_cuota)
+        
+        layout.addWidget(self.cuotas_usuario_table)
+        
+        # Contenedor para resultados y formulario de pago
         self.resultado_container = QWidget()
         self.resultado_layout = QVBoxLayout(self.resultado_container)
         
@@ -264,42 +437,130 @@ class SocioCuotaView(QWidget):
         self.cargar_usuarios()
         self.on_buscar_cuotas()
     
-    def cargar_usuarios(self):
-        """Carga la lista de usuarios desde la API"""
-        try:
-            headers = session.get_headers()
-            url = f"{session.api_url}/usuarios"
-            print(f"Realizando petición GET a: {url}")
-            
-            response = requests.get(url, headers=headers)
-            
-            if response.status_code == 200:
-                self.usuarios = response.json()
-                print(f"Usuarios cargados: {len(self.usuarios)}")
-                
-                # Actualizar combo box principal
-                self.arbitro_combo.clear()
-                for usuario in self.usuarios:
-                    self.arbitro_combo.addItem(f"{usuario['nombre']}", usuario['id'])
-                
-                # Actualizar combo box de filtro
-                self.arbitro_filtro_combo.clear()
-                self.arbitro_filtro_combo.addItem("Todos", 0)
-                for usuario in self.usuarios:
-                    self.arbitro_filtro_combo.addItem(f"{usuario['nombre']}", usuario['id'])
-            else:
-                QMessageBox.warning(self, "Error", f"No se pudieron cargar los usuarios. Status code: {response.status_code}")
-                print(f"Error al cargar usuarios: {response.text}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al cargar usuarios: {str(e)}")
+    def mostrar_desplegable(self):
+        """Muestra manualmente el desplegable del combo de árbitros"""
+        self.arbitro_combo.showPopup()
     
+        
     def on_todos_usuarios_changed(self, state):
         """Maneja el cambio en el checkbox de todos los usuarios"""
         self.arbitro_combo.setEnabled(not bool(state))
     
     def on_registrar_cuota(self):
-        # Aquí deberías añadir la implementación de la función para registrar cuotas
-        pass
+        """Maneja el evento de clic en Registrar Cuota"""
+        # Validar campos
+        if not self.todos_usuarios_check.isChecked() and self.arbitro_combo.currentIndex() < 0:
+            QMessageBox.warning(self, "Error", "Por favor seleccione un árbitro o marque la opción para todos")
+            return
+        
+        if self.monto_spin.value() <= 0:
+            QMessageBox.warning(self, "Error", "El monto debe ser mayor a cero")
+            return
+        
+        # Obtener datos comunes
+        fecha = self.fecha_edit.date().toString("yyyy-MM-dd")
+        monto = self.monto_spin.value()
+        
+        if self.todos_usuarios_check.isChecked():
+            # Registrar cuota para todos los usuarios
+            success_count = 0
+            error_count = 0
+            
+            for usuario in self.usuarios:
+                # Crear objeto de cuota
+                cuota_data = {
+                    "usuario_id": usuario["id"],
+                    "fecha": fecha,
+                    "monto": monto,
+                    "pagado": False,
+                    "monto_pagado": 0
+                }
+                
+                try:
+                    # Enviar solicitud para crear cuota
+                    headers = session.get_headers()
+                    headers["Content-Type"] = "application/json"
+                    
+                    url = f"{session.api_url}/cuotas"
+                    response = requests.post(
+                        url,
+                        headers=headers,
+                        data=json.dumps(cuota_data)
+                    )
+                    
+                    if response.status_code == 200 or response.status_code == 201:
+                        success_count += 1
+                    else:
+                        error_count += 1
+                        print(f"Error al registrar cuota para usuario {usuario['id']}: {response.text}")
+                except Exception as e:
+                    error_count += 1
+                    print(f"Excepción al registrar cuota para usuario {usuario['id']}: {str(e)}")
+            
+            if success_count > 0:
+                QMessageBox.information(self, "Éxito", f"Se registraron {success_count} cuotas exitosamente")
+                
+                # Limpiar formulario
+                self.arbitro_combo.setCurrentIndex(-1)
+                self.fecha_edit.setDate(QDate.currentDate())
+                self.monto_spin.setValue(0)
+                self.todos_usuarios_check.setChecked(False)
+                
+                # Actualizar lista de cuotas
+                self.on_buscar_cuotas()
+            
+            if error_count > 0:
+                QMessageBox.warning(self, "Advertencia", f"No se pudieron registrar {error_count} cuotas")
+        else:
+            # Registrar cuota para un solo usuario
+            usuario_id = self.arbitro_combo.currentData()
+            
+            # Crear objeto de cuota
+            cuota_data = {
+                "usuario_id": usuario_id,
+                "fecha": fecha,
+                "monto": monto,
+                "pagado": False,
+                "monto_pagado": 0
+            }
+            
+            try:
+                # Enviar solicitud para crear cuota
+                headers = session.get_headers()
+                headers["Content-Type"] = "application/json"
+                
+                url = f"{session.api_url}/cuotas"
+                print(f"Realizando petición POST a: {url}")
+                print(f"Datos: {json.dumps(cuota_data)}")
+                
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    data=json.dumps(cuota_data)
+                )
+                
+                if response.status_code == 200 or response.status_code == 201:
+                    QMessageBox.information(self, "Éxito", "Cuota registrada exitosamente")
+                    
+                    # Limpiar formulario
+                    self.arbitro_combo.setCurrentIndex(-1)
+                    self.fecha_edit.setDate(QDate.currentDate())
+                    self.monto_spin.setValue(0)
+                    
+                    # Actualizar lista de cuotas
+                    self.on_buscar_cuotas()
+                else:
+                    error_msg = "Error al registrar la cuota"
+                    try:
+                        error_data = response.json()
+                        if "detail" in error_data:
+                            error_msg = error_data["detail"]
+                    except:
+                        pass
+                    QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
+                    print(f"Error al registrar cuota: {response.text}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error al registrar cuota: {str(e)}")
     
     def on_pagar_cuota(self):
         """Registra el pago de una cuota"""
@@ -374,10 +635,19 @@ class SocioCuotaView(QWidget):
                                 "Éxito", 
                                 "Pago registrado exitosamente.\nNo se pudo enviar el recibo por email porque el socio no tiene email registrado."
                             )
+                    else:
+                        QMessageBox.information(self, "Éxito", "Pago registrado exitosamente.")
                 
                 # Actualizar vista
-                self.on_buscar_cuota_id()
-                self.on_buscar_cuotas()
+                if hasattr(self, 'on_buscar_cuotas_usuario') and hasattr(self, 'usuario_search_combo'):
+                    # Si estamos usando la nueva interfaz de búsqueda por usuario
+                    self.on_buscar_cuotas_usuario()
+                else:
+                    # Si seguimos usando la búsqueda por ID
+                    self.on_buscar_cuota_id()
+                    
+                self.on_buscar_cuotas()  # Actualizar lista general de cuotas
+                
             else:
                 error_msg = "Error al registrar el pago"
                 try:
@@ -421,67 +691,82 @@ class SocioCuotaView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al enviar recibo: {str(e)}")
     
-    def on_buscar_cuotas(self):
-        """Busca cuotas según los filtros seleccionados"""
+    def cargar_usuarios(self):
+        """Carga la lista de usuarios desde la API"""
         try:
-            # Preparar parámetros
-            estado = self.estado_combo.currentText()
-            
-            # Mapear valores de UI a valores esperados por la API
-            if estado == "Todas":
-                estado_filter = None
-            elif estado == "Pendientes":
-                estado_filter = "pendiente"
-            elif estado == "Pagadas":
-                estado_filter = "pagada"
-            
-            # Obtener el ID del árbitro seleccionado (si hay uno)
-            arbitro_id = None
-            if self.arbitro_filtro_combo.currentIndex() > 0:  # Si no es "Todos"
-                arbitro_id = self.arbitro_filtro_combo.currentData()
-            
-            # Construir parámetros de consulta
-            params = {
-                "skip": 0,
-                "limit": 100
-            }
-            
-            # Añadir filtros opcionales solo si están seleccionados
-            if estado_filter:
-                params["estado"] = estado_filter
-            
-            if arbitro_id:
-                params["usuario_id"] = arbitro_id
-            
-            # Imprimir información de depuración
-            print(f"Buscando cuotas con parámetros: {params}")
-            
-            # Obtener cuotas
             headers = session.get_headers()
-            url = f"{session.api_url}/cuotas"
+            url = f"{session.api_url}/usuarios"
+            print(f"Realizando petición GET a: {url}")
             
-            response = requests.get(url, headers=headers, params=params)
+            response = requests.get(url, headers=headers)
             
             if response.status_code == 200:
+                self.usuarios = response.json()
+                print(f"Usuarios cargados: {len(self.usuarios)}")
+                
+                # Actualizar combo box principal - con texto de depuración
+                self.arbitro_combo.clear()
+                print("Limpiado ComboBox")
+                for usuario in self.usuarios:
+                    self.arbitro_combo.addItem(f"{usuario['nombre']}", usuario['id'])
+                    print(f"Añadido usuario: {usuario['nombre']}")
+                
+                # Verificar estado del checkbox para habilitar/deshabilitar combo
+                self.arbitro_combo.setEnabled(not self.todos_usuarios_check.isChecked())
+                print(f"Estado de habilitado del ComboBox: {self.arbitro_combo.isEnabled()}")
+                
+                # Actualizar combo box de filtro
+                self.arbitro_filtro_combo.clear()
+                self.arbitro_filtro_combo.addItem("Todos", 0)
+                for usuario in self.usuarios:
+                    self.arbitro_filtro_combo.addItem(f"{usuario['nombre']}", usuario['id'])
+                    
+                # Actualizar combo de búsqueda de la pestaña pagar
+                self.usuario_search_combo.clear()
+                for usuario in self.usuarios:
+                    self.usuario_search_combo.addItem(f"{usuario['nombre']}", usuario['id'])
+            else:
+                QMessageBox.warning(self, "Error", f"No se pudieron cargar los usuarios. Status code: {response.status_code}")
+                print(f"Error al cargar usuarios: {response.text}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al cargar usuarios: {str(e)}")
+            print(f"Excepción en cargar_usuarios: {str(e)}")
+
+    def on_buscar_cuotas_usuario(self):
+        """Busca cuotas según el usuario seleccionado"""
+        # Verificar si se seleccionó un usuario
+        if self.usuario_search_combo.currentIndex() < 0:
+            QMessageBox.warning(self, "Error", "Por favor seleccione un árbitro")
+            return
+        
+        # Obtener ID del usuario seleccionado
+        usuario_id = self.usuario_search_combo.currentData()
+        usuario_nombre = self.usuario_search_combo.currentText()
+        
+        try:
+            # Construir la URL
+            url = f"{session.api_url}/cuotas/usuario/{usuario_id}"
+            headers = session.get_headers()
+            
+            print(f"Buscando cuotas para usuario {usuario_id}: {usuario_nombre}")
+            
+            # Realizar la petición
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                # Procesar los resultados
                 cuotas_data = response.json()
-                print(f"Cuotas cargadas: {len(cuotas_data)}")
+                print(f"Cuotas encontradas: {len(cuotas_data)}")
                 
-                # Limpiar tabla
-                self.cuotas_table.setRowCount(0)
+                # Limpiar la tabla
+                self.cuotas_usuario_table.setRowCount(0)
                 
-                # Estadísticas
-                total_cuotas = len(cuotas_data)
-                cuotas_pagadas = 0
-                cuotas_pendientes = 0
-                monto_total = 0
-                monto_pendiente = 0
-                
-                # Llenar tabla con datos
+                # Llenar la tabla con los resultados
                 for row, cuota in enumerate(cuotas_data):
-                    self.cuotas_table.insertRow(row)
+                    self.cuotas_usuario_table.insertRow(row)
                     
                     # ID
-                    self.cuotas_table.setItem(row, 0, QTableWidgetItem(str(cuota.get("id", ""))))
+                    self.cuotas_usuario_table.setItem(row, 0, QTableWidgetItem(str(cuota.get("id", ""))))
                     
                     # Fecha
                     fecha_str = cuota.get('fecha', '')
@@ -492,58 +777,36 @@ class SocioCuotaView(QWidget):
                         except:
                             fecha_display = fecha_str
                     
-                    self.cuotas_table.setItem(row, 1, QTableWidgetItem(fecha_display))
-                    
-                    # Árbitro
-                    arbitro = ""
-                    if isinstance(cuota.get("usuario"), dict):
-                        arbitro = cuota.get("usuario", {}).get("nombre", "")
-                    
-                    self.cuotas_table.setItem(row, 2, QTableWidgetItem(arbitro))
+                    self.cuotas_usuario_table.setItem(row, 1, QTableWidgetItem(fecha_display))
                     
                     # Monto
                     monto = cuota.get("monto", 0)
                     monto_item = QTableWidgetItem(f"${monto:,.2f}")
                     monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    self.cuotas_table.setItem(row, 3, monto_item)
+                    self.cuotas_usuario_table.setItem(row, 2, monto_item)
                     
                     # Estado
-                    estado = cuota.get("estado", "").capitalize()
+                    pagado = cuota.get("pagado", False)
+                    estado = "Pagada" if pagado else "Pendiente"
                     estado_item = QTableWidgetItem(estado)
-                    if estado.lower() == "pendiente":
+                    if not pagado:
                         estado_item.setForeground(Qt.red)
-                    elif estado.lower() == "pagada":
+                    else:
                         estado_item.setForeground(Qt.darkGreen)
                     
-                    self.cuotas_table.setItem(row, 4, estado_item)
+                    self.cuotas_usuario_table.setItem(row, 3, estado_item)
                     
                     # Monto Pagado
                     monto_pagado = cuota.get("monto_pagado", 0)
                     monto_pagado_item = QTableWidgetItem(f"${monto_pagado:,.2f}")
                     monto_pagado_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    self.cuotas_table.setItem(row, 5, monto_pagado_item)
-                    
-                    # Actualizar estadísticas
-                    monto_total += monto
-                    if estado.lower() == "pendiente":
-                        cuotas_pendientes += 1
-                        monto_pendiente += monto - monto_pagado
-                    else:
-                        cuotas_pagadas += 1
-                
-                # Actualizar labels de estadísticas
-                self.total_cuotas_label.setText(f"Total cuotas: {total_cuotas}")
-                self.cuotas_pagadas_label.setText(f"Cuotas pagadas: {cuotas_pagadas}")
-                self.cuotas_pendientes_label.setText(f"Cuotas pendientes: {cuotas_pendientes}")
-                
-                self.monto_total_label.setText(f"Monto total: ${monto_total:,.2f}")
-                self.monto_pendiente_label.setText(f"Monto pendiente: ${monto_pendiente:,.2f}")
+                    self.cuotas_usuario_table.setItem(row, 4, monto_pagado_item)
                 
                 # Ajustar columnas
-                self.cuotas_table.resizeColumnsToContents()
-            elif response.status_code == 401:
-                print("Error de autenticación al cargar cuotas")
-                # No mostrar mensaje aquí para no ser intrusivo
+                self.cuotas_usuario_table.resizeColumnsToContents()
+                
+                # Ocultar el detalle hasta que se seleccione una cuota específica
+                self.resultado_container.setVisible(False)
             else:
                 error_msg = "No se pudieron cargar las cuotas"
                 try:
@@ -553,31 +816,25 @@ class SocioCuotaView(QWidget):
                 except:
                     pass
                 QMessageBox.warning(self, "Error", f"{error_msg}. Status code: {response.status_code}")
-                print(f"Error al cargar cuotas: {response.text}")
+                print(f"Error al cargar cuotas por usuario: {response.text}")
         except Exception as e:
-            print(f"Excepción al buscar cuotas: {str(e)}")
             QMessageBox.critical(self, "Error", f"Error al buscar cuotas: {str(e)}")
-        
-    def on_buscar_cuota_id(self):
-        """Busca una cuota por su ID"""
-        cuota_id = self.id_search.text().strip()
-        
-        if not cuota_id.isdigit():
-            QMessageBox.warning(self, "Error", "Por favor ingrese un ID válido")
-            return
+
+    def on_seleccionar_cuota(self, index):
+        """Maneja el evento de seleccionar una cuota de la tabla"""
+        row = index.row()
+        cuota_id = self.cuotas_usuario_table.item(row, 0).text()
         
         try:
             # Obtener cuota por ID
             headers = session.get_headers()
             url = f"{session.api_url}/cuotas/{cuota_id}"
-            print(f"Realizando petición GET a: {url}")
             
             response = requests.get(url, headers=headers)
             
             if response.status_code == 200:
                 cuota = response.json()
                 self.current_cuota = cuota  # Guardar para referencia
-                print(f"Cuota cargada: {cuota}")
                 
                 # Mostrar detalles
                 self.resultado_title.setVisible(True)
@@ -609,7 +866,7 @@ class SocioCuotaView(QWidget):
                     self.monto_a_pagar_spin.setValue(monto_restante)
             else:
                 self.resultado_container.setVisible(False)
-                QMessageBox.warning(self, "No encontrado", f"No se encontró ninguna cuota con ID {cuota_id}. Status code: {response.status_code}")
-                print(f"Error al buscar cuota por ID: {response.text}")
+                QMessageBox.warning(self, "Error", f"No se pudo obtener la información de la cuota. Status code: {response.status_code}")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al buscar cuota: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al seleccionar cuota: {str(e)}")
+
