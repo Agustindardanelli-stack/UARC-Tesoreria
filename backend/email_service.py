@@ -166,7 +166,7 @@ class EmailService:
         
 
     def generate_payment_receipt_pdf(self, db: Session, pago):
-        """Genera un PDF con el recibo del pago"""
+        """Genera un PDF con el recibo del pago con diseño mejorado"""
         
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=letter)
@@ -176,15 +176,20 @@ class EmailService:
         ruta_icono = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
                                 'frontend', 'assets',  'Uarclogo.jpg')
         
+        # Agregar color de fondo para encabezado
+        p.setFillColorRGB(0.95, 0.95, 0.95)  # Gris muy claro
+        p.rect(0, height - 2.2*inch, width, 2.2*inch, fill=1, stroke=0)
+        p.setFillColorRGB(0, 0, 0)  # Volver a negro para texto
+        
         # Intentar agregar ícono
         try:
             icono = ImageReader(ruta_icono)
-            icono_ancho = 1 * inch
-            icono_alto = 1 * inch
+            icono_ancho = 1.2 * inch
+            icono_alto = 1.2 * inch
             p.drawImage(
                 icono, 
-                width - 1.5 * inch,  # Posición a la derecha
-                height - 1.5 * inch, # Posición arriba
+                width - 1.7 * inch,  # Posición a la derecha
+                height - 1.7 * inch, # Posición arriba
                 width=icono_ancho, 
                 height=icono_alto
             )
@@ -198,20 +203,33 @@ class EmailService:
         retencion = db.query(models.Retencion).filter(models.Retencion.id == pago.retencion_id).first()
         
         # Título
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(width/2 - 2.5*inch, height - 1.2*inch, "UNIDAD DE ARBITROS")
-        p.drawString(width/2 - 2*inch, height - 1.6*inch, "DE RIO CUARTO")
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(width/2 - 2.5*inch, height - 0.9*inch, "UNIDAD DE ÁRBITROS")
+        p.drawString(width/2 - 1.8*inch, height - 1.3*inch, "DE RÍO CUARTO")
+        
+        # Línea separadora decorativa
+        p.setStrokeColorRGB(0.3, 0.3, 0.7)  # Azul oscuro
+        p.setLineWidth(2)
+        p.line(inch, height - 1.8*inch, width - inch, height - 1.8*inch)
+        p.setLineWidth(1)
+        p.setStrokeColorRGB(0, 0, 0)  # Volver a negro
         
         # Orden de pago
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(width/2 - 1.2*inch, height - 2.3*inch, "ORDEN DE PAGO")
         p.setFont("Helvetica-Bold", 12)
-        p.drawString(width/2 - 1.5*inch, height - 2.1*inch, "ORDENES DE PAGO")
-        p.drawString(width/2 - 0.6*inch, height - 2.5*inch, f"N° {pago.id:06d}")
+        p.drawString(width/2 - 0.6*inch, height - 2.7*inch, f"N° {pago.id:06d}")
         
-        # Diseñar el formulario similar al de la imagen
-        p.setFont("Helvetica", 10)
+        # Sombreado para sección principal
+        p.setFillColorRGB(0.98, 0.98, 1.0)  # Azul muy claro
+        p.rect(inch, height - 6*inch, width - 2*inch, 3*inch, fill=1, stroke=0)
+        p.setFillColorRGB(0, 0, 0)  # Volver a negro para texto
         
-        # Dibujar el rectángulo principal
+        # Dibujar el rectángulo principal con borde más estético
+        p.setStrokeColorRGB(0.3, 0.3, 0.7)  # Azul oscuro
+        p.setLineWidth(1.5)
         p.rect(inch, height - 6*inch, width - 2*inch, 3*inch)
+        p.setLineWidth(0.8)
         
         # Líneas horizontales para las filas
         y_start = height - 3*inch
@@ -224,11 +242,29 @@ class EmailService:
         p.line(inch + 3*inch, y_start, inch + 3*inch, y_start - 3*inch)      # Importe
         p.line(inch + 4.5*inch, y_start, inch + 4.5*inch, y_start - 3*inch)  # Se abonará a
         
-        # Títulos de columnas
-        p.drawString(inch + 0.5*inch, y_start - 0.5*inch, "N° recibo")
-        p.drawString(inch + 2*inch, y_start - 0.5*inch, "Importe")
-        p.drawString(inch + 3.5*inch, y_start - 0.5*inch, "Se abonará a")
-        p.drawString(width - 2*inch, y_start - 0.5*inch, "Concepto a pagar")
+        # Títulos de columnas con fondo
+        p.setFillColorRGB(0.3, 0.3, 0.7)  # Azul oscuro
+        p.setFont("Helvetica-Bold", 10)
+        p.setFillColorRGB(1, 1, 1)  # Texto blanco
+        
+        # Rectángulos para títulos
+        for i, (pos, width_col) in enumerate([
+            (inch, 1.5*inch),  # N° recibo
+            (inch + 1.5*inch, 1.5*inch),  # Importe
+            (inch + 3*inch, 1.5*inch),  # Se abonará a
+            (inch + 4.5*inch, width - inch - (inch + 4.5*inch))  # Concepto
+        ]):
+            p.rect(pos, y_start - 0.6*inch, width_col, 0.6*inch, fill=1, stroke=0)
+        
+        # Textos de títulos
+        p.drawString(inch + 0.3*inch, y_start - 0.4*inch, "N° RECIBO")
+        p.drawString(inch + 2*inch, y_start - 0.4*inch, "IMPORTE")
+        p.drawString(inch + 3.5*inch, y_start - 0.4*inch, "SE ABONARÁ A")
+        p.drawString(inch + 5*inch, y_start - 0.4*inch, "CONCEPTO A PAGAR")
+        
+        # Volver a negro para el contenido
+        p.setFillColorRGB(0, 0, 0)
+        p.setFont("Helvetica", 10)
         
         # Información del pago
         p.drawString(inch + 0.5*inch, y_start - 1.2*inch, f"{pago.id:06d}")
@@ -237,21 +273,43 @@ class EmailService:
         
         # Concepto
         concepto = f"Pago de arbitraje - {retencion.nombre if retencion else 'Pago'}"
-        p.drawString(width - 2.5*inch, y_start - 1.2*inch, concepto)
+        p.drawString(inch + 5*inch, y_start - 1.2*inch, concepto)
         
-        # Campo para firma
+        # Sección inferior con sombreado
+        p.setFillColorRGB(0.96, 0.96, 0.98)  # Gris azulado muy claro
+        p.rect(inch, height - 6.7*inch, width - 2*inch, 0.7*inch, fill=1, stroke=0)
+        p.setFillColorRGB(0, 0, 0)  # Volver a negro
+        p.setStrokeColorRGB(0, 0, 0)  # Volver a negro
+        p.setLineWidth(1)
+        
+        # Campo para firma con estilo
+        p.setFont("Helvetica-Bold", 10)
         p.drawString(1.5*inch, height - 6.3*inch, "Firma:")
-        p.line(2.5*inch, height - 6.3*inch, 4*inch, height - 6.3*inch)
+        p.setLineWidth(0.5)
+        p.line(2.3*inch, height - 6.3*inch, 4*inch, height - 6.3*inch)
         
-        # Campo para monto
-        p.drawString(4.5*inch, height - 6.3*inch, "$")
-        p.rect(4.8*inch, height - 6.5*inch, 1.5*inch, 0.4*inch)
-        p.drawString(5*inch, height - 6.3*inch, f"{float(pago.monto):,.2f}")
+        # Campo para monto con estilo
+        p.drawString(4.5*inch, height - 6.3*inch, "TOTAL: $")
+        p.setFillColorRGB(1, 1, 1)  # Blanco
+        p.setStrokeColorRGB(0.3, 0.3, 0.7)  # Azul oscuro
+        p.rect(5.3*inch, height - 6.5*inch, 1.2*inch, 0.4*inch, fill=1)
+        p.setFillColorRGB(0, 0, 0)  # Negro
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(5.4*inch, height - 6.3*inch, f"{float(pago.monto):,.2f}")
         
-        # Fecha
+        # Fecha con estilo
+        p.setFont("Helvetica-Bold", 10)
+        p.setFillColorRGB(0, 0, 0)  # Negro
         p.drawString(width - 2.5*inch, height - 6.3*inch, "Fecha:")
-        p.rect(width - 1.8*inch, height - 6.5*inch, 0.8*inch, 0.4*inch)
+        p.setFillColorRGB(1, 1, 1)  # Blanco
+        p.rect(width - 1.8*inch, height - 6.5*inch, 0.8*inch, 0.4*inch, fill=1)
+        p.setFillColorRGB(0, 0, 0)  # Negro
         p.drawString(width - 1.7*inch, height - 6.3*inch, pago.fecha.strftime('%d/%m/%Y'))
+        
+        # Añadir pie de página
+        p.setFont("Helvetica-Oblique", 8)
+        p.setFillColorRGB(0.5, 0.5, 0.5)  # Gris medio
+        p.drawCentredString(width/2, 0.5*inch, "Unidad de Árbitros de Río Cuarto - Documento generado automáticamente")
         
         p.save()
         buffer.seek(0)
@@ -303,29 +361,38 @@ class EmailService:
         
 
     def generate_cuota_receipt_pdf(self, db: Session, cuota):
-        """Genera un PDF con el recibo de pago de cuota con formato similar a la imagen"""
+        """Genera un PDF con el recibo de pago de cuota con formato mejorado"""
         
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=letter)
         width, height = letter
         
+        # Configurar orientación horizontal
+        p.rotate(90)
+        p.translate(0, -width)
+        
         # Ruta al ícono
         ruta_icono = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
                                 'frontend', 'assets', 'Uarclogo.jpg')
         
-        # Configurar el recibo - orientación apaisada como en la imagen
-        p.rotate(90)  # Girar para formato horizontal
-        p.translate(0, -width)  # Ajustar coordenadas tras rotación
+        # Variables para posicionamiento
+        margin = 1 * inch
+        content_width = height - (2 * margin)
+        
+        # Dibujar un rectángulo para el área del recibo
+        p.setStrokeColorRGB(0, 0, 0)
+        p.setLineWidth(2)
+        p.rect(margin, margin, content_width, width - (2 * margin))
         
         # Intentar agregar ícono
         try:
             icono = ImageReader(ruta_icono)
-            icono_ancho = 0.7 * inch
-            icono_alto = 0.7 * inch
+            icono_ancho = 0.8 * inch
+            icono_alto = 0.8 * inch
             p.drawImage(
                 icono, 
-                inch,  # Posición izquierda
-                height - 1.5 * inch,  # Posición arriba
+                margin + 0.5 * inch,
+                width - margin - 1.3 * inch,
                 width=icono_ancho, 
                 height=icono_alto
             )
@@ -335,53 +402,69 @@ class EmailService:
         # Obtener usuario/árbitro
         usuario = db.query(models.Usuario).filter(models.Usuario.id == cuota.usuario_id).first()
         
-        # Título (UNIDAD DE ÁRBITROS DE RÍO CUARTO - vertical)
-        p.setFont("Helvetica-Bold", 12)
-        p.drawString(inch, height - 1.1 * inch, "UNIDAD")
-        p.drawString(inch, height - 1.4 * inch, "DE ÁRBITROS")
-        p.drawString(inch, height - 1.7 * inch, "DE RÍO CUARTO")
-        
-        # CUOTA SOCIETARIA
+        # Título principal (centrado)
         p.setFont("Helvetica-Bold", 14)
-        p.drawString(height - 3 * inch, width - 1.5 * inch, "CUOTA SOCIETARIA")
+        # Unidad de Árbitros de Río Cuarto - texto vertical a la izquierda
+        p.drawString(margin + 0.6 * inch, width - margin - 0.7 * inch, "UNIDAD")
+        p.drawString(margin + 0.6 * inch, width - margin - 1.0 * inch, "DE ÁRBITROS")
+        p.drawString(margin + 0.6 * inch, width - margin - 1.3 * inch, "DE RÍO CUARTO")
         
-        # Número de recibo
+        # CUOTA SOCIETARIA (título grande centrado)
+        title_width = p.stringWidth("CUOTA SOCIETARIA", "Helvetica-Bold", 16)
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(margin + (content_width - title_width)/2, width - margin - 0.8 * inch, "CUOTA SOCIETARIA")
+        
+        # Número de recibo (alineado a la derecha)
         p.setFont("Helvetica-Bold", 12)
-        p.drawString(height - 3 * inch, width - 1.8 * inch, f"RECIBO Nº {cuota.id:06d}")
+        recibo_num = f"RECIBO Nº {cuota.id:06d}"
+        recibo_width = p.stringWidth(recibo_num, "Helvetica-Bold", 12)
+        p.drawString(margin + content_width - recibo_width - 0.5 * inch, width - margin - 1.2 * inch, recibo_num)
         
-        # Dibujar los tres cuadrados para marcar
-        for i in range(3):
-            p.rect(height - 3 * inch, width - (2.2 + i * 0.5) * inch, 0.3 * inch, 0.3 * inch)
+        # Línea horizontal decorativa
+        p.line(margin + 0.5 * inch, width - margin - 1.5 * inch, margin + content_width - 0.5 * inch, width - margin - 1.5 * inch)
         
-        # Líneas para información
-        p.setFont("Helvetica", 10)
+        # Contenido del recibo (formulario)
+        p.setFont("Helvetica", 11)
         
         # Recibimos de:
-        p.drawString(inch, width - 2.5 * inch, "Recibimos de:")
-        p.line(2.2 * inch, width - 2.5 * inch, 5 * inch, width - 2.5 * inch)
-        p.drawString(2.3 * inch, width - 2.5 * inch, usuario.nombre if usuario else "")
+        y_pos = width - margin - 2.2 * inch
+        p.drawString(margin + 0.7 * inch, y_pos, "Recibimos de:")
+        p.line(margin + 2.5 * inch, y_pos - 0.1 * inch, margin + content_width - 0.7 * inch, y_pos - 0.1 * inch)
+        p.setFont("Helvetica", 10)
+        p.drawString(margin + 2.6 * inch, y_pos, usuario.nombre if usuario else "")
         
         # La suma de pesos:
-        p.drawString(inch, width - 3 * inch, "La suma de pesos:")
-        p.line(2.2 * inch, width - 3 * inch, 5 * inch, width - 3 * inch)
+        y_pos = width - margin - 2.9 * inch
+        p.setFont("Helvetica", 11)
+        p.drawString(margin + 0.7 * inch, y_pos, "La suma de pesos:")
+        p.line(margin + 2.5 * inch, y_pos - 0.1 * inch, margin + content_width - 2.2 * inch, y_pos - 0.1 * inch)
+        p.setFont("Helvetica", 10)
         monto_texto = self.numero_a_letras(float(cuota.monto_pagado) if cuota.pagado else float(cuota.monto))
-        p.drawString(2.3 * inch, width - 3 * inch, monto_texto)
+        p.drawString(margin + 2.6 * inch, y_pos, monto_texto)
         
-        # Campo para monto - rectángulo gris
-        p.setFillGray(0.85)
-        p.rect(5.5 * inch, width - 3 * inch, 1 * inch, 0.3 * inch, fill=1)
-        p.setFillGray(0)  # Volver a negro para texto
+        # Rectángulo para el monto
+        p.setFillColorRGB(0.9, 0.9, 0.9)  # Gris claro
+        p.rect(margin + content_width - 2 * inch, y_pos - 0.3 * inch, 1.3 * inch, 0.4 * inch, fill=1)
+        p.setFillColorRGB(0, 0, 0)  # Volver a negro
         
         # Símbolo de pesos y monto
-        p.drawString(5.4 * inch, width - 2.95 * inch, "$")
-        p.setFont("Helvetica-Bold", 10)
+        p.setFont("Helvetica-Bold", 11)
+        p.drawString(margin + content_width - 1.95 * inch, y_pos, "$")
         monto_valor = float(cuota.monto_pagado) if cuota.pagado else float(cuota.monto)
-        p.drawString(5.6 * inch, width - 2.95 * inch, f"{monto_valor:,.2f}")
+        p.drawString(margin + content_width - 1.8 * inch, y_pos, f"{monto_valor:,.2f}")
         
-        # Firma
-        p.setFont("Helvetica", 8)
-        p.drawString(height - 1.5 * inch, width - 3 * inch, "Firma")
-        p.line(height - 3 * inch, width - 3 * inch, height - 1.8 * inch, width - 3 * inch)
+        # Línea para firma en la parte inferior
+        y_pos = margin + 1 * inch
+        p.line(margin + 1 * inch, y_pos, margin + 3 * inch, y_pos)
+        p.setFont("Helvetica", 10)
+        p.drawCentredString(margin + 2 * inch, y_pos - 0.3 * inch, "Firma")
+        
+        # Línea decorativa inferior
+        p.line(margin + 0.5 * inch, margin + 0.5 * inch, margin + content_width - 0.5 * inch, margin + 0.5 * inch)
+        
+        # Fecha
+        fecha_actual = datetime.now().strftime("%d/%m/%Y")
+        p.drawRightString(margin + content_width - 0.7 * inch, margin + 0.7 * inch, f"Fecha: {fecha_actual}")
         
         p.save()
         buffer.seek(0)
