@@ -301,91 +301,93 @@ class EmailService:
             return False, f"Error al enviar email: {str(e)}"    
         
         
-def generate_cuota_receipt_pdf(self, db: Session, cuota):
-    """Genera un PDF con el recibo de pago de cuota con formato similar a la imagen"""
-     
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-    
-    # Ruta al ícono
-    ruta_icono = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                             'frontend', 'assets', 'Uarclogo.jpg')
-    
-    # Configurar el recibo - orientación apaisada como en la imagen
-    p.rotate(90)  # Girar para formato horizontal
-    p.translate(0, -width)  # Ajustar coordenadas tras rotación
-    
-    # Intentar agregar ícono
-    try:
-        icono = ImageReader(ruta_icono)
-        icono_ancho = 0.7 * inch
-        icono_alto = 0.7 * inch
-        p.drawImage(
-            icono, 
-            inch,  # Posición izquierda
-            height - 1.5 * inch,  # Posición arriba
-            width=icono_ancho, 
-            height=icono_alto
-        )
-    except Exception as e:
-        print(f"Error al cargar el ícono: {e}")
-    
-    # Obtener usuario/árbitro
-    usuario = db.query(models.Usuario).filter(models.Usuario.id == cuota.usuario_id).first()
-    
-    # Título (UNIDAD DE ÁRBITROS DE RÍO CUARTO - vertical)
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(inch, height - 1.1 * inch, "UNIDAD")
-    p.drawString(inch, height - 1.4 * inch, "DE ÁRBITROS")
-    p.drawString(inch, height - 1.7 * inch, "DE RÍO CUARTO")
-    
-    # CUOTA SOCIETARIA
-    p.setFont("Helvetica-Bold", 14)
-    p.drawString(height - 3 * inch, width - 1.5 * inch, "CUOTA SOCIETARIA")
-    
-    # Número de recibo
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(height - 3 * inch, width - 1.8 * inch, f"RECIBO Nº {cuota.id:06d}")
-    
-    # Dibujar los tres cuadrados para marcar
-    for i in range(3):
-        p.rect(height - 3 * inch, width - (2.2 + i * 0.5) * inch, 0.3 * inch, 0.3 * inch)
-    
-    # Líneas para información
-    p.setFont("Helvetica", 10)
-    
-    # Recibimos de:
-    p.drawString(inch, width - 2.5 * inch, "Recibimos de:")
-    p.line(2.2 * inch, width - 2.5 * inch, 5 * inch, width - 2.5 * inch)
-    p.drawString(2.3 * inch, width - 2.5 * inch, usuario.nombre if usuario else "")
-    
-    # La suma de pesos:
-    p.drawString(inch, width - 3 * inch, "La suma de pesos:")
-    p.line(2.2 * inch, width - 3 * inch, 5 * inch, width - 3 * inch)
-    monto_texto = self.numero_a_letras(float(cuota.monto_pagado) if cuota.pagado else float(cuota.monto))
-    p.drawString(2.3 * inch, width - 3 * inch, monto_texto)
-    
-    # Campo para monto - rectángulo gris
-    p.setFillGray(0.85)
-    p.rect(5.5 * inch, width - 3 * inch, 1 * inch, 0.3 * inch, fill=1)
-    p.setFillGray(0)  # Volver a negro para texto
-    
-    # Símbolo de pesos y monto
-    p.drawString(5.4 * inch, width - 2.95 * inch, "$")
-    p.setFont("Helvetica-Bold", 10)
-    monto_valor = float(cuota.monto_pagado) if cuota.pagado else float(cuota.monto)
-    p.drawString(5.6 * inch, width - 2.95 * inch, f"{monto_valor:,.2f}")
-    
-    # Firma
-    p.setFont("Helvetica", 8)
-    p.drawString(height - 1.5 * inch, width - 3 * inch, "Firma")
-    p.line(height - 3 * inch, width - 3 * inch, height - 1.8 * inch, width - 3 * inch)
-    
-    p.save()
-    buffer.seek(0)
-    return buffer.getvalue()
-def send_cuota_receipt_email(self, db: Session, cuota, recipient_email):
+
+    def generate_cuota_receipt_pdf(self, db: Session, cuota):
+        """Genera un PDF con el recibo de pago de cuota con formato similar a la imagen"""
+        
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        
+        # Ruta al ícono
+        ruta_icono = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                'frontend', 'assets', 'Uarclogo.jpg')
+        
+        # Configurar el recibo - orientación apaisada como en la imagen
+        p.rotate(90)  # Girar para formato horizontal
+        p.translate(0, -width)  # Ajustar coordenadas tras rotación
+        
+        # Intentar agregar ícono
+        try:
+            icono = ImageReader(ruta_icono)
+            icono_ancho = 0.7 * inch
+            icono_alto = 0.7 * inch
+            p.drawImage(
+                icono, 
+                inch,  # Posición izquierda
+                height - 1.5 * inch,  # Posición arriba
+                width=icono_ancho, 
+                height=icono_alto
+            )
+        except Exception as e:
+            print(f"Error al cargar el ícono: {e}")
+        
+        # Obtener usuario/árbitro
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == cuota.usuario_id).first()
+        
+        # Título (UNIDAD DE ÁRBITROS DE RÍO CUARTO - vertical)
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(inch, height - 1.1 * inch, "UNIDAD")
+        p.drawString(inch, height - 1.4 * inch, "DE ÁRBITROS")
+        p.drawString(inch, height - 1.7 * inch, "DE RÍO CUARTO")
+        
+        # CUOTA SOCIETARIA
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(height - 3 * inch, width - 1.5 * inch, "CUOTA SOCIETARIA")
+        
+        # Número de recibo
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(height - 3 * inch, width - 1.8 * inch, f"RECIBO Nº {cuota.id:06d}")
+        
+        # Dibujar los tres cuadrados para marcar
+        for i in range(3):
+            p.rect(height - 3 * inch, width - (2.2 + i * 0.5) * inch, 0.3 * inch, 0.3 * inch)
+        
+        # Líneas para información
+        p.setFont("Helvetica", 10)
+        
+        # Recibimos de:
+        p.drawString(inch, width - 2.5 * inch, "Recibimos de:")
+        p.line(2.2 * inch, width - 2.5 * inch, 5 * inch, width - 2.5 * inch)
+        p.drawString(2.3 * inch, width - 2.5 * inch, usuario.nombre if usuario else "")
+        
+        # La suma de pesos:
+        p.drawString(inch, width - 3 * inch, "La suma de pesos:")
+        p.line(2.2 * inch, width - 3 * inch, 5 * inch, width - 3 * inch)
+        monto_texto = self.numero_a_letras(float(cuota.monto_pagado) if cuota.pagado else float(cuota.monto))
+        p.drawString(2.3 * inch, width - 3 * inch, monto_texto)
+        
+        # Campo para monto - rectángulo gris
+        p.setFillGray(0.85)
+        p.rect(5.5 * inch, width - 3 * inch, 1 * inch, 0.3 * inch, fill=1)
+        p.setFillGray(0)  # Volver a negro para texto
+        
+        # Símbolo de pesos y monto
+        p.drawString(5.4 * inch, width - 2.95 * inch, "$")
+        p.setFont("Helvetica-Bold", 10)
+        monto_valor = float(cuota.monto_pagado) if cuota.pagado else float(cuota.monto)
+        p.drawString(5.6 * inch, width - 2.95 * inch, f"{monto_valor:,.2f}")
+        
+        # Firma
+        p.setFont("Helvetica", 8)
+        p.drawString(height - 1.5 * inch, width - 3 * inch, "Firma")
+        p.line(height - 3 * inch, width - 3 * inch, height - 1.8 * inch, width - 3 * inch)
+        
+        p.save()
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    def send_cuota_receipt_email(self, db: Session, cuota, recipient_email):
         try:
             # Crear mensaje
             msg = MIMEMultipart()
