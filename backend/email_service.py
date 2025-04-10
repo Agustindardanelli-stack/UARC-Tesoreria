@@ -20,6 +20,59 @@ class EmailService:
         self.password = password
         self.sender = sender_email
     
+
+    def get_logo_path(self):
+        """Encontrar la ruta correcta del logo"""
+        possible_paths = [
+            # Ruta para desarrollo local (Windows)
+            r'C:\Users\agusd\Desktop\Abuela Coca\uarc-tesoreria\frontend\assets\UarcLogo.jpg',
+            
+            # Ruta para servidor de producción
+            '/opt/render/project/src/frontend/assets/UarcLogo.jpg',
+            
+            # Rutas relativas desde el backend
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                        'frontend', 'assets', 'UarcLogo.jpg')
+        ]
+        
+        # Depuración
+        print("Buscando logo en las siguientes rutas:")
+        for path in possible_paths:
+            abs_path = os.path.abspath(path)
+            print(f"Ruta: {abs_path}")
+            print(f"Existe: {os.path.exists(abs_path)}")
+        
+        # Encontrar la primera ruta que exista
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        raise FileNotFoundError("No se encontró el logo UarcLogo.jpg")
+
+    def load_logo(self, pdf_canvas, width, height):
+            """Cargar y dibujar el logo en el PDF"""
+            try:
+                # Obtener la ruta del logo
+                ruta_icono = self.get_logo_path()
+                
+                # Leer el logo
+                icono = ImageReader(ruta_icono)
+                
+                # Dimensiones y posición del logo
+                icono_ancho = 1.5 * inch
+                icono_alto = 1.5 * inch
+                
+                # Dibujar el logo
+                pdf_canvas.drawImage(
+                    icono, 
+                    width/2 - icono_ancho/2,  # Centrar horizontalmente
+                    height - 1.5 * inch,      # Posición vertical
+                    width=icono_ancho, 
+                    height=icono_alto
+                )
+            except Exception as e:
+                print(f"Error al cargar el ícono: {e}")
+            
     def generate_receipt_pdf(self, db: Session, cobranza):
         """Genera un PDF con el recibo de la cobranza"""
          
@@ -28,31 +81,10 @@ class EmailService:
         width, height = letter
         
         # Ruta al ícono usando rutas relativas desde el backend
-        ruta_icono = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                'frontend', 'assets',  'Uarclogo.jpg')
-        
+        self.load_logo(p, width, height)
         # Agregar ícono
-        try:
-            # Abrir el ícono
-            icono = ImageReader(ruta_icono)
-            
-            # Obtener dimensiones del ícono (ajustar según sea necesario)
-            icono_ancho = 1.5 * inch  # Ancho del ícono
-            icono_alto = 1.5 * inch   # Alto del ícono
-            
-            # Posicionar el ícono (centrado, un poco arriba del título)
-            p.drawImage(
-                icono, 
-                width/2 - icono_ancho/2,  # Centrar horizontalmente
-                height - 1.5 * inch,      # Posición vertical
-                width=icono_ancho, 
-                height=icono_alto
-            )
-        except Exception as e:
-            print(f"Error al cargar el ícono: {e}")
-            print(f"Ruta intentada: {ruta_icono}")  # Añadido para depuración
-            print(f"Ruta absoluta: {os.path.abspath(ruta_icono)}")  # Añadido para depuración
-            print(f"Existe el archivo: {os.path.exists(ruta_icono)}")
+        
+        
             
         # Obtener usuario/árbitro
         usuario = db.query(models.Usuario).filter(models.Usuario.id == cobranza.usuario_id).first()
@@ -173,8 +205,8 @@ class EmailService:
         width, height = letter
         
         # Ruta al ícono usando rutas relativas desde el backend
-        ruta_icono = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                'frontend', 'assets',  'Uarclogo.jpg')
+        self.load_logo(p, width, height)
+
         
         # Agregar color de fondo para encabezado
         p.setFillColorRGB(0.95, 0.95, 0.95)  # Gris muy claro
@@ -372,19 +404,8 @@ class EmailService:
         p.translate(0, -width)
         
         # Ruta al ícono
-        ruta_icono = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                'frontend', 'assets',  'Uarclogo.jpg')
-        try:
-            print(f"Ruta del ícono: {ruta_icono}")
-            print(f"Ruta absoluta: {os.path.abspath(ruta_icono)}")
-            print(f"Archivo existe: {os.path.exists(ruta_icono)}")
-        
-            icono = ImageReader(ruta_icono)
-        # Resto del código de dibujo...
-        except Exception as e:
-            
-        
-            print(f"Error al cargar el ícono: {e}")
+        self.load_logo(p, width, height)
+
         # Variables para posicionamiento
         margin = 1 * inch
         content_width = height - (2 * margin)
