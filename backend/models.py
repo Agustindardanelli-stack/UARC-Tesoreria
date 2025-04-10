@@ -76,6 +76,9 @@ class Pago(Base):
     retencion = relationship("Retencion", back_populates="pagos")
     transaccion = relationship("Transaccion", back_populates="pagos")
     partidas = relationship("Partida", back_populates="pago")
+    email_enviado = Column(Boolean, default=False)
+    fecha_envio_email = Column(DateTime, nullable=True)
+    email_destinatario = Column(String(100), nullable=True)
 
 class Cobranza(Base):
     __tablename__ = "cobranzas"
@@ -141,6 +144,9 @@ class Cuota(Base):
     monto = Column(Numeric(10, 2), nullable=False)
     pagado = Column(Boolean, default=False)
     monto_pagado = Column(Numeric(10, 2), default=0)
+    email_enviado = Column(Boolean, default=False)
+    fecha_envio_email = Column(DateTime, nullable=True)
+    email_destinatario = Column(String(100), nullable=True)
     
     # Relaciones
     usuario = relationship("Usuario", back_populates="cuotas")

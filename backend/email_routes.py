@@ -187,3 +187,136 @@ def test_email(
         return {"success": True, "message": "Email de prueba enviado exitosamente"}
     except Exception as e:
         return {"success": False, "message": str(e)}
+    
+
+    # Endpoint para reenviar orden de pago
+@router.post("/pagos/{pago_id}/reenviar-orden", response_class=JSONResponse)
+def reenviar_orden_pago_endpoint(
+    pago_id: int, 
+    email: Optional[str] = None, 
+    db: Session = Depends(get_db), 
+    current_user: schemas.Usuario = Depends(authenticate_user)
+):
+    # Obtener el pago
+    db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
+    if not db_pago:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pago no encontrado"
+        )
+    
+    # Obtener usuario
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
+    
+    # Determinar el email a usar
+    recipient_email = email if email else (usuario.email if usuario else None)
+    
+    if not recipient_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No hay email destinatario disponible"
+        )
+    
+    # Obtener configuración de email
+    email_config = crud.get_active_email_config(db=db)
+    if not email_config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No hay configuración de email activa"
+        )
+    
+    # Crear servicio de email
+    from email_service import EmailService
+    email_service = EmailService(
+        smtp_server=email_config.smtp_server,
+        smtp_port=email_config.smtp_port,
+        username=email_config.smtp_username,
+        password=email_config.smtp_password,
+        sender_email=email_config.email_from
+    )
+    
+    # Enviar la orden de pago
+    success, message = email_service.send_payment_receipt_email(
+        db=db,
+        pago=db_pago, 
+        recipient_email=recipient_email
+    )
+    
+    # Actualizar estado
+    if success:
+        db_pago.email_enviado = True
+        db_pago.fecha_envio_email = datetime.now()
+        db_pago.email_destinatario = recipient_email
+        db.commit()
+        return {"success": True, "message": "Orden de pago enviada exitosamente"}
+    else:
+        return {"success": False, "message": message}
+    
+# Endpoint en email_routes.py
+@router.post("/cuotas/{cuota_id}/reenviar-recibo", response_class=JSONResponse)
+def reenviar_recibo_cuota_endpoint(
+    cuota_id: int, 
+    email: Optional[str] = None, 
+    db: Session = Depends(get_db), 
+    current_user: schemas.Usuario = Depends(authenticate_user)
+):
+    # Obtener la cuota
+    db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
+    if not db_cuota:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cuota no encontrada"
+        )
+    
+    if not db_cuota.pagado:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La cuota no ha sido pagada aún"
+        )
+    
+    # Obtener usuario
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
+    
+    # Determinar el email a usar
+    recipient_email = email if email else (usuario.email if usuario else None)
+    
+    if not recipient_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No hay email destinatario disponible"
+        )
+    
+    # Obtener configuración de email
+    email_config = crud.get_active_email_config(db=db)
+    if not email_config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No hay configuración de email activa"
+        )
+    
+    # Crear servicio de email
+    from email_service import EmailService
+    email_service = EmailService(
+        smtp_server=email_config.smtp_server,
+        smtp_port=email_config.smtp_port,
+        username=email_config.smtp_username,
+        password=email_config.smtp_password,
+        sender_email=email_config.email_from
+    )
+    
+    # Enviar el recibo
+    success, message = email_service.send_cuota_receipt_email(
+        db=db,
+        cuota=db_cuota, 
+        recipient_email=recipient_email
+    )
+    
+    # Actualizar estado
+    if success:
+        db_cuota.email_enviado = True
+        db_cuota.fecha_envio_email = datetime.now()
+        db_cuota.email_destinatario = recipient_email
+        db.commit()
+        return {"success": True, "message": "Recibo de cuota enviado exitosamente"}
+    else:
+        return {"success": False, "message": message}    

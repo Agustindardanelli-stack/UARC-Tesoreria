@@ -195,7 +195,96 @@ def create_pago(db: Session, pago: schemas.PagoCreate):
     db.add(partida)
     db.commit()
     
+    try:
+        # Obtener usuario para su email
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
+        
+        # Verificar si hay configuración de email activa y el usuario tiene email
+        if usuario and usuario.email:
+            email_config = get_active_email_config(db)
+            
+            if email_config:
+                # Importar aquí para evitar problemas de importación circular
+                from email_service import EmailService
+                
+                # Crear servicio de email
+                email_service = EmailService(
+                    smtp_server=email_config.smtp_server,
+                    smtp_port=email_config.smtp_port,
+                    username=email_config.smtp_username,
+                    password=email_config.smtp_password,
+                    sender_email=email_config.email_from
+                )
+                
+                # Enviar recibo
+                success, message = email_service.send_payment_receipt_email(
+                    db=db,
+                    pago=db_pago, 
+                    recipient_email=usuario.email
+                )
+                
+                # Actualizar estado del envío
+                if success:
+                    db_pago.email_enviado = True
+                    db_pago.fecha_envio_email = datetime.now()
+                    db_pago.email_destinatario = usuario.email
+                    db.commit()
+                    db.refresh(db_pago)
+                    print(f"Orden de pago enviada por email a {usuario.email}")
+                else:
+                    print(f"Error al enviar orden de pago: {message}")
+    except Exception as e:
+        print(f"Error en envío de orden de pago por email: {str(e)}")
+    
     return db_pago
+def reenviar_orden_pago(db: Session, pago_id: int, email: str = None):
+    # Obtener el pago
+    db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
+    if not db_pago:
+        return {"success": False, "message": "Pago no encontrado"}
+    
+    # Obtener usuario
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
+    
+    # Determinar el email a usar
+    recipient_email = email if email else (usuario.email if usuario else None)
+    
+    if not recipient_email:
+        return {"success": False, "message": "No hay email destinatario disponible"}
+    
+    # Obtener configuración de email
+    email_config = get_active_email_config(db)
+    if not email_config:
+        return {"success": False, "message": "No hay configuración de email activa"}
+    
+    # Importar aquí para evitar problemas de importación circular
+    from email_service import EmailService
+    
+    # Enviar la orden de pago
+    email_service = EmailService(
+        smtp_server=email_config.smtp_server,
+        smtp_port=email_config.smtp_port,
+        username=email_config.smtp_username,
+        password=email_config.smtp_password,
+        sender_email=email_config.email_from
+    )
+    
+    success, message = email_service.send_payment_receipt_email(
+        db=db,
+        pago=db_pago, 
+        recipient_email=recipient_email
+    )
+    
+    # Actualizar estado
+    if success:
+        db_pago.email_enviado = True
+        db_pago.fecha_envio_email = datetime.now()
+        db_pago.email_destinatario = recipient_email
+        db.commit()
+        db.refresh(db_pago)
+        return {"success": True, "message": "Orden de pago enviada exitosamente"}
+    else:
+        return {"success": False, "message": message}
 
 def get_pago(db: Session, pago_id: int):
     return db.query(models.Pago).filter(models.Pago.id == pago_id).first()
@@ -484,10 +573,103 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float):
         egreso=0
     )
     db.add(partida)
-    
     db.commit()
+    
+    try:
+        # Obtener usuario para su email
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
+        
+        # Verificar si hay configuración de email activa y el usuario tiene email
+        if usuario and usuario.email:
+            email_config = get_active_email_config(db)
+            
+            if email_config:
+                # Importar aquí para evitar problemas de importación circular
+                from email_service import EmailService
+                
+                # Crear servicio de email
+                email_service = EmailService(
+                    smtp_server=email_config.smtp_server,
+                    smtp_port=email_config.smtp_port,
+                    username=email_config.smtp_username,
+                    password=email_config.smtp_password,
+                    sender_email=email_config.email_from
+                )
+                
+                # Enviar recibo
+                success, message = email_service.send_cuota_receipt_email(
+                    db=db,
+                    cuota=db_cuota, 
+                    recipient_email=usuario.email
+                )
+                
+                # Actualizar estado del envío
+                if success:
+                    db_cuota.email_enviado = True
+                    db_cuota.fecha_envio_email = datetime.now()
+                    db_cuota.email_destinatario = usuario.email
+                    db.commit()
+                    db.refresh(db_cuota)
+                    print(f"Recibo de cuota enviado por email a {usuario.email}")
+                else:
+                    print(f"Error al enviar recibo de cuota: {message}")
+    except Exception as e:
+        print(f"Error en envío de recibo de cuota por email: {str(e)}")
+    
     db.refresh(db_cuota)
     return db_cuota
+# Función para reenviar recibo en crud.py
+def reenviar_recibo_cuota(db: Session, cuota_id: int, email: str = None):
+    # Obtener la cuota
+    db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
+    if not db_cuota:
+        return {"success": False, "message": "Cuota no encontrada"}
+    
+    if not db_cuota.pagado:
+        return {"success": False, "message": "La cuota no ha sido pagada aún"}
+    
+    # Obtener usuario
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
+    
+    # Determinar el email a usar
+    recipient_email = email if email else (usuario.email if usuario else None)
+    
+    if not recipient_email:
+        return {"success": False, "message": "No hay email destinatario disponible"}
+    
+    # Obtener configuración de email
+    email_config = get_active_email_config(db)
+    if not email_config:
+        return {"success": False, "message": "No hay configuración de email activa"}
+    
+    # Importar aquí para evitar problemas de importación circular
+    from email_service import EmailService
+    
+    # Enviar el recibo
+    email_service = EmailService(
+        smtp_server=email_config.smtp_server,
+        smtp_port=email_config.smtp_port,
+        username=email_config.smtp_username,
+        password=email_config.smtp_password,
+        sender_email=email_config.email_from
+    )
+    
+    success, message = email_service.send_cuota_receipt_email(
+        db=db,
+        cuota=db_cuota, 
+        recipient_email=recipient_email
+    )
+    
+    # Actualizar estado
+    if success:
+        db_cuota.email_enviado = True
+        db_cuota.fecha_envio_email = datetime.now()
+        db_cuota.email_destinatario = recipient_email
+        db.commit()
+        db.refresh(db_cuota)
+        return {"success": True, "message": "Recibo de cuota enviado exitosamente"}
+    else:
+        return {"success": False, "message": message}
 
 def delete_cuota(db: Session, cuota_id: int):
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
