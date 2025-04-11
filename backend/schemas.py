@@ -140,7 +140,7 @@ class PagoBase(BaseModel):
     usuario_id: int
     fecha: date
     monto: float
-    retencion_id: int
+    retencion_id: Optional[int] = None  # Hacer este campo opcional
     transaccion_id: Optional[int] = None
 
 class PagoCreate(BaseModel):
@@ -164,11 +164,10 @@ class Pago(PagoBase):
 
 class PagoDetalle(Pago):
     usuario: Usuario
-    retencion: Optional[Retencion] = None
+    retencion: Optional[Retencion] = None  # Hacer la retención opcional
     
     class Config:
         orm_mode = True
-
 # Cobranza Schemas
 class CobranzaBase(BaseModel):
     usuario_id: int
