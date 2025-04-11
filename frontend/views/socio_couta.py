@@ -26,8 +26,7 @@ class SocioCuotaView(QWidget):
         self.connect_signals()
         self.usuarios = []
         
-        # Forzar carga inmediata
-        QTimer.singleShot(500, self.cargar_usuarios)
+        
     
     def showEvent(self, event):
         """Se ejecuta cuando el widget se hace visible"""
@@ -694,9 +693,13 @@ class SocioCuotaView(QWidget):
     def cargar_usuarios(self):
         """Carga la lista de usuarios desde la API"""
         try:
+            # Verificar que haya token antes de hacer la petición
+            if not session.token:
+                print("No hay token de sesión para cargar usuarios")
+                return
+                
             headers = session.get_headers()
             url = f"{session.api_url}/usuarios"
-            print(f"Realizando petición GET a: {url}")
             
             response = requests.get(url, headers=headers)
             

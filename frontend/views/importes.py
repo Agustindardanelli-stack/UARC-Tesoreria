@@ -25,7 +25,7 @@ class ImportesView(QWidget):
         self.connect_signals()
         self.retenciones = []
         self.categorias = []
-        self.refresh_data() 
+        
     
     def setup_ui(self):
         # Layout principal
@@ -279,6 +279,11 @@ class ImportesView(QWidget):
     def cargar_retenciones(self):
         """Carga la lista de retenciones desde la API"""
         try:
+            # Verificar que haya token antes de hacer la petición
+            if not session.token:
+                print("No hay token de sesión para cargar retenciones")
+                return
+                
             headers = session.get_headers()
             
             # Asegúrate de que la URL coincida con la del backend
@@ -318,6 +323,11 @@ class ImportesView(QWidget):
     def cargar_categorias(self):
         """Carga la lista de categorías desde la API"""
         try:
+            # Verificar que haya token antes de hacer la petición
+            if not session.token:
+                print("No hay token de sesión para cargar categorías")
+                return
+                
             headers = session.get_headers()
             response = requests.get(f"{session.api_url}/categorias", headers=headers)
             

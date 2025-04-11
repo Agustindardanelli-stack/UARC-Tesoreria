@@ -1050,7 +1050,7 @@ class ReportesView(QWidget):
         try:
             # Verificar si hay datos para exportar
             if self.libro_table.rowCount() == 0:
-                QMessageBox.warning(self, "Advertencia", "No hay datos para exportar")
+                QMessageBox.warning(self, "Advertencia", "No hay datos para exportar") 
                 return
             
             # Seleccionar ruta para guardar

@@ -150,10 +150,19 @@ class DashboardView(QWidget):
         super().__init__()
         self.setup_ui()
         self.connect_signals()
+        
         # Temporizador para la hora
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_time)
         self.timer.start(1000)  # Actualizar cada segundo
+        
+        # NUEVO: Temporizador para actualizar datos cada 30 segundos
+        self.data_timer = QTimer(self)
+        self.data_timer.timeout.connect(self.refresh_data)
+        self.data_timer.start(30000)  # Actualizar cada 30 segundos
+        
+        # Cargar datos iniciales
+        self.refresh_data()
     
     def setup_ui(self):
         # Layout principal
@@ -183,6 +192,11 @@ class DashboardView(QWidget):
         datetime_layout.addWidget(self.time_label)
         self.content_layout.addLayout(datetime_layout)
         
+        # NUEVO: Botón de actualización manual
+        refresh_btn = QPushButton("Actualizar datos")
+        refresh_btn.clicked.connect(self.refresh_data)
+        datetime_layout.addWidget(refresh_btn)
+        
         # Indicadores
         indicators_layout = QHBoxLayout()
         self.balance_indicator = IndicatorWidget("Balance Actual", "$0.00")
@@ -195,22 +209,6 @@ class DashboardView(QWidget):
         indicators_layout.addWidget(self.egresos_indicator)
         indicators_layout.addWidget(self.cuotas_indicator)
         self.content_layout.addLayout(indicators_layout)
-        
-        # Gráficos
-        # self.charts_layout = QVBoxLayout()
-        
-        # # Gráfico de ingresos/egresos
-        # self.chart_title = QLabel("Evolución de Ingresos y Egresos")
-        # chart_title_font = QFont()
-        # chart_title_font.setPointSize(16)
-        # self.chart_title.setFont(chart_title_font)
-        # self.charts_layout.addWidget(self.chart_title)
-        
-        # # Canvas para gráfico
-        # self.plot_canvas = MatplotlibCanvas(self, width=5, height=4, dpi=100)
-        # self.charts_layout.addWidget(self.plot_canvas)
-        
-        # self.content_layout.addLayout(self.charts_layout)
         
         # Tabla de partidas recientes
         self.partidas_label = QLabel("Últimos movimientos")
@@ -240,6 +238,7 @@ class DashboardView(QWidget):
     
     def refresh_data(self):
         """Actualiza los datos del dashboard"""
+        print("Actualizando datos del dashboard...")  # NUEVO: Mensaje de depuración
         self.load_balance_data()
         self.load_partidas_data()
     
@@ -268,11 +267,6 @@ class DashboardView(QWidget):
             if (balance_response.status_code == 200 and 
                 ingresos_egresos_response.status_code == 200 and 
                 cuotas_pendientes_response.status_code == 200):
-                
-                # Imprimir respuestas para depuración
-                # print("Balance response:", balance_response.text)
-                # print("Ingresos/Egresos response:", ingresos_egresos_response.text)
-                # print("Cuotas pendientes response:", cuotas_pendientes_response.text)
                 
                 # Procesar respuestas con manejo de diferentes formatos
                 try:
@@ -315,8 +309,7 @@ class DashboardView(QWidget):
                     cuotas_pendientes = 0
                     print(f"Error al procesar cuotas_pendientes_data: {e}")
                 
-                # Actualizar indicadores - Corregido para acceder a los labels correctamente
-                # Encontrar todos los QLabel hijos de cada indicador
+                # Actualizar indicadores - Encontrar todos los QLabel hijos de cada indicador
                 balance_labels = self.balance_indicator.findChildren(QLabel)
                 ingresos_labels = self.ingresos_indicator.findChildren(QLabel)
                 egresos_labels = self.egresos_indicator.findChildren(QLabel)
@@ -332,32 +325,11 @@ class DashboardView(QWidget):
                 if len(cuotas_labels) > 1:
                     cuotas_labels[1].setText(f"{cuotas_pendientes}")
                 
-                # Crear gráfico solo si hay datos
-                if isinstance(ingresos_egresos_data, dict) and 'datos' in ingresos_egresos_data and ingresos_egresos_data['datos']:
-                    df_ie = pd.DataFrame(ingresos_egresos_data['datos'])
-                    
-                    # Limpiar el gráfico anterior
-                    self.plot_canvas.axes.clear()
-                    
-                    # Configurar nuevo gráfico
-                    x = range(len(df_ie['mes']))
-                    width = 0.35
-                    
-                    self.plot_canvas.axes.bar([i - width/2 for i in x], df_ie['ingresos'], width, label='Ingresos', color='green')
-                    self.plot_canvas.axes.bar([i + width/2 for i in x], df_ie['egresos'], width, label='Egresos', color='red')
-                    
-                    self.plot_canvas.axes.set_xlabel('Mes')
-                    self.plot_canvas.axes.set_ylabel('Monto ($)')
-                    self.plot_canvas.axes.set_title('Ingresos y Egresos Mensuales')
-                    self.plot_canvas.axes.set_xticks(x)
-                    self.plot_canvas.axes.set_xticklabels(df_ie['nombre_mes'])  # Usando nombre_mes en lugar de mes
-                    self.plot_canvas.axes.legend()
-                    
-                    self.plot_canvas.fig.tight_layout()
-                    self.plot_canvas.draw()
+                # NUEVO: Mensaje de éxito
+                print("Datos de balance actualizados correctamente")
+                
         except Exception as e:
             print(f"Error al cargar datos del balance: {e}")
-            # No mostrar cuadro de mensaje para evitar bloquear la interfaz
     
     def load_partidas_data(self):
         """Carga las últimas partidas"""
@@ -406,5 +378,18 @@ class DashboardView(QWidget):
                     
                     # Ajustar columnas
                     self.partidas_table.resizeColumnsToContents()
+                    
+                    # NUEVO: Mensaje de éxito
+                    print("Partidas actualizadas correctamente")
+                else:
+                    print("No se encontraron partidas para mostrar")
+            else:
+                print(f"Error al obtener partidas: {partidas_response.status_code}")
+                
         except Exception as e:
             print(f"Error al cargar partidas: {e}")
+    
+    # NUEVO: Método para ser llamado cuando se vuelve al dashboard
+    def on_show(self):
+        """Método que se llama cuando el dashboard se muestra después de navegar"""
+        self.refresh_data()

@@ -96,6 +96,7 @@ jspm_packages/
 package-lock.json
 yarn.lock
 pip-lock.txt
+.gitignore
 
 # Archivos específicos de tu proyecto (añade aquí más patrones si es necesario)
 # ejemplo:

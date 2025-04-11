@@ -150,6 +150,8 @@ class MainWindow(QMainWindow):
             
         if view_name == "dashboard":
             self.stacked_widget.setCurrentWidget(self.dashboard_view)
+            # Actualizar los datos cuando se regresa al dashboard
+            self.dashboard_view.refresh_data()
         elif view_name == "pagos":
             self.stacked_widget.setCurrentWidget(self.pagos_view)
         elif view_name == "cobranzas":
