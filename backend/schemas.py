@@ -164,7 +164,7 @@ class Pago(PagoBase):
 
 class PagoDetalle(Pago):
     usuario: Usuario
-    retencion: Retencion
+    retencion: Optional[Retencion] = None 
     
     class Config:
         orm_mode = True
