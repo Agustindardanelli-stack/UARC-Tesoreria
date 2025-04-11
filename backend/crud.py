@@ -293,13 +293,27 @@ def reenviar_orden_pago(db: Session, pago_id: int, email: str = None):
         db.refresh(db_pago)
         return {"success": True, "message": "Orden de pago enviada exitosamente"}
     else:
-        return {"success": False, "message": message}
-    
+        return {"success": False, "message": message}  
+
+
 def get_pago(db: Session, pago_id: int):
-    return db.query(models.Pago).filter(models.Pago.id == pago_id).first()
+    pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
+    
+    # Si el pago existe y no tiene retención, establecer retencion como None
+    if pago and pago.retencion_id is None:
+        pago.retencion = None
+    
+    return pago
 
 def get_pagos(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Pago).order_by(desc(models.Pago.fecha)).offset(skip).limit(limit).all()
+    pagos = db.query(models.Pago).order_by(desc(models.Pago.fecha)).offset(skip).limit(limit).all()
+    
+    # Asegurarse de que los pagos sin retención tengan retencion como None
+    for pago in pagos:
+        if pago.retencion_id is None:
+            pago.retencion = None
+    
+    return pagos
 
 def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate):
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
