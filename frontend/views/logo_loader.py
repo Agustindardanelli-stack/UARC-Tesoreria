@@ -10,11 +10,12 @@ def get_resource_path(relative_path):
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
-
+    
     return os.path.join(base_path, relative_path)
 
 def load_logo(logo_label, logo_filename, width, height):
     """Cargar y escalar logo desde assets"""
+    # Asumiendo que logo_filename ya viene con la extensión correcta (.png)
     logo_path = get_resource_path(os.path.join("assets", logo_filename))
     
     if os.path.exists(logo_path):

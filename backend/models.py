@@ -68,7 +68,7 @@ class Pago(Base):
     usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
     fecha = Column(Date, nullable=False)
     monto = Column(Numeric(10, 2), nullable=False)
-    retencion_id = Column(Integer, ForeignKey("retenciones.id", ondelete="CASCADE"), nullable=False)
+    retencion_id = Column(Integer, ForeignKey("retenciones.id", ondelete="CASCADE"), nullable=True)
     transaccion_id = Column(Integer, ForeignKey("transacciones.id"), nullable=True)
     
     # Relaciones

@@ -132,16 +132,19 @@ def get_retenciones(skip: int = 0, limit: int = 100, db: Session = Depends(get_d
     return retenciones
 
 # Rutas de Pagos
+# Rutas de Pagos
 @app.post(f"{settings.API_PREFIX}/pagos", response_model=schemas.Pago, tags=["Pagos"])
 def create_pago(pago: schemas.PagoCreate, db: Session = Depends(get_db), current_user: models.Usuario = Depends(is_tesorero)):
-    # Validar que el usuario y la retención existan
+    # Validar que el usuario exista
     usuario = crud.get_usuario(db, usuario_id=pago.usuario_id)
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
-    retencion = crud.get_retencion(db, retencion_id=pago.retencion_id)
-    if not retencion:
-        raise HTTPException(status_code=404, detail="Retención no encontrada")
+    # Validar la retención solo si se proporciona
+    if pago.retencion_id is not None:
+        retencion = crud.get_retencion(db, retencion_id=pago.retencion_id)
+        if not retencion:
+            raise HTTPException(status_code=404, detail="Retención no encontrada")
     
     return crud.create_pago(db=db, pago=pago)
 

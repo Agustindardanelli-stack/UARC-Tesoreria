@@ -23,7 +23,7 @@ class LoginView(QWidget):
         
         # Logotipo
         self.logo_label = QLabel()
-        load_logo(self.logo_label, "UarcLogo.jpg", 150, 150)
+        load_logo(self.logo_label, "UarcLogo.png", 150, 150)
         self.content_layout.addWidget(self.logo_label)
         
         # Título

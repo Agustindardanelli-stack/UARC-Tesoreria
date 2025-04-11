@@ -294,10 +294,6 @@ class PagosView(QWidget):
             QMessageBox.warning(self, "Error", "Por favor seleccione un árbitro")
             return
         
-        if self.retencion_combo.currentIndex() < 0:
-            QMessageBox.warning(self, "Error", "Por favor seleccione una retención")
-            return
-        
         if self.monto_spin.value() <= 0:
             QMessageBox.warning(self, "Error", "El monto debe ser mayor a cero")
             return
@@ -305,16 +301,19 @@ class PagosView(QWidget):
         # Obtener datos
         usuario_id = self.arbitro_combo.currentData()
         fecha = self.fecha_edit.date().toString("yyyy-MM-dd")
-        retencion_id = self.retencion_combo.currentData()
         monto = self.monto_spin.value()
         
         # Crear objeto de pago
         pago_data = {
             "usuario_id": usuario_id,
             "fecha": fecha,
-            "monto": monto,
-            "retencion_id": retencion_id
+            "monto": monto
         }
+        
+        # Solo agregar retencion_id si se ha seleccionado una retención
+        if self.retencion_combo.currentIndex() >= 0:
+            retencion_id = self.retencion_combo.currentData()
+            pago_data["retencion_id"] = retencion_id
         
         try:
             # Enviar solicitud para crear pago

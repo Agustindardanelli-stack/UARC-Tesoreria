@@ -30,7 +30,7 @@ class SidebarWidget(QWidget):
 
         # Logo
         self.logo_label = QLabel()
-        load_logo(self.logo_label, "UarcLogo.jpg", 200, 200)
+        load_logo(self.logo_label, "UarcLogo.png", 200, 200)
         layout.addWidget(self.logo_label)
 
         # Título

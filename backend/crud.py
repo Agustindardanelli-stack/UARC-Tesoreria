@@ -179,10 +179,21 @@ def create_pago(db: Session, pago: schemas.PagoCreate):
     db.commit()
     db.refresh(db_pago)
     
+    # Obtener información del usuario para el detalle
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
+    nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
+    
+    # Preparar el detalle, agregando la retención si existe
+    detalle = f"Pago a {nombre_usuario}"
+    if db_pago.retencion_id:
+        retencion = db.query(models.Retencion).filter(models.Retencion.id == db_pago.retencion_id).first()
+        if retencion:
+            detalle += f" - {retencion.nombre}"
+    
     # Crear partida asociada al pago (egreso)
     partida = models.Partida(
         fecha=db_pago.fecha,
-        detalle=f"Pago a {db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first().nombre}",
+        detalle=detalle,
         monto=db_pago.monto,
         tipo="egreso",
         cuenta="CAJA",
@@ -196,9 +207,6 @@ def create_pago(db: Session, pago: schemas.PagoCreate):
     db.commit()
     
     try:
-        # Obtener usuario para su email
-        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
-        
         # Verificar si hay configuración de email activa y el usuario tiene email
         if usuario and usuario.email:
             email_config = get_active_email_config(db)
@@ -237,6 +245,7 @@ def create_pago(db: Session, pago: schemas.PagoCreate):
         print(f"Error en envío de orden de pago por email: {str(e)}")
     
     return db_pago
+
 def reenviar_orden_pago(db: Session, pago_id: int, email: str = None):
     # Obtener el pago
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
@@ -285,7 +294,7 @@ def reenviar_orden_pago(db: Session, pago_id: int, email: str = None):
         return {"success": True, "message": "Orden de pago enviada exitosamente"}
     else:
         return {"success": False, "message": message}
-
+    
 def get_pago(db: Session, pago_id: int):
     return db.query(models.Pago).filter(models.Pago.id == pago_id).first()
 

@@ -143,8 +143,11 @@ class PagoBase(BaseModel):
     retencion_id: int
     transaccion_id: Optional[int] = None
 
-class PagoCreate(PagoBase):
-    pass
+class PagoCreate(BaseModel):
+    usuario_id: int
+    fecha: date
+    monto: float
+    retencion_id: Optional[int] = None
 
 class PagoUpdate(BaseModel):
     usuario_id: Optional[int] = None
