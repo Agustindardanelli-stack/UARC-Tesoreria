@@ -7,6 +7,7 @@ def audit_trail(tabla_afectada):
     def decorator(func):
         @wraps(func)
         def wrapper(db: Session, *args, **kwargs):
+            # Extraer current_user_id de los kwargs
             current_user_id = kwargs.get('current_user_id')
             
             print(f"Iniciando auditoría para {tabla_afectada}")
@@ -32,23 +33,17 @@ def audit_trail(tabla_afectada):
             # Obtener el ID del registro
             registro_id = getattr(resultado, 'id', None)
             
-            # Crear registro de auditoría si hay usuario y registro
-            if current_user_id and registro_id:
+            # Crear registro de auditoría si hay registro (incluso si no hay usuario)
+            if registro_id:
                 print(f"Creando registro de auditoría para {tabla_afectada}")
                 registro_auditoria = models.Auditoria(
-                    usuario_id=current_user_id,
+                    usuario_id=current_user_id,  # Puede ser None, pero se registra la acción de todos modos
                     accion=accion,
                     tabla_afectada=tabla_afectada,
                     registro_id=registro_id,
                     fecha=datetime.now(),
                     detalles=str(resultado)
                 )
-                
-                # Asignar ID específico según la tabla
-                if tabla_afectada == 'partidas':
-                    registro_auditoria.pago_id = registro_id
-                
-                
                 
                 # Asignar ID específico según la tabla
                 if tabla_afectada == 'pagos':
@@ -58,11 +53,10 @@ def audit_trail(tabla_afectada):
                 elif tabla_afectada == 'cuota':
                     registro_auditoria.cuota_id = registro_id
                 elif tabla_afectada == 'partidas':
-                    # Añade aquí otros modelos si es necesario
+                    # No se hace nada especial para partidas por ahora
                     pass
                 
                 db.add(registro_auditoria)
-                
                 db.commit()
                 print(f"Registro de auditoría creado para {tabla_afectada}")
             
