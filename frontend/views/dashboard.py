@@ -333,8 +333,6 @@ class DashboardView(QWidget):
     
     def load_partidas_data(self):
         """Carga las últimas partidas"""
-        usuario_accion = partida.get('usuario_auditoria', 'Sin registro')
-        self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
         try:
             headers = session.get_headers()
             partidas_response = requests.get(
@@ -342,21 +340,11 @@ class DashboardView(QWidget):
                 headers=headers
             )
             
-            # Solicitar también la auditoría de estas partidas
-            auditoria_response = requests.get(
-                f"{session.api_url}/auditoria?tabla_afectada=partidas&limit=10",
-                headers=headers
-            )
+            print("Respuesta de partidas:", partidas_response.status_code)
+            print("Contenido de partidas:", partidas_response.json())
             
-            if partidas_response.status_code == 200 and auditoria_response.status_code == 200:
+            if partidas_response.status_code == 200:
                 partidas_data = partidas_response.json()
-                auditoria_data = auditoria_response.json()
-                
-                # Crear un mapeo de partida_id a nombre de usuario de auditoría
-                auditoria_map = {
-                    registro['registro_id']: registro.get('usuario', {}).get('nombre', 'Sin usuario')
-                    for registro in auditoria_data
-                }
                 
                 # Limpiar tabla
                 self.partidas_table.setColumnCount(7)
@@ -365,38 +353,36 @@ class DashboardView(QWidget):
                 
                 if partidas_data:
                     # Llenar tabla con datos
-                    for row, partida in enumerate(partidas_data):
+                    for row, partida_item in enumerate(partidas_data):
                         self.partidas_table.insertRow(row)
                         
                         # Fecha
-                        fecha = datetime.strptime(partida.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if partida.get('fecha') else ''
+                        fecha = datetime.strptime(partida_item.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if partida_item.get('fecha') else ''
                         self.partidas_table.setItem(row, 0, QTableWidgetItem(fecha))
                         
                         # Cuenta
-                        self.partidas_table.setItem(row, 1, QTableWidgetItem(partida.get('cuenta', '')))
+                        self.partidas_table.setItem(row, 1, QTableWidgetItem(partida_item.get('cuenta', '')))
                         
                         # Detalle
-                        self.partidas_table.setItem(row, 2, QTableWidgetItem(partida.get('detalle', '')))
-
-                        usuario_accion = partida.get('usuario_auditoria', 'Sin registro')
-                        self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
+                        self.partidas_table.setItem(row, 2, QTableWidgetItem(partida_item.get('detalle', '')))
                         
-                        # Usuario que realizó la acción (de la auditoría)
-                        usuario_accion = auditoria_map.get(partida.get('id'), 'Sin registro')
+                        # Usuario que realizó
+                        usuario_accion = partida_item.get('usuario_auditoria', 'Sin registro')
+                        print(f"Usuario de acción para partida {row}: {usuario_accion}")
                         self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
                         
                         # Ingreso
-                        ingreso_item = QTableWidgetItem(f"${partida.get('ingreso', 0):,.2f}")
+                        ingreso_item = QTableWidgetItem(f"${partida_item.get('ingreso', 0):,.2f}")
                         ingreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                         self.partidas_table.setItem(row, 4, ingreso_item)
                         
                         # Egreso
-                        egreso_item = QTableWidgetItem(f"${partida.get('egreso', 0):,.2f}")
+                        egreso_item = QTableWidgetItem(f"${partida_item.get('egreso', 0):,.2f}")
                         egreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                         self.partidas_table.setItem(row, 5, egreso_item)
                         
                         # Saldo
-                        saldo_item = QTableWidgetItem(f"${partida.get('saldo', 0):,.2f}")
+                        saldo_item = QTableWidgetItem(f"${partida_item.get('saldo', 0):,.2f}")
                         saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                         self.partidas_table.setItem(row, 6, saldo_item)
                     
@@ -407,7 +393,7 @@ class DashboardView(QWidget):
                 else:
                     print("No se encontraron partidas para mostrar")
             else:
-                print(f"Error al obtener partidas o auditoría: {partidas_response.status_code}, {auditoria_response.status_code}")
+                print(f"Error al obtener partidas: {partidas_response.status_code}")
                 
         except Exception as e:
             print(f"Error al cargar partidas: {e}")
