@@ -165,6 +165,7 @@ class Pago(PagoBase):
 class PagoDetalle(Pago):
     usuario: Usuario
     retencion: Optional[Retencion] = None  # Hacer la retención opcional
+    usuario_auditoria: Optional[str] = None
     
     class Config:
         orm_mode = True
@@ -192,7 +193,7 @@ class Cobranza(CobranzaBase):
 
 class CobranzaDetalle(Cobranza):
     usuario: Usuario
-    
+    usuario_auditoria: Optional[str] = None
     class Config:
         orm_mode = True
 
@@ -236,6 +237,7 @@ class Partida(PartidaBase):
 
 class PartidaDetalle(Partida):
     usuario: Usuario
+    usuario_auditoria: Optional[str] = None 
     
     class Config:
         orm_mode = True
@@ -266,7 +268,7 @@ class Cuota(CuotaBase):
 
 class CuotaDetalle(Cuota):
     usuario: Optional[Usuario] = None
-    
+    usuario_auditoria: Optional[str] = None
     class Config:
         orm_mode = True
 
@@ -307,6 +309,10 @@ class AuditoriaBase(BaseModel):
     accion: str
     tabla_afectada: str
     registro_id: int
+    detalles: Optional[str] = None
+    pago_id: Optional[int] = None
+    cobranza_id: Optional[int] = None
+    cuota_id: Optional[int] = None
 
 class AuditoriaCreate(AuditoriaBase):
     pass
@@ -320,6 +326,9 @@ class Auditoria(AuditoriaBase):
 
 class AuditoriaDetalle(Auditoria):
     usuario: Optional[Usuario] = None
+    pago: Optional[Pago] = None
+    cobranza: Optional[Cobranza] = None
+    cuota: Optional[Cuota] = None
     
     class Config:
         orm_mode = True

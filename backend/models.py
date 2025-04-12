@@ -78,6 +78,7 @@ class Pago(Base):
     usuario = relationship("Usuario", back_populates="pagos")
     retencion = relationship("Retencion", back_populates="pagos")
     transaccion = relationship("Transaccion", back_populates="pagos")
+    auditorias = relationship("Auditoria", back_populates="pago")
     partidas = relationship("Partida", back_populates="pago")
     email_enviado = Column(Boolean, default=False)
     fecha_envio_email = Column(DateTime, nullable=True)
@@ -91,8 +92,9 @@ class Cobranza(Base):
     fecha = Column(Date, nullable=False)
     monto = Column(Numeric(10, 2), nullable=False)
     transaccion_id = Column(Integer, ForeignKey("transacciones.id"), nullable=True)
-    
+    auditorias = relationship("Auditoria", back_populates="cobranza")
     # Nuevos campos para tracking de email
+
     email_enviado = Column(Boolean, default=False)
     fecha_envio_email = Column(DateTime, nullable=True)
     email_destinatario = Column(String(100), nullable=True)
@@ -153,6 +155,7 @@ class Cuota(Base):
     
     # Relaciones
     usuario = relationship("Usuario", back_populates="cuotas")
+    auditorias = relationship("Auditoria", back_populates="cuota")
 
 class Transaccion(Base):
     __tablename__ = "transacciones"
@@ -183,6 +186,16 @@ class Auditoria(Base):
     tabla_afectada = Column(Text, nullable=False)
     registro_id = Column(Integer, nullable=False)
     fecha = Column(DateTime, default=func.current_timestamp())
+    detalles = Column(Text, nullable=True)
     
-    # Relaciones
+    # Relaciones con otros modelos
     usuario = relationship("Usuario", back_populates="auditorias")
+    
+    # Relaciones específicas (opcional, dependiendo de tus necesidades)
+    pago_id = Column(Integer, ForeignKey("pagos.id"), nullable=True)
+    cobranza_id = Column(Integer, ForeignKey("cobranzas.id"), nullable=True)
+    cuota_id = Column(Integer, ForeignKey("cuota.id"), nullable=True)
+    
+    pago = relationship("Pago", back_populates="auditorias")
+    cobranza = relationship("Cobranza", back_populates="auditorias")
+    cuota = relationship("Cuota", back_populates="auditorias")

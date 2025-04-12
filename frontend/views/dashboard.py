@@ -333,6 +333,8 @@ class DashboardView(QWidget):
     
     def load_partidas_data(self):
         """Carga las últimas partidas"""
+        usuario_accion = partida.get('usuario_auditoria', 'Sin registro')
+        self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
         try:
             headers = session.get_headers()
             partidas_response = requests.get(
@@ -340,10 +342,25 @@ class DashboardView(QWidget):
                 headers=headers
             )
             
-            if partidas_response.status_code == 200:
+            # Solicitar también la auditoría de estas partidas
+            auditoria_response = requests.get(
+                f"{session.api_url}/auditoria?tabla_afectada=partidas&limit=10",
+                headers=headers
+            )
+            
+            if partidas_response.status_code == 200 and auditoria_response.status_code == 200:
                 partidas_data = partidas_response.json()
+                auditoria_data = auditoria_response.json()
+                
+                # Crear un mapeo de partida_id a nombre de usuario de auditoría
+                auditoria_map = {
+                    registro['registro_id']: registro.get('usuario', {}).get('nombre', 'Sin usuario')
+                    for registro in auditoria_data
+                }
                 
                 # Limpiar tabla
+                self.partidas_table.setColumnCount(7)
+                self.partidas_table.setHorizontalHeaderLabels(["Fecha", "Cuenta", "Detalle", "Usuario que realizó", "Ingreso", "Egreso", "Saldo"])
                 self.partidas_table.setRowCount(0)
                 
                 if partidas_data:
@@ -360,31 +377,37 @@ class DashboardView(QWidget):
                         
                         # Detalle
                         self.partidas_table.setItem(row, 2, QTableWidgetItem(partida.get('detalle', '')))
+
+                        usuario_accion = partida.get('usuario_auditoria', 'Sin registro')
+                        self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
+                        
+                        # Usuario que realizó la acción (de la auditoría)
+                        usuario_accion = auditoria_map.get(partida.get('id'), 'Sin registro')
+                        self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
                         
                         # Ingreso
                         ingreso_item = QTableWidgetItem(f"${partida.get('ingreso', 0):,.2f}")
                         ingreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.partidas_table.setItem(row, 3, ingreso_item)
+                        self.partidas_table.setItem(row, 4, ingreso_item)
                         
                         # Egreso
                         egreso_item = QTableWidgetItem(f"${partida.get('egreso', 0):,.2f}")
                         egreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.partidas_table.setItem(row, 4, egreso_item)
+                        self.partidas_table.setItem(row, 5, egreso_item)
                         
                         # Saldo
                         saldo_item = QTableWidgetItem(f"${partida.get('saldo', 0):,.2f}")
                         saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.partidas_table.setItem(row, 5, saldo_item)
+                        self.partidas_table.setItem(row, 6, saldo_item)
                     
                     # Ajustar columnas
                     self.partidas_table.resizeColumnsToContents()
                     
-                    # NUEVO: Mensaje de éxito
                     print("Partidas actualizadas correctamente")
                 else:
                     print("No se encontraron partidas para mostrar")
             else:
-                print(f"Error al obtener partidas: {partidas_response.status_code}")
+                print(f"Error al obtener partidas o auditoría: {partidas_response.status_code}, {auditoria_response.status_code}")
                 
         except Exception as e:
             print(f"Error al cargar partidas: {e}")

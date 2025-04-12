@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from datetime import date, datetime
 import models
 import schemas
+from audit_middleware import audit_trail
 from auth import get_password_hash
 
 # Funciones CRUD para Usuarios
@@ -173,6 +174,7 @@ def delete_retencion(db: Session, retencion_id: int):
     return {"message": "Retención eliminada exitosamente"}
 
 # Funciones CRUD para Pagos
+@audit_trail("pagos")
 def create_pago(db: Session, pago: schemas.PagoCreate):
     db_pago = models.Pago(**pago.dict())
     db.add(db_pago)
@@ -295,7 +297,7 @@ def reenviar_orden_pago(db: Session, pago_id: int, email: str = None):
     else:
         return {"success": False, "message": message}  
 
-
+@audit_trail("pagos")
 def get_pagos(db: Session, skip: int = 0, limit: int = 100):
     pagos = db.query(models.Pago).order_by(desc(models.Pago.fecha)).offset(skip).limit(limit).all()
     
@@ -304,7 +306,7 @@ def get_pagos(db: Session, skip: int = 0, limit: int = 100):
             pago.retencion = None
     
     return pagos
-
+@audit_trail("pagos")
 def get_pago(db: Session, pago_id: int):
     pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     
@@ -312,7 +314,7 @@ def get_pago(db: Session, pago_id: int):
         pago.retencion = None
     
     return pago
-
+@audit_trail("pagos")
 def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate):
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not db_pago:
@@ -337,7 +339,7 @@ def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate):
         db.commit()
     
     return db_pago
-
+@audit_trail("pagos")
 def delete_pago(db: Session, pago_id: int):
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not db_pago:
@@ -405,6 +407,7 @@ def reenviar_recibo(db: Session, cobranza_id: int, email: str = None):
         return {"success": False, "message": message}
 
 # Funciones CRUD para Cobranzas
+@audit_trail("cobranza")
 def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate):
     db_cobranza = models.Cobranza(**cobranza.dict())  # Nota: cambié cobranza_data a cobranza.dict()
     db.add(db_cobranza)
@@ -476,7 +479,7 @@ def get_cobranza(db: Session, cobranza_id: int):
 
 def get_cobranzas(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Cobranza).order_by(desc(models.Cobranza.fecha)).offset(skip).limit(limit).all()
-
+@audit_trail("cobranza")
 def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.CobranzaUpdate):
     db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
     if not db_cobranza:
@@ -501,7 +504,7 @@ def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.Cobr
         db.commit()
     
     return db_cobranza
-
+@audit_trail("cobranza")
 def delete_cobranza(db: Session, cobranza_id: int):
     db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
     if not db_cobranza:
@@ -517,6 +520,7 @@ def delete_cobranza(db: Session, cobranza_id: int):
     return {"message": "Cobranza eliminada exitosamente"}
 
 # Funciones CRUD para Cuotas
+@audit_trail("cuota")
 def create_cuota(db: Session, cuota: schemas.CuotaCreate):
     db_cuota = models.Cuota(**cuota.dict())
     db.add(db_cuota)
@@ -542,7 +546,7 @@ def get_cuotas_by_usuario(db: Session, usuario_id: int, pagado: Optional[bool] =
         query = query.filter(models.Cuota.pagado == pagado)
     
     return query.order_by(desc(models.Cuota.fecha)).all()
-
+@audit_trail("cuota")
 def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate):
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
     if not db_cuota:
@@ -556,7 +560,7 @@ def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate):
     db.commit()
     db.refresh(db_cuota)
     return db_cuota
-
+@audit_trail("cuota")
 def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float):
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
     if not db_cuota:
@@ -855,25 +859,29 @@ def delete_transaccion(db: Session, transaccion_id: int):
     return {"message": "Transacción eliminada exitosamente"}
 
 # Funciones para Auditoría
-def get_auditoria(db: Session, skip: int = 0, limit: int = 100, 
-                 tabla_afectada: Optional[str] = None, usuario_id: Optional[int] = None,
-                 fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):
-    query = db.query(models.Auditoria)
+def get_partida(db: Session, partida_id: int = None, skip: int = 0, limit: int = 100, 
+               fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
+               tipo: Optional[str] = None, cuenta: Optional[str] = None):
+    query = db.query(models.Partida)
     
     # Aplicar filtros
-    if tabla_afectada:
-        query = query.filter(models.Auditoria.tabla_afectada == tabla_afectada)
-    
-    if usuario_id:
-        query = query.filter(models.Auditoria.usuario_id == usuario_id)
-    
     if fecha_desde:
-        query = query.filter(models.Auditoria.fecha >= fecha_desde)
+        query = query.filter(models.Partida.fecha >= fecha_desde)
     
     if fecha_hasta:
-        query = query.filter(models.Auditoria.fecha <= fecha_hasta)
+        query = query.filter(models.Partida.fecha <= fecha_hasta)
     
-    return query.order_by(desc(models.Auditoria.fecha)).offset(skip).limit(limit).all()
+    if tipo:
+        query = query.filter(models.Partida.tipo == tipo)
+    
+    if cuenta:
+        query = query.filter(models.Partida.cuenta == cuenta)
+    
+    # Ordenar y paginar
+    query = query.order_by(desc(models.Partida.fecha)).offset(skip).limit(limit)
+    
+    # Obtener resultados
+    return query.all()
 
 # Funciones para Reportes
 def get_balance(db: Session, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):
