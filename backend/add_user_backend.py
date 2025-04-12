@@ -28,20 +28,7 @@ class UserManager:
             print(f"Error al verificar usuario existente: {str(e)}")
             return False
     
-    def add_user(self, nombre: str, email: str, password: str, rol_id: int = None, rol_nombre: str = None) -> Tuple[bool, str]:
-        """
-        Agrega un nuevo usuario a la base de datos
-        
-        Args:
-            nombre: Nombre del usuario
-            email: Email del usuario
-            password: Contraseña sin hashear
-            rol_id: ID del rol asignado (opcional si se proporciona rol_nombre)
-            rol_nombre: Nombre del rol (opcional si se proporciona rol_id)
-            
-        Returns:
-            Tupla con (éxito, mensaje)
-        """
+    def add_user(self, nombre: str, email: str, password: str, rol_id: int = None, rol_nombre: str = None) -> Tuple[bool, str]:        
         try:
             # Verificar si el usuario ya existe
             if self.check_user_exists(email):

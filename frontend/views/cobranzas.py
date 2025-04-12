@@ -85,7 +85,7 @@ class CobranzasView(QWidget):
         # Selección de árbitro
         self.arbitro_combo = QComboBox()
         self.arbitro_combo.setPlaceholderText("Seleccione un árbitro")
-        print(self.arbitro_combo)
+        
         form_layout.addRow("Pagador/Cobrador:", self.arbitro_combo)
         
         # Fecha
@@ -223,17 +223,17 @@ class CobranzasView(QWidget):
         """Carga la lista de usuarios desde la API"""
         try:
             headers = session.get_headers()
-            print(f"Headers: {headers}")  # Para depuración
+            
             
             url = f"{session.api_url}/usuarios"
-            print(f"Realizando petición GET a: {url}")
+            
             
             response = requests.get(url, headers=headers)
-            print(f"Respuesta: {response.status_code}")
+            
             
             if response.status_code == 200:
                 self.usuarios = response.json()
-                print(f"Usuarios cargados: {len(self.usuarios)}")
+            
                 
                 # Actualizar combo box
                 self.arbitro_combo.clear()

@@ -10,8 +10,7 @@ def audit_trail(tabla_afectada):
             # Extraer current_user_id de los kwargs
             current_user_id = kwargs.get('current_user_id')
             
-            print(f"Iniciando auditoría para {tabla_afectada}")
-            print(f"Usuario ID: {current_user_id}")
+            
             
             # Eliminar current_user_id de kwargs para no interferir con la función original
             if 'current_user_id' in kwargs:
@@ -35,7 +34,7 @@ def audit_trail(tabla_afectada):
             
             # Crear registro de auditoría si hay registro
             if registro_id:
-                print(f"Creando registro de auditoría para {tabla_afectada}")
+                
                 registro_auditoria = models.Auditoria(
                     usuario_id=current_user_id,
                     accion=accion,
@@ -58,7 +57,7 @@ def audit_trail(tabla_afectada):
                 
                 db.add(registro_auditoria)
                 db.commit()
-                print(f"Registro de auditoría creado para {tabla_afectada}")
+                
             
             return resultado
         return wrapper

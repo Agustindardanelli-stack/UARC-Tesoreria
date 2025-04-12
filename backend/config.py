@@ -10,16 +10,16 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     
     # JWT Settings
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "supersecretkey")
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "reemplazar_con_clave_secreta")
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     
     # Database Settings
-    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
-    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "1234")
-    POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
-    POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "1234")
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "tesoreria_bd")
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "usuario_bd")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "contraseña_bd")
+    POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "host_bd")
+    POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "nombre_bd")
     
     # CORS Settings
     CORS_ORIGINS: list = ["*"]
