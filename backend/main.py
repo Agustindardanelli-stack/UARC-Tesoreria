@@ -572,7 +572,7 @@ def read_partidas(
     tipo: Optional[str] = None,
     cuenta: Optional[str] = None,
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(get_current_active_user)
+    
 ):
     # Obtener partidas
     partidas = crud.get_partida(
@@ -583,7 +583,7 @@ def read_partidas(
         fecha_hasta=fecha_hasta,
         tipo=tipo,
         cuenta=cuenta,
-        current_user_id=current_user.id
+        
     )
     
     # Obtener registros de auditoría para estas partidas
