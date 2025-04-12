@@ -156,7 +156,7 @@ class DashboardView(QWidget):
         self.timer.timeout.connect(self.update_time)
         self.timer.start(1000)  # Actualizar cada segundo
         
-        # NUEVO: Temporizador para actualizar datos cada 30 segundos
+        # Temporizador para actualizar datos cada 30 segundos
         self.data_timer = QTimer(self)
         self.data_timer.timeout.connect(self.refresh_data)
         self.data_timer.start(30000)  # Actualizar cada 30 segundos
@@ -192,7 +192,7 @@ class DashboardView(QWidget):
         datetime_layout.addWidget(self.time_label)
         self.content_layout.addLayout(datetime_layout)
         
-        # NUEVO: Botón de actualización manual
+        # Botón de actualización manual
         refresh_btn = QPushButton("Actualizar datos")
         refresh_btn.clicked.connect(self.refresh_data)
         datetime_layout.addWidget(refresh_btn)
@@ -238,7 +238,6 @@ class DashboardView(QWidget):
     
     def refresh_data(self):
         """Actualiza los datos del dashboard"""
-        print("Actualizando datos del dashboard...")  # NUEVO: Mensaje de depuración
         self.load_balance_data()
         self.load_partidas_data()
     
@@ -280,18 +279,15 @@ class DashboardView(QWidget):
                         balance_actual = 0
                         ingresos_mes = 0
                         egresos_mes = 0
-                        print("WARNING: balance_data no es un diccionario, es:", type(balance_data))
                 except Exception as e:
                     balance_actual = 0
                     ingresos_mes = 0
                     egresos_mes = 0
-                    print(f"Error al procesar balance_data: {e}")  
                  
                 try:
                     ingresos_egresos_data = ingresos_egresos_response.json()
                 except Exception as e:
                     ingresos_egresos_data = {"datos": []}
-                    print(f"Error al procesar ingresos_egresos_data: {e}")
                 
                 try:
                     cuotas_pendientes_data = cuotas_pendientes_response.json()
@@ -301,13 +297,10 @@ class DashboardView(QWidget):
                     elif isinstance(cuotas_pendientes_data, list):
                         # Si es una lista, usar la longitud como cantidad de cuotas pendientes
                         cuotas_pendientes = len(cuotas_pendientes_data)
-                        print("Cuotas pendientes es una lista, usando su longitud como cantidad.")
                     else:
                         cuotas_pendientes = 0
-                        print("WARNING: cuotas_pendientes_data no es un diccionario ni una lista, es:", type(cuotas_pendientes_data))
                 except Exception as e:
                     cuotas_pendientes = 0
-                    print(f"Error al procesar cuotas_pendientes_data: {e}")
                 
                 # Actualizar indicadores - Encontrar todos los QLabel hijos de cada indicador
                 balance_labels = self.balance_indicator.findChildren(QLabel)
@@ -325,11 +318,8 @@ class DashboardView(QWidget):
                 if len(cuotas_labels) > 1:
                     cuotas_labels[1].setText(f"{cuotas_pendientes}")
                 
-                # NUEVO: Mensaje de éxito
-                print("Datos de balance actualizados correctamente")
-                
         except Exception as e:
-            print(f"Error al cargar datos del balance: {e}")
+            pass
     
     def load_partidas_data(self):
         """Carga las últimas partidas"""
@@ -338,10 +328,7 @@ class DashboardView(QWidget):
             partidas_response = requests.get(
                 f"{session.api_url}/partidas?limit=10",
                 headers=headers
-            )
-            
-            print("Respuesta de partidas:", partidas_response.status_code)
-            print("Contenido de partidas:", partidas_response.json())
+            )            
             
             if partidas_response.status_code == 200:
                 partidas_data = partidas_response.json()
@@ -367,9 +354,8 @@ class DashboardView(QWidget):
                         self.partidas_table.setItem(row, 2, QTableWidgetItem(partida_item.get('detalle', '')))
                         
                         # Usuario que realizó
-                        usuario_accion = partida_item.get('usuario_auditoria', 'Sin registro')
-                        print(f"Usuario de acción para partida {row}: {usuario_accion}")
-                        self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
+                        # usuario_accion = partida_item.get('usuario_auditoria', 'Sin registro')
+                        # self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
                         
                         # Ingreso
                         ingreso_item = QTableWidgetItem(f"${partida_item.get('ingreso', 0):,.2f}")
@@ -389,16 +375,10 @@ class DashboardView(QWidget):
                     # Ajustar columnas
                     self.partidas_table.resizeColumnsToContents()
                     
-                    print("Partidas actualizadas correctamente")
-                else:
-                    print("No se encontraron partidas para mostrar")
-            else:
-                print(f"Error al obtener partidas: {partidas_response.status_code}")
-                
         except Exception as e:
-            print(f"Error al cargar partidas: {e}")
+            pass
     
-    # NUEVO: Método para ser llamado cuando se vuelve al dashboard
+    # Método para ser llamado cuando se vuelve al dashboard
     def on_show(self):
         """Método que se llama cuando el dashboard se muestra después de navegar"""
         self.refresh_data()

@@ -248,7 +248,7 @@ def create_pago(db: Session, pago: schemas.PagoCreate):
     
     return db_pago
 
-def reenviar_orden_pago(db: Session, pago_id: int, email: str = None):
+def reenviar_orden_pago(db: Session, pago_id: int, email: str = None, current_user_id: int = None):
     # Obtener el pago
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not db_pago:
@@ -280,6 +280,7 @@ def reenviar_orden_pago(db: Session, pago_id: int, email: str = None):
         sender_email=email_config.email_from
     )
     
+    # Usando el método para órdenes de pago
     success, message = email_service.send_payment_receipt_email(
         db=db,
         pago=db_pago, 
@@ -295,7 +296,7 @@ def reenviar_orden_pago(db: Session, pago_id: int, email: str = None):
         db.refresh(db_pago)
         return {"success": True, "message": "Orden de pago enviada exitosamente"}
     else:
-        return {"success": False, "message": message}  
+        return {"success": False, "message": message}
 
 @audit_trail("pagos")
 def get_pagos(db: Session, skip: int = 0, limit: int = 100):

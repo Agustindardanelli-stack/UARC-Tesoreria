@@ -422,79 +422,6 @@ class PagosView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al enviar recibo: {str(e)}")
     
-    def on_buscar_pagos(self):
-        """Busca pagos según los filtros seleccionados"""
-        try:
-            # Preparar parámetros
-            desde = self.desde_date.date().toString("yyyy-MM-dd")
-            hasta = self.hasta_date.date().toString("yyyy-MM-dd")
-            
-            params = {
-                "skip": 0,
-                "limit": 100
-            }
-            
-            # Obtener pagos
-            headers = session.get_headers()
-            url = f"{session.api_url}/pagos"
-            print(f"Realizando petición GET a: {url}")
-            print(f"Parámetros: {params}")
-            
-            response = requests.get(url, headers=headers, params=params)
-            
-            if response.status_code == 200:
-                pagos_data = response.json()
-                print(f"Pagos cargados: {len(pagos_data)}")
-                
-                # Filtrar por fecha (si la API no lo hace)
-                pagos_filtrados = [
-                    pago for pago in pagos_data 
-                    if desde <= pago.get("fecha", "") <= hasta
-                ]
-                
-                # Limpiar tabla
-                self.pagos_table.setRowCount(0)
-                
-                # Llenar tabla con datos
-                total_pagos = 0
-                for row, pago in enumerate(pagos_filtrados):
-                    self.pagos_table.insertRow(row)
-                    
-                    # ID
-                    self.pagos_table.setItem(row, 0, QTableWidgetItem(str(pago.get("id", ""))))
-                    
-                    # Fecha
-                    fecha = datetime.strptime(pago.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if pago.get('fecha') else ''
-                    self.pagos_table.setItem(row, 1, QTableWidgetItem(fecha))
-                    
-                    # Árbitro
-                    arbitro = pago.get("usuario", {}).get("nombre", "")
-                    self.pagos_table.setItem(row, 2, QTableWidgetItem(arbitro))
-                    
-                    # Retención
-                    retencion = pago.get("retencion", {}).get("nombre", "")
-                    self.pagos_table.setItem(row, 3, QTableWidgetItem(retencion))
-                    
-                    # Monto
-                    monto = pago.get("monto", 0)
-                    monto_item = QTableWidgetItem(f"${monto:,.2f}")
-                    monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    self.pagos_table.setItem(row, 4, monto_item)
-                    
-                    # Acumular total
-                    total_pagos += monto
-                
-                # Actualizar total
-                self.total_label.setText(f"Total de pagos: ${total_pagos:,.2f}")
-                
-                # Ajustar columnas
-                self.pagos_table.resizeColumnsToContents()
-            else:
-                QMessageBox.warning(self, "Error", f"No se pudieron cargar los pagos. Status code: {response.status_code}")
-                print(f"Error al cargar pagos: {response.text}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al buscar pagos: {str(e)}")
-    
     def on_buscar_pago_id(self):
         """Busca un pago por su ID"""
         pago_id = self.id_search.text().strip()
@@ -534,3 +461,97 @@ class PagosView(QWidget):
                 print(f"Error al buscar pago por ID: {response.text}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al buscar pago: {str(e)}")
+
+
+    
+    def on_buscar_pagos(self):
+        """Busca pagos según los filtros seleccionados"""
+        try:
+            # Preparar parámetros
+            desde = self.desde_date.date().toString("yyyy-MM-dd")
+            hasta = self.hasta_date.date().toString("yyyy-MM-dd")
+
+            params = {
+                "skip": 0,
+                "limit": 100
+            }
+
+            # Obtener pagos
+            headers = session.get_headers()
+            url = f"{session.api_url}/pagos"
+            print(f"Realizando petición GET a: {url}")
+            print(f"Parámetros: {params}")
+
+            response = requests.get(url, headers=headers, params=params)
+
+            if response.status_code == 200:
+                # La respuesta puede ser directamente una lista o un diccionario con una lista
+                data = response.json()
+                pagos_data = []
+                
+                # Verificar el tipo de datos recibidos
+                if isinstance(data, list):
+                    # La respuesta ya es una lista de pagos
+                    pagos_data = data
+                elif isinstance(data, dict):
+                    # La respuesta es un diccionario
+                    if "data" in data:
+                        pagos_data = data["data"]
+                    elif "pagos" in data:
+                        pagos_data = data["pagos"]
+                
+                if not isinstance(pagos_data, list):
+                    raise ValueError("No se pudo obtener una lista de pagos de la respuesta")
+
+                print(f"Pagos cargados: {len(pagos_data)}")
+
+                # Filtrar por fecha (si la API no lo hace)
+                pagos_filtrados = [
+                    pago for pago in pagos_data
+                    if desde <= pago.get("fecha", "") <= hasta
+                ]
+
+                # Limpiar tabla
+                self.pagos_table.setRowCount(0)
+
+                # Llenar tabla con datos
+                total_pagos = 0
+                for row, pago in enumerate(pagos_filtrados):
+                    self.pagos_table.insertRow(row)
+
+                    # ID
+                    self.pagos_table.setItem(row, 0, QTableWidgetItem(str(pago.get("id", ""))))
+
+                    # Fecha
+                    fecha = datetime.strptime(pago.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if pago.get('fecha') else ''
+                    self.pagos_table.setItem(row, 1, QTableWidgetItem(fecha))
+
+                    # Árbitro
+                    usuario = pago.get("usuario") or {}
+                    arbitro = usuario.get("nombre", "")
+                    self.pagos_table.setItem(row, 2, QTableWidgetItem(arbitro))
+
+                    # Retención
+                    retencion_data = pago.get("retencion") or {}
+                    retencion = retencion_data.get("nombre", "")
+                    self.pagos_table.setItem(row, 3, QTableWidgetItem(retencion))
+
+                    # Monto
+                    monto = pago.get("monto", 0)
+                    monto_item = QTableWidgetItem(f"${monto:,.2f}")
+                    monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.pagos_table.setItem(row, 4, monto_item)
+
+                    # Acumular total
+                    total_pagos += monto
+
+                # Actualizar total
+                self.total_label.setText(f"Total de pagos: ${total_pagos:,.2f}")
+
+                # Ajustar columnas
+                self.pagos_table.resizeColumnsToContents()
+            else:
+                QMessageBox.warning(self, "Error", f"No se pudieron cargar los pagos. Status code: {response.status_code}")
+                print(f"Error al cargar pagos: {response.text}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al buscar pagos: {str(e)}")
