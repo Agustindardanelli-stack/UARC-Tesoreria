@@ -33,11 +33,11 @@ def audit_trail(tabla_afectada):
             # Obtener el ID del registro
             registro_id = getattr(resultado, 'id', None)
             
-            # Crear registro de auditoría si hay registro (incluso si no hay usuario)
+            # Crear registro de auditoría si hay registro
             if registro_id:
                 print(f"Creando registro de auditoría para {tabla_afectada}")
                 registro_auditoria = models.Auditoria(
-                    usuario_id=current_user_id,  # Puede ser None, pero se registra la acción de todos modos
+                    usuario_id=current_user_id,
                     accion=accion,
                     tabla_afectada=tabla_afectada,
                     registro_id=registro_id,
@@ -53,7 +53,7 @@ def audit_trail(tabla_afectada):
                 elif tabla_afectada == 'cuota':
                     registro_auditoria.cuota_id = registro_id
                 elif tabla_afectada == 'partidas':
-                    # No se hace nada especial para partidas por ahora
+                    # No se asocia a un campo específico por ahora
                     pass
                 
                 db.add(registro_auditoria)

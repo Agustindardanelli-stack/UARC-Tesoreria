@@ -217,7 +217,7 @@ def read_pagos(
     current_user: models.Usuario = Depends(get_current_active_user)
 ):
     # Obtener pagos
-    pagos = crud.get_pagos(db, skip=skip, limit=limit)
+    pagos = crud.get_pagos(db, skip=skip, limit=limit, current_user_id=current_user.id)
     
     # Obtener registros de auditoría para estos pagos
     pago_ids = [pago.id for pago in pagos]
@@ -245,7 +245,7 @@ def read_pagos(
 
 @app.get(f"{settings.API_PREFIX}/pagos/{{pago_id}}", response_model=schemas.PagoDetalle, tags=["Pagos"])
 def read_pago(pago_id: int, db: Session = Depends(get_db), current_user: models.Usuario = Depends(get_current_active_user)):
-    db_pago = crud.get_pago(db, pago_id=pago_id)
+    db_pago = crud.get_pago(db, pago_id=pago_id, current_user_id=current_user.id)
     if db_pago is None:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
     return db_pago
@@ -582,7 +582,8 @@ def read_partidas(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
         tipo=tipo,
-        cuenta=cuenta
+        cuenta=cuenta,
+        current_user_id=current_user.id
     )
     
     # Obtener registros de auditoría para estas partidas
@@ -609,24 +610,10 @@ def read_partidas(
 
 @app.get(f"{settings.API_PREFIX}/partidas/{{partida_id}}", response_model=schemas.PartidaDetalle, tags=["Partidas"])
 def read_partida(partida_id: int, db: Session = Depends(get_db), current_user: models.Usuario = Depends(get_current_active_user)):
-    db_partida = crud.get_partida(db, partida_id=partida_id)
+    db_partida = crud.get_partida(db, partida_id=partida_id, current_user_id=current_user.id)
     if db_partida is None:
         raise HTTPException(status_code=404, detail="Partida no encontrada")
     return db_partida
-
-@app.put(f"{settings.API_PREFIX}/partidas/{{partida_id}}", response_model=schemas.Partida, tags=["Partidas"])
-def update_partida(
-    partida_id: int, 
-    partida: schemas.PartidaUpdate, 
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
-):
-    return crud.update_partida(
-        db=db, 
-        partida_id=partida_id, 
-        partida_update=partida, 
-        current_user_id=current_user.id
-    )
 
 @app.delete(f"{settings.API_PREFIX}/partidas/{{partida_id}}", tags=["Partidas"])
 def delete_partida(
