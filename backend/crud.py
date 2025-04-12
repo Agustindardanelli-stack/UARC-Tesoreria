@@ -717,9 +717,11 @@ def create_partida(db: Session, partida: schemas.PartidaCreate):
     db.refresh(db_partida)
     return db_partida
 
+@audit_trail("partidas")
 def get_partida(db: Session, partida_id: int = None, skip: int = 0, limit: int = 100, 
                fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
-               tipo: Optional[str] = None, cuenta: Optional[str] = None):
+               tipo: Optional[str] = None, cuenta: Optional[str] = None, current_user_id: int = None):
+    # Resto de tu código existente...
     if partida_id:
         return db.query(models.Partida).filter(models.Partida.id == partida_id).first()
     
