@@ -787,24 +787,24 @@ def get_balance(
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] =  None,
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
+    
 ):
-    return crud.get_balance(db, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta ,current_user=current_user.id)
+    return crud.get_balance(db, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta )
 
 @app.get(f"{settings.API_PREFIX}/reportes/ingresos_egresos_mensuales", tags=["Reportes"])
 def get_ingresos_egresos_mensuales(
     anio: Optional[int] = None,
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
+    
 ):
-    return crud.get_ingresos_egresos_mensuales(db, anio=anio , current_user=current_user.id)
+    return crud.get_ingresos_egresos_mensuales(db, anio=anio)
 
 @app.get(f"{settings.API_PREFIX}/reportes/cuotas_pendientes", tags=["Reportes"])
 def get_cuotas_pendientes(
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
+    
 ):
-    return crud.get_cuotas_pendientes(db,current_user=current_user.id)
+    return crud.get_cuotas_pendientes(db,)
 
 # email endpoints
 @app.get(f"{settings.API_PREFIX}/email-config/active", response_model=None)

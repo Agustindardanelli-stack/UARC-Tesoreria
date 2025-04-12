@@ -62,6 +62,7 @@ def audit_trail(tabla_afectada):
                     pass
                 
                 db.add(registro_auditoria)
+                
                 db.commit()
                 print(f"Registro de auditoría creado para {tabla_afectada}")
             
