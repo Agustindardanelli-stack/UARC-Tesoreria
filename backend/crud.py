@@ -710,7 +710,7 @@ def delete_cuota(db: Session, cuota_id: int):
 
 # Funciones CRUD para Partidas
 @audit_trail("partidas")
-def create_partida(db: Session, partida: schemas.PartidaCreate):
+def create_partida(db: Session, partida: schemas.PartidaCreate, current_user_id: int = None):
     db_partida = models.Partida(**partida.dict())
     db.add(db_partida)
     db.commit()
@@ -718,10 +718,9 @@ def create_partida(db: Session, partida: schemas.PartidaCreate):
     return db_partida
 
 @audit_trail("partidas")
-def get_partida(db: Session, partida_id: int = None, skip: int = 0, limit: int = 100, 
+def get_partida(db: Session, partida_id: int = None, skip: int = 0, limit: int = 100,
                fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
                tipo: Optional[str] = None, cuenta: Optional[str] = None, current_user_id: int = None):
-    # Resto de tu código existente...
     if partida_id:
         return db.query(models.Partida).filter(models.Partida.id == partida_id).first()
     
@@ -741,8 +740,9 @@ def get_partida(db: Session, partida_id: int = None, skip: int = 0, limit: int =
         query = query.filter(models.Partida.cuenta == cuenta)
     
     return query.order_by(desc(models.Partida.fecha)).offset(skip).limit(limit).all()
+
 @audit_trail("partidas")
-def update_partida(db: Session, partida_id: int, partida_update: schemas.PartidaUpdate):
+def update_partida(db: Session, partida_id: int, partida_update: schemas.PartidaUpdate, current_user_id: int = None):
     db_partida = db.query(models.Partida).filter(models.Partida.id == partida_id).first()
     if not db_partida:
         raise HTTPException(status_code=404, detail="Partida no encontrada")
@@ -755,8 +755,9 @@ def update_partida(db: Session, partida_id: int, partida_update: schemas.Partida
     db.commit()
     db.refresh(db_partida)
     return db_partida
+
 @audit_trail("partidas")
-def delete_partida(db: Session, partida_id: int):
+def delete_partida(db: Session, partida_id: int, current_user_id: int = None):
     db_partida = db.query(models.Partida).filter(models.Partida.id == partida_id).first()
     if not db_partida:
         raise HTTPException(status_code=404, detail="Partida no encontrada")

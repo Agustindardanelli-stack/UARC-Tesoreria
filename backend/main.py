@@ -559,7 +559,7 @@ def create_partida(
     
     return crud.create_partida(
         db=db, 
-        partida=partida, 
+        partida=partida,
         current_user_id=current_user.id
     )
 
@@ -614,6 +614,20 @@ def read_partida(partida_id: int, db: Session = Depends(get_db), current_user: m
     if db_partida is None:
         raise HTTPException(status_code=404, detail="Partida no encontrada")
     return db_partida
+
+@app.put(f"{settings.API_PREFIX}/partidas/{{partida_id}}", response_model=schemas.Partida, tags=["Partidas"])
+def update_partida(
+    partida_id: int, 
+    partida: schemas.PartidaUpdate, 
+    db: Session = Depends(get_db), 
+    current_user: models.Usuario = Depends(is_tesorero)
+):
+    return crud.update_partida(
+        db=db, 
+        partida_id=partida_id, 
+        partida_update=partida, 
+        current_user_id=current_user.id
+    )
 
 @app.delete(f"{settings.API_PREFIX}/partidas/{{partida_id}}", tags=["Partidas"])
 def delete_partida(
