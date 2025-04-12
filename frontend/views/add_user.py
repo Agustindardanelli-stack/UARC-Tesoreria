@@ -10,7 +10,7 @@ class AddUserWindow(QWidget):
     # Señal para navegación, requerida por tu MainWindow
     navigation_requested = Signal(str)
     
-    def __init__(self, parent=None, base_url="http://localhost:8000"):
+    def __init__(self, parent=None, base_url="https://uarc-tesoreria.onrender.com"):
         super().__init__(parent)
         
         # Configuración de la ventana

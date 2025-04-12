@@ -63,7 +63,7 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
 def create_usuario(
     usuario: schemas.UsuarioCreate, 
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
+    
 ):
     db_user = crud.get_usuario_by_email(db, email=usuario.email)
     if db_user:
@@ -71,7 +71,7 @@ def create_usuario(
     return crud.create_usuario(
         db=db, 
         usuario=usuario, 
-        current_user_id=current_user.id
+    
     )
 
 @app.get(f"{settings.API_PREFIX}/usuarios", response_model=List[schemas.UsuarioDetalle], tags=["Usuarios"])
