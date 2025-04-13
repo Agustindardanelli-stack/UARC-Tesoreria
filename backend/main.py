@@ -172,12 +172,12 @@ def delete_rol(
 def crear_retencion(
     retencion: schemas.RetencionCreate, 
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
+    
 ):
     return crud.create_retencion(
         db=db, 
         retencion=retencion, 
-        current_user_id=current_user.id
+        
     )
 
 @app.get(f"{settings.API_PREFIX}/retenciones/", response_model=List[schemas.Retencion], tags=["Retenciones"])
@@ -646,21 +646,21 @@ def delete_partida(
 def create_categoria(
     categoria: schemas.CategoriaCreate, 
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_admin)
+    
 ):
     return crud.create_categoria(
         db=db, 
         categoria=categoria, 
-        current_user_id=current_user.id
+    
     )
 
 @app.get(f"{settings.API_PREFIX}/categorias", response_model=List[schemas.Categoria], tags=["Categorías"])
-def read_categorias(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.Usuario = Depends(get_current_active_user)):
+def read_categorias(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), ):
     categorias = crud.get_categorias(db, skip=skip, limit=limit)
     return categorias
 
 @app.get(f"{settings.API_PREFIX}/categorias/{{categoria_id}}", response_model=schemas.Categoria, tags=["Categorías"])
-def read_categoria(categoria_id: int, db: Session = Depends(get_db), current_user: models.Usuario = Depends(get_current_active_user)):
+def read_categoria(categoria_id: int, db: Session = Depends(get_db), ):
     db_categoria = crud.get_categoria(db, categoria_id=categoria_id)
     if db_categoria is None:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
@@ -677,19 +677,19 @@ def update_categoria(
         db=db, 
         categoria_id=categoria_id, 
         categoria_update=categoria, 
-        current_user_id=current_user.id
+        
     )
 
 @app.delete(f"{settings.API_PREFIX}/categorias/{{categoria_id}}", tags=["Categorías"])
 def delete_categoria(
     categoria_id: int, 
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_admin)
+    
 ):
     return crud.delete_categoria(
         db=db, 
         categoria_id=categoria_id, 
-        current_user_id=current_user.id
+    
     )
 
 # Rutas de Transacciones
