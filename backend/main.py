@@ -168,22 +168,46 @@ def delete_rol(
     )
 
 # Retenciones
-@app.post(f"{settings.API_PREFIX}/retenciones/", response_model=schemas.Retencion, tags=["Retenciones"])
+@app.post(f"{settings.API_PREFIX}/retenciones", response_model=schemas.Retencion, tags=["Retenciones"])
 def crear_retencion(
     retencion: schemas.RetencionCreate, 
-    db: Session = Depends(get_db), 
-    
+    db: Session = Depends(get_db)
 ):
     return crud.create_retencion(
         db=db, 
-        retencion=retencion, 
-        
+        retencion=retencion
     )
 
-@app.get(f"{settings.API_PREFIX}/retenciones/", response_model=List[schemas.Retencion], tags=["Retenciones"])
+@app.get(f"{settings.API_PREFIX}/retenciones", response_model=List[schemas.Retencion], tags=["Retenciones"])
 def get_retenciones(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     retenciones = crud.get_retenciones(db, skip=skip, limit=limit)
     return retenciones
+
+@app.delete(f"{settings.API_PREFIX}/retenciones/{{retencion_id}}", tags=["Retenciones"])
+def delete_retencion(
+    retencion_id: int, 
+    db: Session = Depends(get_db), 
+    current_user: models.Usuario = Depends(is_tesorero)
+):
+    return crud.delete_retencion(
+        db=db, 
+        retencion_id=retencion_id, 
+        current_user_id=current_user.id
+    )
+
+@app.put(f"{settings.API_PREFIX}/retenciones/{{retencion_id}}", response_model=schemas.Retencion, tags=["Retenciones"])
+def update_retencion(
+    retencion_id: int, 
+    retencion: schemas.RetencionUpdate, 
+    db: Session = Depends(get_db)
+):
+    return crud.update_retencion(
+        db=db, 
+        retencion_id=retencion_id, 
+        retencion_update=retencion
+    )
+
+
 
 # Rutas de Pagos
 @app.post(f"{settings.API_PREFIX}/pagos", response_model=schemas.Pago, tags=["Pagos"])

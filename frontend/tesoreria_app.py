@@ -160,6 +160,8 @@ class MainWindow(QMainWindow):
             self.stacked_widget.setCurrentWidget(self.socio_cuota_view)
         elif view_name == "importes":
             self.stacked_widget.setCurrentWidget(self.importes_view)
+            # Añade esta línea para cargar los datos cuando se navega a importes
+            self.importes_view.refresh_data()
         elif view_name == "reportes":
             self.stacked_widget.setCurrentWidget(self.reportes_view)
         elif view_name == "email_config": 

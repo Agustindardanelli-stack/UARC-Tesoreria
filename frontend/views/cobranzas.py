@@ -22,7 +22,7 @@ class CobranzasView(QWidget):
     def __init__(self):
         super().__init__()
         self.setup_ui()
-        self.connect_signals()
+        self.connect_signals() 
         self.usuarios = []
         # No llamamos a refresh_data() aquí para evitar problemas de autenticación
     

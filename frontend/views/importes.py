@@ -26,6 +26,7 @@ class ImportesView(QWidget):
         self.retenciones = []
         self.categorias = []
         
+        
     
     def setup_ui(self):
         # Layout principal
@@ -287,7 +288,7 @@ class ImportesView(QWidget):
             headers = session.get_headers()
             
             # Asegúrate de que la URL coincida con la del backend
-            response = requests.get(f"{session.api_url}/retenciones/", headers=headers)
+            response = requests.get(f"{session.api_url}/retenciones", headers=headers)
             
             if response.status_code == 200:
                 self.retenciones = response.json()
@@ -541,7 +542,7 @@ class ImportesView(QWidget):
                 response = requests.delete(
                     f"{session.api_url}/retenciones/{retencion_id}",
                     headers=headers
-                )
+)
                 
                 if response.status_code == 200:
                     QMessageBox.information(self, "Éxito", "Retención eliminada correctamente")
