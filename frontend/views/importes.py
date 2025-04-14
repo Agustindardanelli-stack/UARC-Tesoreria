@@ -583,10 +583,11 @@ class ImportesView(QWidget):
             headers = session.get_headers()
             headers["Content-Type"] = "application/json"
             
+            # Quitar barra al final para mantener consistencia con el backend
             response = requests.post(
                 f"{session.api_url}/categorias",
                 headers=headers,
-                data=json.dumps(categoria_data)
+                json=categoria_data  # Usar json en lugar de data con json.dumps
             )
             
             if response.status_code == 200 or response.status_code == 201:
@@ -605,7 +606,8 @@ class ImportesView(QWidget):
                         error_msg = error_data["detail"]
                 except:
                     pass
-                QMessageBox.critical(self, "Error", error_msg)
+                QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
+                print(f"Error al guardar categoría: {response.text}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al guardar categoría: {str(e)}")
     

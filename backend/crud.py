@@ -769,7 +769,15 @@ def delete_partida(db: Session, partida_id: int, current_user_id: int = None):
 
 # Funciones CRUD para Categorías
 def create_categoria(db: Session, categoria: schemas.CategoriaCreate):
-    db_categoria = models.Categoria(**categoria.dict())
+    # Obtener el mayor ID existente
+    max_id = db.query(func.max(models.Categoria.id)).scalar() or 0
+    
+    # Crear objeto de categoria con un ID nuevo
+    db_categoria = models.Categoria(
+        id=max_id + 1,  # Asignar un ID mayor que el máximo existente
+        nombre=categoria.nombre
+    )
+    
     db.add(db_categoria)
     db.commit()
     db.refresh(db_categoria)
@@ -800,12 +808,15 @@ def delete_categoria(db: Session, categoria_id: int):
     if not db_categoria:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     
-    # Verificar si hay transacciones con esta categoría
-    transacciones_con_categoria = db.query(models.Transaccion).filter(models.Transaccion.categoria_id == categoria_id).count()
-    if transacciones_con_categoria > 0:
+    # Verificar si hay divisiones con esta categoría en lugar de transacciones
+    divisiones_con_categoria = db.query(models.RetencionDivision).filter(
+        models.RetencionDivision.categoria_id == categoria_id
+    ).count()
+    
+    if divisiones_con_categoria > 0:
         raise HTTPException(
             status_code=400, 
-            detail=f"No se puede eliminar la categoría porque hay {transacciones_con_categoria} transacciones asociadas a ella"
+            detail=f"No se puede eliminar la categoría porque hay {divisiones_con_categoria} divisiones asociadas a ella"
         )
     
     db.delete(db_categoria)
