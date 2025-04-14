@@ -186,14 +186,13 @@ def get_retenciones(skip: int = 0, limit: int = 100, db: Session = Depends(get_d
 @app.delete(f"{settings.API_PREFIX}/retenciones/{{retencion_id}}", tags=["Retenciones"])
 def delete_retencion(
     retencion_id: int, 
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
+    db: Session = Depends(get_db)
 ):
     return crud.delete_retencion(
         db=db, 
-        retencion_id=retencion_id, 
-        current_user_id=current_user.id
+        retencion_id=retencion_id
     )
+
 
 @app.put(f"{settings.API_PREFIX}/retenciones/{{retencion_id}}", response_model=schemas.Retencion, tags=["Retenciones"])
 def update_retencion(
