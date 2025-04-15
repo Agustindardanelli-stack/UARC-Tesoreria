@@ -95,25 +95,25 @@ def update_usuario(
     usuario_id: int, 
     usuario: schemas.UsuarioUpdate, 
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_admin)
+    
 ):
     return crud.update_usuario(
         db=db, 
         usuario_id=usuario_id, 
         usuario_update=usuario, 
-        current_user_id=current_user.id
+    
     )
 
 @app.delete(f"{settings.API_PREFIX}/usuarios/{{usuario_id}}", tags=["Usuarios"])
 def delete_usuario(
     usuario_id: int, 
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_admin)
+    
 ):
     return crud.delete_usuario(
         db=db, 
         usuario_id=usuario_id, 
-        current_user_id=current_user.id
+        
     )
 
 # Rutas de Roles

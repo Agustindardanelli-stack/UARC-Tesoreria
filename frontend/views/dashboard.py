@@ -238,7 +238,7 @@ class DashboardView(QWidget):
     
     def refresh_data(self):
         """Actualiza los datos del dashboard"""
-        self.load_balance_data()
+        
         self.load_partidas_data()
     
     def load_balance_data(self):
