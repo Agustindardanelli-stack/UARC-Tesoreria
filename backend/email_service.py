@@ -74,64 +74,94 @@ class EmailService:
             print(f"Error al cargar el ícono: {e}")
             
     def generate_receipt_pdf(self, db: Session, cobranza):
-        """Genera un PDF con el recibo de la cobranza"""
-         
+        """Genera un PDF con el recibo de la cobranza con diseño moderno y detallado"""
+        
         buffer = BytesIO()
-        p = canvas.Canvas(buffer, pagesize=letter)
-        width, height = letter
+        p = canvas.Canvas(buffer, pagesize=landscape(letter))  # Orientación horizontal
+        width, height = landscape(letter)
         
-        # Ruta al ícono usando rutas relativas desde el backend
-        self.load_logo(p, width, height)
-        # Agregar ícono
+        # Definir márgenes y colores
+        margin = 0.75 * inch
+        accent_color = (0.1, 0.5, 0.7)  # Color azul corporativo
         
+        # Fondo con sombreado suave
+        p.setFillColorRGB(0.95, 0.95, 1)  # Fondo muy claro
+        p.rect(margin/2, margin/2, width - margin, height - margin, fill=1, stroke=0)
         
-            
+        # Borde con color de acento
+        p.setStrokeColorRGB(*accent_color)
+        p.setLineWidth(2)
+        p.rect(margin/2, margin/2, width - margin, height - margin)
+        
+        # Cargar logo en la esquina superior izquierda
+        self.load_logo(p, margin + 1*inch, height - margin - inch)
+        
+        # Encabezado
+        p.setFillColorRGB(*accent_color)
+        p.setFont("Helvetica-Bold", 16)
+        p.drawCentredString(width/2, height - 1.5*inch, "UNIDAD DE ÁRBITROS DE RÍO CUARTO")
+        p.setFont("Helvetica-Bold", 14)
+        p.drawCentredString(width/2, height - 2*inch, "RECIBO DE COBRANZA")
+        
         # Obtener usuario/árbitro
         usuario = db.query(models.Usuario).filter(models.Usuario.id == cobranza.usuario_id).first()
         
-        # Configurar el recibo
-        p.setFont("Helvetica-Bold", 18)
-        p.drawCentredString(width/2, height - 3*inch, "UNIDAD DE ARBITROS")
-        p.drawCentredString(width/2, height - 3.3*inch, "DE RIO CUARTO") 
+        # Obtener retención si existe
+        retencion = db.query(models.Retencion).filter(models.Retencion.id == cobranza.retencion_id).first() if cobranza.retencion_id else None
         
-        # Configurar el número de recibo
+        # Detalles de la cobranza
         p.setFont("Helvetica", 12)
-        p.drawRightString(width - inch, height - 3.8*inch, f"RECIBO N° {cobranza.id:06d}")
-        p.drawRightString(width - inch, height - 4.1*inch, f"Fecha {cobranza.fecha.strftime('%d/%m/%Y')}")
+        p.setFillColorRGB(0, 0, 0)
         
-        # Línea horizontal
-        p.line(inch, height - 4.5*inch, width - inch, height - 4.5*inch)
+        # Número de recibo
+        p.drawRightString(width - margin, height - 2.5*inch, f"N° Recibo: {cobranza.id:05d}")
         
-        # Información del recibo
-        p.setFont("Helvetica", 12)
-        p.drawString(inch, height - 4.9*inch, "Recibimos de:")
-        p.line(3*inch, height - 4.9*inch, width - inch, height - 4.9*inch)
-        p.drawString(3.2*inch, height - 4.9*inch, usuario.nombre if usuario else "")
+        # Información detallada
+        info_y = height - 3.5*inch
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(margin, info_y, "Datos de la Cobranza")
         
-        # Monto en letras y números
-        monto_texto = self.numero_a_letras(float(cobranza.monto))
-        p.drawString(inch, height - 5.4*inch, "La suma de pesos:")
-        p.line(3*inch, height - 5.4*inch, width - inch, height - 5.4*inch)
-        p.drawString(3.2*inch, height - 5.4*inch, monto_texto)
+        p.setFont("Helvetica", 11)
+        linea_altura = 0.3*inch
         
-        # Concepto
-        p.drawString(inch, height - 5.9*inch, "En concepto de:")
-        p.line(3*inch, height - 5.9*inch, width - inch, height - 5.9*inch)
-        p.drawString(3.2*inch, height - 5.9*inch, "Pago de arbitraje")
-        # Monto total
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(4*inch, height - 7.7*inch, "$ ")
-        p.drawRightString(width - inch, height - 7.7*inch, f"{float(cobranza.monto):,.2f}")
+        # Campos de información
+        campos = [
+            ("Fecha:", cobranza.fecha.strftime('%d/%m/%Y')),
+            ("Pagador:", usuario.nombre if usuario else "No especificado"),
+            ("Monto:", f"$ {float(cobranza.monto):,.2f}"),
+            ("Retención:", retencion.nombre if retencion else "Sin retención"),
+            ("Descripción:", cobranza.descripcion if cobranza.descripcion else "Sin descripción")
+        ]
         
-        # Firma
+        for i, (etiqueta, valor) in enumerate(campos):
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(margin, info_y - (i+1)*linea_altura, etiqueta)
+            p.setFont("Helvetica", 10)
+            p.drawString(margin + 2*inch, info_y - (i+1)*linea_altura, str(valor))
+        
+        # Monto en letras
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(margin, info_y - (len(campos)+1)*linea_altura, "Monto en letras:")
         p.setFont("Helvetica", 10)
-        p.drawCentredString(2*inch, height - 9*inch, "_________________")
-        p.drawCentredString(2*inch, height - 9.3*inch, "Firma")
+        monto_texto = self.numero_a_letras(float(cobranza.monto))
+        p.drawString(margin + 2*inch, info_y - (len(campos)+1)*linea_altura, monto_texto)
+        
+        # Área de firma
+        firma_y = margin + 2*inch
+        p.setFont("Helvetica", 10)
+        p.drawString(margin, firma_y + linea_altura, "Firma:")
+        p.line(margin + inch, firma_y, margin + 4*inch, firma_y)
+        
+        # Información adicional en pie de página
+        p.setFont("Helvetica", 8)
+        p.setFillColorRGB(0.5, 0.5, 0.5)
+        p.drawString(margin, margin, "Unidad de Árbitros de Río Cuarto")
+        p.drawRightString(width - margin, margin, datetime.now().strftime("%d/%m/%Y %H:%M"))
         
         p.save()
         buffer.seek(0)
         return buffer.getvalue()
-    
+
     def send_receipt_email(self, db: Session, cobranza, recipient_email):
         try:
             # Crear mensaje
