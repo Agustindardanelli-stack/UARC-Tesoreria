@@ -187,140 +187,82 @@ class EmailService:
         
 
     def generate_payment_receipt_pdf(self, db: Session, pago):
-        """Genera un PDF con el recibo del pago con diseño mejorado similar al formato físico"""
+        """Genera un PDF con el recibo del pago con diseño moderno y profesional"""
         
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=landscape(letter))  # Orientación horizontal
         width, height = landscape(letter)
         
-        # Definir márgenes
-        margin = 0.5 * inch
+        # Definir márgenes y colores
+        margin = 0.75 * inch
+        accent_color = (0.1, 0.5, 0.7)  # Color azul corporativo
         
-        # Dibujar un borde alrededor de toda la página
-        p.setStrokeColorRGB(0, 0, 0)
-        p.setLineWidth(1)
-        p.rect(margin, margin, width - 2*margin, height - 2*margin)
+        # Fondo con sombreado suave
+        p.setFillColorRGB(0.95, 0.95, 1)  # Fondo muy claro
+        p.rect(margin/2, margin/2, width - margin, height - margin, fill=1, stroke=0)
         
-        # Cargar logo en la esquina superior derecha
-        self.load_logo(p, width - margin - inch, height - margin - inch)
+        # Borde con color de acento
+        p.setStrokeColorRGB(*accent_color)
+        p.setLineWidth(2)
+        p.rect(margin/2, margin/2, width - margin, height - margin)
         
-        # Títulos
-        p.setFont("Helvetica-Bold", 12)
-        # Título principal a la derecha como en la imagen
-        p.drawRightString(width - margin - 0.8*inch, height - margin - 0.5*inch, "UNIDAD")
-        p.drawRightString(width - margin - 0.8*inch, height - margin - 0.7*inch, "DE ÁRBITROS")
-        p.drawRightString(width - margin - 0.8*inch, height - margin - 0.9*inch, "DE RÍO CUARTO")
+        # Cargar logo en la esquina superior izquierda
+        self.load_logo(p, margin + 1*inch, height - margin - inch)
         
-        # Título "ORDENES DE PAGO" grande como en la imagen
+        # Encabezado
+        p.setFillColorRGB(*accent_color)
+        p.setFont("Helvetica-Bold", 16)
+        p.drawCentredString(width/2, height - 1.5*inch, "UNIDAD DE ÁRBITROS DE RÍO CUARTO")
         p.setFont("Helvetica-Bold", 14)
-        p.drawCentredString(width/2, height - margin - 0.8*inch, "ORDENES DE PAGO")
-        
-        # Número de orden (con N° 00137 como se ve en la imagen)
-        p.setFont("Helvetica-Bold", 12)
-        p.drawCentredString(width/2, height - margin - 1.2*inch, f"N° {pago.id:05d}")
-        
-        # Crear la tabla
-        y_start = height - margin - 1.6*inch
-        
-        # Definir columnas
-        cols = ["N° recibo", "Importe", "Se abonará a", "Concepto a pagar", "Firma"]
-        col_widths = [1.2*inch, 1.4*inch, 2.2*inch, 2.8*inch, 1.4*inch]
-        
-        # Dibujar el grid de la tabla
-        p.setStrokeColorRGB(0, 0, 0)
-        p.setLineWidth(0.5)
-        
-        # Rectángulo principal de la tabla
-        table_width = sum(col_widths)
-        table_height = 2*inch
-        p.rect(margin, y_start - table_height, table_width, table_height)
-        
-        # Encabezados de tabla
-        x_pos = margin
-        p.setFont("Helvetica-Bold", 10)
-        
-        for i, col in enumerate(cols):
-            # Dibujar celda de encabezado
-            p.rect(x_pos, y_start - 0.4*inch, col_widths[i], 0.4*inch)
-            
-            # Escribir texto de encabezado rotado verticalmente
-            p.saveState()
-            p.translate(x_pos + col_widths[i]/2, y_start - 0.2*inch)
-            p.rotate(90)
-            p.drawCentredString(0, 0, col)
-            p.restoreState()
-            
-            x_pos += col_widths[i]
-        
-        # Líneas verticales de la tabla para el área de datos
-        x_pos = margin
-        for width_col in col_widths:
-            x_pos += width_col
-            p.line(x_pos, y_start - table_height, x_pos, y_start - 0.4*inch)
+        p.drawCentredString(width/2, height - 2*inch, "ORDEN DE PAGO")
         
         # Obtener usuario/árbitro
         usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()
         
         # Obtener retención
-        retencion = db.query(models.Retencion).filter(models.Retencion.id == pago.retencion_id).first()
+        retencion = db.query(models.Retencion).filter(models.Retencion.id == pago.retencion_id).first() if pago.retencion_id else None
         
-        # Escribir datos en la tabla
+        # Detalles del pago
+        p.setFont("Helvetica", 12)
+        p.setFillColorRGB(0, 0, 0)
+        
+        # Número de orden de pago
+        p.drawRightString(width - margin, height - 2.5*inch, f"N° Orden: {pago.id:05d}")
+        
+        # Información detallada
+        info_y = height - 3.5*inch
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(margin, info_y, "Datos del Pago")
+        
         p.setFont("Helvetica", 11)
+        linea_altura = 0.3*inch
         
-        # Centrar datos en las celdas
-        y_datos = y_start - 0.4*inch - table_height/2 + 0.2*inch
+        # Campos de información
+        campos = [
+            ("Fecha:", pago.fecha.strftime('%d/%m/%Y')),
+            ("Beneficiario:", usuario.nombre if usuario else "No especificado"),
+            ("Monto:", f"$ {float(pago.monto):,.2f}"),
+            ("Concepto:", retencion.nombre if retencion else "Pago de arbitraje"),
+            ("Descripción:", pago.descripcion if hasattr(pago, 'descripcion') and pago.descripcion else "Sin descripción")
+        ]
         
-        # N° recibo
-        p.drawCentredString(margin + col_widths[0]/2, y_datos, f"{pago.id:05d}")
+        for i, (etiqueta, valor) in enumerate(campos):
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(margin, info_y - (i+1)*linea_altura, etiqueta)
+            p.setFont("Helvetica", 10)
+            p.drawString(margin + 2*inch, info_y - (i+1)*linea_altura, str(valor))
         
-        # Importe ($)
-        p.drawCentredString(margin + col_widths[0] + col_widths[1]/2, y_datos, f"$ {float(pago.monto):,.2f}")
+        # Área de firma
+        firma_y = margin + 2*inch
+        p.setFont("Helvetica", 10)
+        p.drawString(margin, firma_y + linea_altura, "Firma:")
+        p.line(margin + inch, firma_y, margin + 4*inch, firma_y)
         
-        # Se abonará a
-        nombre_usuario = usuario.nombre if usuario else ""
-        p.drawCentredString(margin + col_widths[0] + col_widths[1] + col_widths[2]/2, y_datos, nombre_usuario)
-        
-        # Concepto a pagar
-        concepto = f"Pago de arbitraje - {retencion.nombre if retencion else 'Pago'}"
-        p.drawCentredString(margin + col_widths[0] + col_widths[1] + col_widths[2] + col_widths[3]/2, y_datos, concepto)
-        
-        # Área para la firma - dejamos vacío como en la imagen
-        
-        # Agregar información de fecha en la esquina inferior derecha
-        fecha_boxes_width = 1.6*inch
-        fecha_boxes_height = 0.7*inch
-        fecha_boxes_x = width - margin - fecha_boxes_width - 0.2*inch
-        fecha_boxes_y = margin + 0.2*inch
-        
-        # Dibujar rectángulo para la fecha
-        p.rect(fecha_boxes_x, fecha_boxes_y, fecha_boxes_width, fecha_boxes_height)
-        
-        # Título de Fecha
-        p.setFont("Helvetica-Bold", 10)
-        p.drawString(fecha_boxes_x + 0.1*inch, fecha_boxes_y + fecha_boxes_height - 0.2*inch, "Fecha")
-        
-        # Dibujar cajas para la fecha (día/mes/año)
-        box_size = 0.3*inch
-        box_margin = 0.1*inch
-        box_y = fecha_boxes_y + 0.2*inch
-        
-        # Dibujar tres cajas para día/mes/año
-        for i in range(3):
-            box_x = fecha_boxes_x + 0.3*inch + i*(box_size + box_margin)
-            p.rect(box_x, box_y, box_size, box_size)
-        
-        # Dibujar caja para el monto $ a la izquierda
-        monto_box_width = 1.5*inch
-        monto_box_height = 0.5*inch
-        monto_box_x = margin + 0.5*inch
-        monto_box_y = margin + 0.5*inch
-        
-        p.drawString(margin + 0.2*inch, margin + 0.7*inch, "$")
-        p.rect(monto_box_x, monto_box_y, monto_box_width, monto_box_height)
-        
-        # Línea para firma
-        p.line(margin + 0.5*inch, margin + 1.6*inch, margin + 3*inch, margin + 1.6*inch)
-        p.drawString(margin + 0.2*inch, margin + 1.8*inch, "Firma:")
+        # Información adicional en pie de página
+        p.setFont("Helvetica", 8)
+        p.setFillColorRGB(0.5, 0.5, 0.5)
+        p.drawString(margin, margin, "Unidad de Árbitros de Río Cuarto")
+        p.drawRightString(width - margin, margin, datetime.now().strftime("%d/%m/%Y %H:%M"))
         
         p.save()
         buffer.seek(0)

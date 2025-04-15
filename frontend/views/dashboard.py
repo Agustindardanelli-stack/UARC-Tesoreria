@@ -68,14 +68,14 @@ class SidebarWidget(QWidget):
         
         # Botones de navegación
         buttons_data = [
-            {"text": "Dashboard", "value": "dashboard"},
+            {"text": "Inicio", "value": "dashboard"},
             {"text": "Pagos", "value": "pagos"},
             {"text": "Cobranzas", "value": "cobranzas"},
             {"text": "Cuotas Societarias", "value": "socio_cuota"},
             {"text": "Importes", "value": "importes"},
             {"text": "Reportes", "value": "reportes"},
             {"text": "Config. Email", "value": "email_config"} ,
-            {"text": "Agregar Usuario","value": "add_user"}
+            {"text": "Agregar Socio","value": "add_user"}
         ]
         
         for btn_data in buttons_data:
@@ -151,17 +151,17 @@ class DashboardView(QWidget):
         self.setup_ui()
         self.connect_signals()
         
-        # Temporizador para la hora
+        # Temporizador para la hora (cada 5 segundos es suficiente)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_time)
-        self.timer.start(1000)  # Actualizar cada segundo
-        
-        # Temporizador para actualizar datos cada 30 segundos
-        self.data_timer = QTimer(self)
-        self.data_timer.timeout.connect(self.refresh_data)
-        self.data_timer.start(30000)  # Actualizar cada 30 segundos
-        
-        # Cargar datos iniciales
+        self.timer.start(5000)  # Actualizar cada 5 segundos
+    
+    # Eliminar la actualización automática de datos
+    # self.data_timer = QTimer(self)
+    # self.data_timer.timeout.connect(self.refresh_data)
+    # self.data_timer.start(30000)
+    
+    # Cargar datos iniciales una sola vez
         self.refresh_data()
     
     def setup_ui(self):
@@ -238,7 +238,7 @@ class DashboardView(QWidget):
     
     def refresh_data(self):
         """Actualiza los datos del dashboard"""
-        
+        self.load_balance_data()
         self.load_partidas_data()
     
     def load_balance_data(self):

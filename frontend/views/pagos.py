@@ -24,7 +24,6 @@ class PagosView(QWidget):
         self.setup_ui()
         self.connect_signals()
         self.usuarios = []
-        self.retenciones = []
    
     def showEvent(self, event):
         """Se ejecuta cuando el widget se hace visible"""
@@ -93,12 +92,6 @@ class PagosView(QWidget):
         self.fecha_edit.setCalendarPopup(True)
         form_layout.addRow("Fecha:", self.fecha_edit)
         
-        # Tipo de Retención
-        self.retencion_combo = QComboBox()
-        self.retencion_combo.setPlaceholderText("Seleccione una retención")
-        self.retencion_combo.currentIndexChanged.connect(self.on_retencion_changed)
-        form_layout.addRow("Tipo de Retención:", self.retencion_combo)
-        
         # Monto
         self.monto_spin = QDoubleSpinBox()
         self.monto_spin.setRange(0, 999999.99)
@@ -107,7 +100,7 @@ class PagosView(QWidget):
         self.monto_spin.setDecimals(2)
         form_layout.addRow("Monto:", self.monto_spin)
         
-        # Notas
+        # Descripción/Notas (Nuevo)
         self.notas_edit = QLineEdit()
         self.notas_edit.setPlaceholderText("Ingrese detalles adicionales...")
         form_layout.addRow("Descripción/Notas:", self.notas_edit)
@@ -118,7 +111,7 @@ class PagosView(QWidget):
         
         layout.addLayout(form_layout)
         layout.addWidget(self.registrar_btn)
-    
+
     def setup_tab_listar(self):
         layout = QVBoxLayout(self.tab_listar)
         
@@ -151,8 +144,8 @@ class PagosView(QWidget):
         
         # Tabla de pagos
         self.pagos_table = QTableWidget()
-        self.pagos_table.setColumnCount(5)
-        self.pagos_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Retención", "Monto"])
+        self.pagos_table.setColumnCount(5)  # 5 columnas
+        self.pagos_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Monto", "Descripción"])
         self.pagos_table.horizontalHeader().setStretchLastSection(True)
         self.pagos_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.pagos_table.setAlternatingRowColors(True)
@@ -162,22 +155,44 @@ class PagosView(QWidget):
         # Label para total
         self.total_label = QLabel("Total de pagos: $0.00")
         layout.addWidget(self.total_label)
-    
+                
     def setup_tab_buscar(self):
         layout = QVBoxLayout(self.tab_buscar)
         
         # Campo de búsqueda
         busqueda_layout = QHBoxLayout()
         
-        self.id_search = QLineEdit()
-        self.id_search.setPlaceholderText("Ingrese ID del pago...")
+        # Etiqueta de búsqueda
+        busqueda_label = QLabel("Buscar:")
         
+        # Combo para seleccionar tipo de búsqueda
+        self.tipo_busqueda_combo = QComboBox()
+        self.tipo_busqueda_combo.addItems(["Por ID", "Por Árbitro", "Por Descripción"])
+        
+        # Campo de búsqueda
+        self.busqueda_input = QLineEdit()
+        self.busqueda_input.setPlaceholderText("Ingrese término de búsqueda...")
+        
+        # Botón de búsqueda
         self.search_btn = QPushButton("Buscar")
         self.search_btn.clicked.connect(self.on_buscar_pago_id)
         
-        busqueda_layout.addWidget(QLabel("Buscar por ID:"))
-        busqueda_layout.addWidget(self.id_search)
+        # Botones de Editar y Eliminar
+        self.edit_btn = QPushButton("Editar")
+        self.edit_btn.clicked.connect(self.on_editar_pago)
+        self.edit_btn.setEnabled(False)
+        
+        self.delete_btn = QPushButton("Eliminar")
+        self.delete_btn.clicked.connect(self.on_eliminar_pago)
+        self.delete_btn.setEnabled(False)
+        
+        # Agregar widgets al layout
+        busqueda_layout.addWidget(busqueda_label)
+        busqueda_layout.addWidget(self.tipo_busqueda_combo)
+        busqueda_layout.addWidget(self.busqueda_input)
         busqueda_layout.addWidget(self.search_btn)
+        busqueda_layout.addWidget(self.edit_btn)
+        busqueda_layout.addWidget(self.delete_btn)
         
         layout.addLayout(busqueda_layout)
         
@@ -208,9 +223,9 @@ class PagosView(QWidget):
         # Columna 2
         col2_layout = QVBoxLayout()
         self.arbitro_label = QLabel()
-        self.retencion_label = QLabel()
+        self.descripcion_label = QLabel()  # Nuevo label
         col2_layout.addWidget(self.arbitro_label)
-        col2_layout.addWidget(self.retencion_label)
+        col2_layout.addWidget(self.descripcion_label)
         
         detalles_layout.addLayout(col1_layout)
         detalles_layout.addLayout(col2_layout)
@@ -226,14 +241,12 @@ class PagosView(QWidget):
     def refresh_data(self):
         """Carga los datos iniciales"""
         self.cargar_usuarios()
-        self.cargar_retenciones()
         self.on_buscar_pagos()
     
     def cargar_usuarios(self):
         """Carga la lista de usuarios desde la API"""
         try:
             headers = session.get_headers()
-            # Asegúrate de que la URL coincida exactamente con la del backend
             url = f"{session.api_url}/usuarios"  # Sin barra al final
             print(f"Realizando petición GET a: {url}")
             
@@ -253,40 +266,6 @@ class PagosView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al cargar usuarios: {str(e)}")
     
-    def cargar_retenciones(self):
-        """Carga la lista de retenciones desde la API"""
-        try:
-            headers = session.get_headers()
-            url = f"{session.api_url}/retenciones/"  # Agregamos la barra al final
-            print(f"Realizando petición GET a: {url}")
-            
-            response = requests.get(url, headers=headers)
-            
-            if response.status_code == 200:
-                self.retenciones = response.json()
-                print(f"Retenciones cargadas: {len(self.retenciones)}")
-                
-                # Actualizar combo box
-                self.retencion_combo.clear()
-                for retencion in self.retenciones:
-                    self.retencion_combo.addItem(
-                        f"{retencion['nombre']} (${retencion['monto']})", 
-                        retencion['id']
-                    )
-            else:
-                QMessageBox.warning(self, "Error", f"No se pudieron cargar las retenciones. Status code: {response.status_code}")
-                print(f"Error al cargar retenciones: {response.text}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al cargar retenciones: {str(e)}")
-    
-    def on_retencion_changed(self, index):
-        """Actualiza el monto basado en la retención seleccionada"""
-        if index >= 0 and index < len(self.retenciones):
-            retencion_id = self.retencion_combo.itemData(index)
-            retencion = next((r for r in self.retenciones if r['id'] == retencion_id), None)
-            if retencion:
-                self.monto_spin.setValue(retencion['monto'])
-    
     def on_registrar_pago(self):
         """Maneja el evento de clic en Registrar Pago"""
         # Validar campos
@@ -302,6 +281,7 @@ class PagosView(QWidget):
         usuario_id = self.arbitro_combo.currentData()
         fecha = self.fecha_edit.date().toString("yyyy-MM-dd")
         monto = self.monto_spin.value()
+        notas = self.notas_edit.text().strip()
         
         # Crear objeto de pago
         pago_data = {
@@ -310,10 +290,9 @@ class PagosView(QWidget):
             "monto": monto
         }
         
-        # Solo agregar retencion_id si se ha seleccionado una retención
-        if self.retencion_combo.currentIndex() >= 0:
-            retencion_id = self.retencion_combo.currentData()
-            pago_data["retencion_id"] = retencion_id
+        # Agregar notas si no está vacío
+        if notas:
+            pago_data["descripcion"] = notas
         
         try:
             # Enviar solicitud para crear pago
@@ -373,7 +352,6 @@ class PagosView(QWidget):
                 # Limpiar formulario
                 self.arbitro_combo.setCurrentIndex(-1)
                 self.fecha_edit.setDate(QDate.currentDate())
-                self.retencion_combo.setCurrentIndex(-1)
                 self.monto_spin.setValue(0)
                 self.notas_edit.clear()
                 
@@ -392,11 +370,11 @@ class PagosView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al registrar pago: {str(e)}")
 
-    # Añadir esta función para enviar recibos manualmente
     def enviar_recibo_manualmente(self, pago_id, email):
         """Envía un recibo manualmente usando la API"""
         try:
-            # Enviar solicitud para reenviar recibo
+                
+    # Enviar solicitud para reenviar recibo
             headers = session.get_headers()
             
             url = f"{session.api_url}/pagos/{pago_id}/reenviar-orden"
@@ -422,48 +400,190 @@ class PagosView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al enviar recibo: {str(e)}")
     
+    
     def on_buscar_pago_id(self):
-        """Busca un pago por su ID"""
-        pago_id = self.id_search.text().strip()
+        """Busca un pago por diferentes criterios"""
+        tipo_busqueda = self.tipo_busqueda_combo.currentText()
+        termino_busqueda = self.busqueda_input.text().strip()
         
-        if not pago_id.isdigit():
-            QMessageBox.warning(self, "Error", "Por favor ingrese un ID válido")
+        if not termino_busqueda:
+            QMessageBox.warning(self, "Error", "Ingrese un término de búsqueda")
             return
         
         try:
-            # Obtener pago por ID
             headers = session.get_headers()
-            url = f"{session.api_url}/pagos/{pago_id}"
-            print(f"Realizando petición GET a: {url}")
             
-            response = requests.get(url, headers=headers)
+            # Construir parámetros de búsqueda según el tipo
+            if tipo_busqueda == "Por ID":
+                url = f"{session.api_url}/pagos/{termino_busqueda}"
+                response = requests.get(url, headers=headers)
+            elif tipo_busqueda == "Por Árbitro":
+                url = f"{session.api_url}/pagos"
+                params = {"usuario_nombre": termino_busqueda}
+                response = requests.get(url, headers=headers, params=params)
+            elif tipo_busqueda == "Por Descripción":
+                url = f"{session.api_url}/pagos"
+                params = {"descripcion": termino_busqueda}
+                response = requests.get(url, headers=headers, params=params)
             
             if response.status_code == 200:
-                pago = response.json()
-                print(f"Pago cargado: {pago}")
-                
-                # Mostrar detalles
-                self.resultado_title.setVisible(True)
-                self.resultado_container.setVisible(True)
-                
-                # Formatear fecha
-                fecha = datetime.strptime(pago.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if pago.get('fecha') else ''
-                
-                # Asignar valores a los labels
-                self.id_label.setText(f"<b>ID del Pago:</b> {pago.get('id')}")
-                self.fecha_label.setText(f"<b>Fecha:</b> {fecha}")
-                self.monto_label.setText(f"<b>Monto:</b> ${pago.get('monto', 0):,.2f}")
-                self.arbitro_label.setText(f"<b>Árbitro:</b> {pago.get('usuario', {}).get('nombre', '')}")
-                self.retencion_label.setText(f"<b>Retención:</b> {pago.get('retencion', {}).get('nombre', '')}")
+                datos = response.json()
+                if datos:
+                    # Tomar el primer resultado si es una lista
+                    self.pago_actual = datos[0] if isinstance(datos, list) else datos
+                    
+                    # Mostrar detalles
+                    self.resultado_title.setVisible(True)
+                    self.resultado_container.setVisible(True)
+                    
+                    # Formatear fecha
+                    fecha = datetime.strptime(self.pago_actual.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if self.pago_actual.get('fecha') else ''
+                    
+                    # Asignar valores a los labels
+                    self.id_label.setText(f"<b>ID del Pago:</b> {self.pago_actual.get('id')}")
+                    self.fecha_label.setText(f"<b>Fecha:</b> {fecha}")
+                    self.monto_label.setText(f"<b>Monto:</b> ${self.pago_actual.get('monto', 0):,.2f}")
+                    
+                    # Obtener nombre del árbitro
+                    usuario = self.pago_actual.get("usuario", {})
+                    arbitro_nombre = usuario.get("nombre", "")
+                    self.arbitro_label.setText(f"<b>Árbitro:</b> {arbitro_nombre}")
+                    
+                    # Obtener descripción
+                    descripcion = self.pago_actual.get("descripcion", "")
+                    self.descripcion_label.setText(f"<b>Descripción:</b> {descripcion}")
+                    
+                    # Habilitar botones de editar y eliminar
+                    self.edit_btn.setEnabled(True)
+                    self.delete_btn.setEnabled(True)
+                else:
+                    QMessageBox.information(self, "Búsqueda", "No se encontraron resultados")
+                    self.edit_btn.setEnabled(False)
+                    self.delete_btn.setEnabled(False)
             else:
-                self.resultado_container.setVisible(False)
-                QMessageBox.warning(self, "No encontrado", f"No se encontró ningún pago con ID {pago_id}. Status code: {response.status_code}")
-                print(f"Error al buscar pago por ID: {response.text}")
+                QMessageBox.warning(self, "Error", f"Error en la búsqueda. Código: {response.status_code}")
+                self.edit_btn.setEnabled(False)
+                self.delete_btn.setEnabled(False)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al buscar pago: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error en la búsqueda: {str(e)}")
+            self.edit_btn.setEnabled(False)
+            self.delete_btn.setEnabled(False)
 
+    def on_editar_pago(self):
+        """Abre un diálogo para editar el pago seleccionado"""
+        if not hasattr(self, 'pago_actual'):
+            QMessageBox.warning(self, "Error", "Primero realice una búsqueda")
+            return
+        
+        # Abrir diálogo de edición con los datos actuales
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Editar Pago")
+        layout = QFormLayout(dialog)
+        
+        # Campos editables
+        fecha_edit = QDateEdit()
+        fecha_edit.setDate(QDate.fromString(self.pago_actual['fecha'], "yyyy-MM-dd"))
+        
+        monto_spin = QDoubleSpinBox()
+        monto_spin.setValue(self.pago_actual['monto'])
+        monto_spin.setRange(0, 999999.99)
+        monto_spin.setPrefix("$ ")
+        monto_spin.setDecimals(2)
+        
+        descripcion_edit = QLineEdit()
+        descripcion_edit.setText(self.pago_actual.get('descripcion', ''))
+        
+        layout.addRow("Fecha:", fecha_edit)
+        layout.addRow("Monto:", monto_spin)
+        layout.addRow("Descripción:", descripcion_edit)
+        
+        # Botones
+        btn_layout = QHBoxLayout()
+        guardar_btn = QPushButton("Guardar")
+        cancelar_btn = QPushButton("Cancelar")
+        btn_layout.addWidget(guardar_btn)
+        btn_layout.addWidget(cancelar_btn)
+        layout.addRow(btn_layout)
+        
+        guardar_btn.clicked.connect(lambda: self.guardar_edicion_pago(
+            dialog, 
+            self.pago_actual['id'], 
+            fecha_edit.date().toString("yyyy-MM-dd"),
+            monto_spin.value(),
+            descripcion_edit.text()
+        ))
+        cancelar_btn.clicked.connect(dialog.reject)
+        
+        dialog.exec()
 
-    
+    def guardar_edicion_pago(self, dialog, pago_id, fecha, monto, descripcion):
+        """Guarda los cambios del pago editado"""
+        try:
+            headers = session.get_headers()
+            headers["Content-Type"] = "application/json"
+            
+            url = f"{session.api_url}/pagos/{pago_id}"
+            
+            datos_actualizacion = {
+                "fecha": fecha,
+                "monto": monto,
+                "descripcion": descripcion
+            }
+            
+            response = requests.put(url, headers=headers, json=datos_actualizacion)
+            
+            if response.status_code == 200:
+                QMessageBox.information(self, "Éxito", "Pago actualizado correctamente")
+                dialog.accept()
+                # Actualizar la vista de detalles
+                self.on_buscar_pago_id()
+            else:
+                QMessageBox.warning(self, "Error", f"No se pudo actualizar. Código: {response.status_code}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al actualizar: {str(e)}")
+
+    def on_eliminar_pago(self):
+            """Elimina el pago seleccionado"""
+            if not hasattr(self, 'pago_actual'):
+                QMessageBox.warning(self, "Error", "Primero realice una búsqueda")
+                return
+            
+            respuesta = QMessageBox.question(
+                self, 
+                "Confirmar Eliminación", 
+                "¿Está seguro de eliminar este pago?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if respuesta == QMessageBox.Yes:
+                try:
+                    headers = session.get_headers()
+                    url = f"{session.api_url}/pagos/{self.pago_actual['id']}"
+                    
+                    response = requests.delete(url, headers=headers)
+                    
+                    if response.status_code == 200:
+                        QMessageBox.information(self, "Éxito", "Pago eliminado correctamente")
+                        # Limpiar campos
+                        self.busqueda_input.clear()
+                        self.resultado_container.setVisible(False)
+                        self.resultado_title.setVisible(False)
+                        
+                        # Deshabilitar botones
+                        self.edit_btn.setEnabled(False)
+                        self.delete_btn.setEnabled(False)
+                        
+                        # Actualizar lista de pagos
+                        self.on_buscar_pagos()
+                    else:
+                        QMessageBox.warning(
+                            self, 
+                            "Error", 
+                            f"No se pudo eliminar el pago. Código: {response.status_code}"
+                        )
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Error al eliminar: {str(e)}")
+                
     def on_buscar_pagos(self):
         """Busca pagos según los filtros seleccionados"""
         try:
@@ -531,16 +651,15 @@ class PagosView(QWidget):
                     arbitro = usuario.get("nombre", "")
                     self.pagos_table.setItem(row, 2, QTableWidgetItem(arbitro))
 
-                    # Retención
-                    retencion_data = pago.get("retencion") or {}
-                    retencion = retencion_data.get("nombre", "")
-                    self.pagos_table.setItem(row, 3, QTableWidgetItem(retencion))
-
                     # Monto
                     monto = pago.get("monto", 0)
                     monto_item = QTableWidgetItem(f"${monto:,.2f}")
                     monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    self.pagos_table.setItem(row, 4, monto_item)
+                    self.pagos_table.setItem(row, 3, monto_item)
+
+                    # Descripción
+                    descripcion = pago.get("descripcion", "")
+                    self.pagos_table.setItem(row, 4, QTableWidgetItem(descripcion))
 
                     # Acumular total
                     total_pagos += monto
