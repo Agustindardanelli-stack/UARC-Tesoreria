@@ -37,9 +37,11 @@ class Retencion(Base):
     nombre = Column(String(100), nullable=False)
     monto = Column(Numeric(10, 2), nullable=False)
     
-    # Relaciones
-    pagos = relationship("Pago", back_populates="retencion")
+    # Relaciones existentes
+    cobranzas = relationship("Cobranza", back_populates="retencion", primaryjoin="Retencion.id == Cobranza.retencion_id")
     divisiones = relationship("RetencionDivision", back_populates="retencion")
+    
+    
 
 class Categoria(Base):
     __tablename__ = "categorias"
@@ -67,16 +69,14 @@ class Pago(Base):
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
     fecha = Column(Date, nullable=False)
-    monto = Column(Numeric(10, 2), nullable=False)
-    retencion_id = Column(Integer, ForeignKey("retenciones.id", ondelete="CASCADE"), nullable=True)  # nullable=True
+    monto = Column(Numeric(10, 2), nullable=False)    
     transaccion_id = Column(Integer, ForeignKey("transacciones.id"), nullable=True)
+    descripcion = Column(Text, nullable=True)  # Nuevo campo para descripción
     
-    
-    # ... resto del código ...
+    # Eliminar la relación con retencion_id
     
     # Relaciones
     usuario = relationship("Usuario", back_populates="pagos")
-    retencion = relationship("Retencion", back_populates="pagos")
     transaccion = relationship("Transaccion", back_populates="pagos")
     auditorias = relationship("Auditoria", back_populates="pago")
     partidas = relationship("Partida", back_populates="pago")
@@ -92,9 +92,12 @@ class Cobranza(Base):
     fecha = Column(Date, nullable=False)
     monto = Column(Numeric(10, 2), nullable=False)
     transaccion_id = Column(Integer, ForeignKey("transacciones.id"), nullable=True)
+    # Agregar estos dos campos nuevos
+    retencion_id = Column(Integer, ForeignKey("retenciones.id"), nullable=True)
+    descripcion = Column(Text, nullable=True)  # Campo para descripción
+    
     auditorias = relationship("Auditoria", back_populates="cobranza")
-    # Nuevos campos para tracking de email
-
+    # Campos para tracking de email
     email_enviado = Column(Boolean, default=False)
     fecha_envio_email = Column(DateTime, nullable=True)
     email_destinatario = Column(String(100), nullable=True)
@@ -103,6 +106,7 @@ class Cobranza(Base):
     usuario = relationship("Usuario", back_populates="cobranzas")
     transaccion = relationship("Transaccion", back_populates="cobranzas")
     partidas = relationship("Partida", back_populates="cobranza")
+    retencion = relationship("Retencion", back_populates="cobranzas")
 class Partida(Base):
     __tablename__ = "partidas"
     

@@ -75,7 +75,6 @@ class EmailService:
             
     def generate_receipt_pdf(self, db: Session, cobranza):
         """Genera un PDF con el recibo de la cobranza con diseño moderno y detallado"""
-        
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=landscape(letter))  # Orientación horizontal
         width, height = landscape(letter)
@@ -106,8 +105,13 @@ class EmailService:
         # Obtener usuario/árbitro
         usuario = db.query(models.Usuario).filter(models.Usuario.id == cobranza.usuario_id).first()
         
-        # Obtener retención si existe
-        retencion = db.query(models.Retencion).filter(models.Retencion.id == cobranza.retencion_id).first() if cobranza.retencion_id else None
+        # Obtener retención y sus detalles si existe
+        retencion = None
+        retencion_info = "Sin retención"
+        if cobranza.retencion_id:
+            retencion = db.query(models.Retencion).filter(models.Retencion.id == cobranza.retencion_id).first()
+            if retencion:
+                retencion_info = f"{retencion.nombre} - ${float(retencion.monto):,.2f}"
         
         # Detalles de la cobranza
         p.setFont("Helvetica", 12)
@@ -124,13 +128,13 @@ class EmailService:
         p.setFont("Helvetica", 11)
         linea_altura = 0.3*inch
         
-        # Campos de información
+        # Campos de información principales
         campos = [
             ("Fecha:", cobranza.fecha.strftime('%d/%m/%Y')),
             ("Pagador:", usuario.nombre if usuario else "No especificado"),
             ("Monto:", f"$ {float(cobranza.monto):,.2f}"),
-            ("Retención:", retencion.nombre if retencion else "Sin retención"),
-            ("Descripción:", cobranza.descripcion if cobranza.descripcion else "Sin descripción")
+            ("Retención:", retencion_info)
+            
         ]
         
         for i, (etiqueta, valor) in enumerate(campos):
@@ -139,12 +143,38 @@ class EmailService:
             p.setFont("Helvetica", 10)
             p.drawString(margin + 2*inch, info_y - (i+1)*linea_altura, str(valor))
         
+        # Descripción con manejo especial para texto largo
+        descripcion = cobranza.descripcion if cobranza.descripcion else "Sin descripción"
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(margin, info_y - (len(campos)+1)*linea_altura, "Descripción:")
+        p.setFont("Helvetica", 10)
+        
+        # Dividir descripción larga en múltiples líneas si es necesario
+        palabras = descripcion.split()
+        lineas = []
+        linea_actual = []
+        ancho_maximo = 60  # caracteres aproximados por línea
+        
+        for palabra in palabras:
+            linea_actual.append(palabra)
+            if len(' '.join(linea_actual)) > ancho_maximo:
+                linea_actual.pop()
+                lineas.append(' '.join(linea_actual))
+                linea_actual = [palabra]
+        if linea_actual:
+            lineas.append(' '.join(linea_actual))
+        
+        # Dibujar cada línea de la descripción
+        for i, linea in enumerate(lineas):
+            p.drawString(margin + 2*inch, info_y - (len(campos)+1+i)*linea_altura, linea)
+        
         # Monto en letras
         p.setFont("Helvetica-Bold", 10)
-        p.drawString(margin, info_y - (len(campos)+1)*linea_altura, "Monto en letras:")
+        y_pos = info_y - (len(campos)+1+len(lineas))*linea_altura
+        p.drawString(margin, y_pos, "Monto en letras:")
         p.setFont("Helvetica", 10)
         monto_texto = self.numero_a_letras(float(cobranza.monto))
-        p.drawString(margin + 2*inch, info_y - (len(campos)+1)*linea_altura, monto_texto)
+        p.drawString(margin + 2*inch, y_pos, monto_texto)
         
         # Área de firma
         firma_y = margin + 2*inch

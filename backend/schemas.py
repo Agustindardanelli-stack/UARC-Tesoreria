@@ -139,34 +139,35 @@ class EmailConfig(EmailConfigBase):
 class PagoBase(BaseModel):
     usuario_id: int
     fecha: date
-    monto: float
-    retencion_id: Optional[int] = None  # Hacer este campo opcional
-    transaccion_id: Optional[int] = None
+    monto: float    
+    descripcion: Optional[str] = None
 
-class PagoCreate(BaseModel):
-    usuario_id: int
-    fecha: date
-    monto: float
-    retencion_id: Optional[int] = None
+class PagoCreate(PagoBase):
+    pass
 
 class PagoUpdate(BaseModel):
     usuario_id: Optional[int] = None
     fecha: Optional[date] = None
     monto: Optional[float] = None
-    retencion_id: Optional[int] = None
-    transaccion_id: Optional[int] = None
+    descripcion: Optional[str] = None
+
+
 
 class Pago(PagoBase):
     id: int
-    
+    transaccion_id: Optional[int] = None
+    email_enviado: bool = False
+    fecha_envio_email: Optional[datetime] = None
+    email_destinatario: Optional[str] = None
+
     class Config:
         orm_mode = True
 
 class PagoDetalle(Pago):
-    usuario: Usuario
-    retencion: Optional[Retencion] = None  # Hacer la retención opcional
-    usuario_auditoria: Optional[str] = None
+    usuario: Optional[Usuario] = None
     
+    usuario_auditoria: Optional[str] = None
+
     class Config:
         orm_mode = True
 # Cobranza Schemas
@@ -174,7 +175,8 @@ class CobranzaBase(BaseModel):
     usuario_id: int
     fecha: date
     monto: float
-    transaccion_id: Optional[int] = None
+    retencion_id: Optional[int] = None
+    descripcion: Optional[str] = None  # Añadir este campo
 
 class CobranzaCreate(CobranzaBase):
     pass
@@ -183,19 +185,26 @@ class CobranzaUpdate(BaseModel):
     usuario_id: Optional[int] = None
     fecha: Optional[date] = None
     monto: Optional[float] = None
-    transaccion_id: Optional[int] = None
+    retencion_id: Optional[int] = None
+    descripcion: Optional[str] = None  # Añadir este campo
 
 class Cobranza(CobranzaBase):
     id: int
-    
+    transaccion_id: Optional[int] = None
+    email_enviado: bool = False
+    fecha_envio_email: Optional[datetime] = None
+    email_destinatario: Optional[str] = None
+
     class Config:
         orm_mode = True
 
 class CobranzaDetalle(Cobranza):
-    usuario: Usuario
+    usuario: Optional["Usuario"] = None
+    retencion: Optional["Retencion"] = None
     usuario_auditoria: Optional[str] = None
+
     class Config:
-        orm_mode = True
+        orm_mode = True        
 
 # Partida Schemas
 class PartidaBase(BaseModel):

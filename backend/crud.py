@@ -185,17 +185,10 @@ def create_pago(db: Session, pago: schemas.PagoCreate):
     usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
     nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
     
-    # Preparar el detalle, agregando la retención si existe
-    detalle = f"Pago a {nombre_usuario}"
-    if db_pago.retencion_id:
-        retencion = db.query(models.Retencion).filter(models.Retencion.id == db_pago.retencion_id).first()
-        if retencion:
-            detalle += f" - {retencion.nombre}"
-    
     # Crear partida asociada al pago (egreso)
     partida = models.Partida(
         fecha=db_pago.fecha,
-        detalle=detalle,
+        detalle=f"Pago {nombre_usuario}",  # Eliminé el guión
         monto=db_pago.monto,
         tipo="egreso",
         cuenta="CAJA",
@@ -300,21 +293,20 @@ def reenviar_orden_pago(db: Session, pago_id: int, email: str = None, current_us
 
 @audit_trail("pagos")
 def get_pagos(db: Session, skip: int = 0, limit: int = 100):
+    
     pagos = db.query(models.Pago).order_by(desc(models.Pago.fecha)).offset(skip).limit(limit).all()
     
-    for pago in pagos:
-        if pago.retencion_id is None:
-            pago.retencion = None
-    
     return pagos
+
 @audit_trail("pagos")
 def get_pago(db: Session, pago_id: int):
+    
     pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     
-    if pago and pago.retencion_id is None:
-        pago.retencion = None
-    
     return pago
+
+
+@audit_trail("pagos")
 @audit_trail("pagos")
 def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate):
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
@@ -333,7 +325,12 @@ def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate):
     partida = db.query(models.Partida).filter(models.Partida.pago_id == pago_id).first()
     if partida:
         partida.fecha = db_pago.fecha
-        partida.detalle = f"Pago a {db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first().nombre}"
+        
+        # Obtener nombre de usuario
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
+        nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
+        
+        partida.detalle = f"Pago {nombre_usuario}"  # Eliminé "a" y el guión
         partida.monto = db_pago.monto
         partida.egreso = db_pago.monto
         partida.usuario_id = db_pago.usuario_id
@@ -408,16 +405,23 @@ def reenviar_recibo(db: Session, cobranza_id: int, email: str = None):
         return {"success": False, "message": message}
 
 # Funciones CRUD para Cobranzas
+# Funciones CRUD para Cobranzas
 @audit_trail("cobranza")
 def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate):
-    db_cobranza = models.Cobranza(**cobranza.dict())  # Nota: cambié cobranza_data a cobranza.dict()
+    # Validar retencion_id si se proporciona
+    if cobranza.retencion_id is not None:
+        retencion = db.query(models.Retencion).filter(models.Retencion.id == cobranza.retencion_id).first()
+        if not retencion:
+            raise HTTPException(status_code=404, detail="Retención no encontrada")
+
+    db_cobranza = models.Cobranza(**cobranza.dict())
     db.add(db_cobranza)
     db.commit()
     db.refresh(db_cobranza)
     
     partida = models.Partida(
         fecha=db_cobranza.fecha,
-        detalle=f"Cobranza de {db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first().nombre}",
+        detalle=f"Cobranza - {db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first().nombre}",
         monto=db_cobranza.monto,
         tipo="ingreso",
         cuenta="CAJA",
@@ -472,14 +476,7 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate):
         print(f"Error en envío de recibo por email: {str(e)}")
     
     return db_cobranza
-     
 
-
-def get_cobranza(db: Session, cobranza_id: int):
-    return db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
-
-def get_cobranzas(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Cobranza).order_by(desc(models.Cobranza.fecha)).offset(skip).limit(limit).all()
 @audit_trail("cobranza")
 def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.CobranzaUpdate):
     db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
@@ -498,13 +495,26 @@ def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.Cobr
     partida = db.query(models.Partida).filter(models.Partida.cobranza_id == cobranza_id).first()
     if partida:
         partida.fecha = db_cobranza.fecha
-        partida.detalle = f"Cobranza de {db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first().nombre}"
+        
+        # Obtener nombre de usuario
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first()
+        nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
+        
+        partida.detalle = f"Cobranza {nombre_usuario}"  # Eliminé "de"
         partida.monto = db_cobranza.monto
         partida.ingreso = db_cobranza.monto
         partida.usuario_id = db_cobranza.usuario_id
         db.commit()
     
     return db_cobranza
+
+
+def get_cobranza(db: Session, cobranza_id: int):
+    return db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
+
+def get_cobranzas(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Cobranza).order_by(desc(models.Cobranza.fecha)).offset(skip).limit(limit).all()
+
 @audit_trail("cobranza")
 def delete_cobranza(db: Session, cobranza_id: int):
     db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
@@ -996,3 +1006,25 @@ def get_nombre_mes(month_number):
         12: "Diciembre"
     }
     return nombres_meses.get(month_number, "")
+
+def get_auditoria(db: Session, skip: int = 0, limit: int = 100, 
+                tabla_afectada: Optional[str] = None, usuario_id: Optional[int] = None,
+                fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
+                create_usuario: int = None):
+    query = db.query(models.Auditoria)
+    
+    # Aplicar filtros
+    if tabla_afectada:
+        query = query.filter(models.Auditoria.tabla_afectada == tabla_afectada)
+    
+    if usuario_id:
+        query = query.filter(models.Auditoria.usuario_id == usuario_id)
+    
+    if fecha_desde:
+        query = query.filter(models.Auditoria.fecha >= fecha_desde)
+    
+    if fecha_hasta:
+        query = query.filter(models.Auditoria.fecha <= fecha_hasta)
+    
+    # Ordenar y paginar
+    return query.order_by(desc(models.Auditoria.fecha)).offset(skip).limit(limit).all()
