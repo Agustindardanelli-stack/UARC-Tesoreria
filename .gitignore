@@ -100,5 +100,6 @@ pip-lock.txt
 
 # Archivos específicos de tu proyecto (añade aquí más patrones si es necesario)
 # ejemplo:
+session.py
 # datos_sensibles.txt
 # archivos_de_prueba/

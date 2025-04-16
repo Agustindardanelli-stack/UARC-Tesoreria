@@ -979,7 +979,7 @@ async def reenviar_recibo_cobranza(request: Request, cobranza_id: int, email: Op
             db=db, 
             cobranza_id=cobranza_id, 
             email=email,
-            current_user_id=current_user.id
+            
         )
         if not result["success"]:
             raise HTTPException(

@@ -163,64 +163,7 @@ class CobranzasView(QWidget):
         self.total_label = QLabel("Total de cobranzas: $0.00")
         layout.addWidget(self.total_label)
     
-    def setup_tab_buscar(self):
-        layout = QVBoxLayout(self.tab_buscar)
-        
-        # Campo de búsqueda
-        busqueda_layout = QHBoxLayout()
-        
-        self.id_search = QLineEdit()
-        self.id_search.setPlaceholderText("Ingrese ID de la cobranza...")
-        
-        self.search_btn = QPushButton("Buscar")
-        self.search_btn.clicked.connect(self.on_buscar_cobranza)
-        
-        busqueda_layout.addWidget(QLabel("Buscar por ID:"))
-        busqueda_layout.addWidget(self.id_search)
-        busqueda_layout.addWidget(self.search_btn)
-        
-        layout.addLayout(busqueda_layout)
-        
-        # Contenedor para resultados
-        self.resultado_container = QWidget()
-        self.resultado_layout = QVBoxLayout(self.resultado_container)
-        
-        # Título de resultados
-        self.resultado_title = QLabel("Detalles de la Cobranza")
-        resultado_font = QFont()
-        resultado_font.setPointSize(16)
-        self.resultado_title.setFont(resultado_font)
-        self.resultado_title.setVisible(False)
-        self.resultado_layout.addWidget(self.resultado_title)
-        
-        # Detalles en dos columnas
-        detalles_layout = QHBoxLayout()
-        
-        # Columna 1
-        col1_layout = QVBoxLayout()
-        self.id_label = QLabel()
-        self.fecha_label = QLabel()
-        self.monto_label = QLabel()
-        col1_layout.addWidget(self.id_label)
-        col1_layout.addWidget(self.fecha_label)
-        col1_layout.addWidget(self.monto_label)
-        
-        # Columna 2
-        col2_layout = QVBoxLayout()
-        self.arbitro_label = QLabel()
-        self.retencion_label = QLabel()
-        self.descripcion_label = QLabel()  # Nuevo label para descripción
-        col2_layout.addWidget(self.arbitro_label)
-        col2_layout.addWidget(self.retencion_label)
-        col2_layout.addWidget(self.descripcion_label)
-        
-        detalles_layout.addLayout(col1_layout)
-        detalles_layout.addLayout(col2_layout)
-        
-        self.resultado_layout.addLayout(detalles_layout)
-        
-        layout.addWidget(self.resultado_container)
-        self.resultado_container.setVisible(False)
+    
     
     def connect_signals(self):
         self.sidebar.navigation_requested.connect(self.navigation_requested)
@@ -429,118 +372,123 @@ class CobranzasView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al enviar recibo: {str(e)}")
     def on_buscar_cobranzas(self):
-            """Busca cobranzas según los filtros seleccionados"""
-            try:
-                # Preparar parámetros
-                desde = self.desde_date.date().toString("yyyy-MM-dd")
-                hasta = self.hasta_date.date().toString("yyyy-MM-dd")
+        """Busca cobranzas según los filtros seleccionados"""
+        try:
+            # Preparar parámetros
+            desde = self.desde_date.date().toString("yyyy-MM-dd")
+            hasta = self.hasta_date.date().toString("yyyy-MM-dd")
+            
+            params = {
+                "skip": 0,
+                "limit": 100
+            }
+            
+            # Obtener cobranzas
+            headers = session.get_headers()
+            url = f"{session.api_url}/cobranzas"
+            print(f"Realizando petición GET a: {url}")
+            print(f"Parámetros: {params}")
+            
+            response = requests.get(url, headers=headers, params=params)
+            
+            if response.status_code == 200:
+                # La respuesta puede ser directamente una lista o un diccionario con una lista
+                data = response.json()
+                cobranzas_data = []
                 
-                params = {
-                    "skip": 0,
-                    "limit": 100
-                }
+                # Verificar el tipo de datos recibidos
+                if isinstance(data, list):
+                    # La respuesta ya es una lista de cobranzas
+                    cobranzas_data = data
+                elif isinstance(data, dict):
+                    # La respuesta es un diccionario
+                    if "data" in data:
+                        cobranzas_data = data["data"]
+                    elif "cobranzas" in data:
+                        cobranzas_data = data["cobranzas"]
                 
-                # Obtener cobranzas
-                headers = session.get_headers()
-                url = f"{session.api_url}/cobranzas"
-                print(f"Realizando petición GET a: {url}")
-                print(f"Parámetros: {params}")
+                if not isinstance(cobranzas_data, list):
+                    raise ValueError("No se pudo obtener una lista de cobranzas de la respuesta")
+
+                print(f"Cobranzas cargadas: {len(cobranzas_data)}")
+
+                # Filtrar por fecha (si la API no lo hace)
+                cobranzas_filtradas = [
+                    cobranza for cobranza in cobranzas_data
+                    if desde <= cobranza.get("fecha", "") <= hasta
+                ]
+
+                # Limpiar tabla
+                self.cobranzas_table.setColumnCount(7)
+                self.cobranzas_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Retención", "Tipo de Retención", "Monto", "Descripción"])
+
+                # Llenar tabla con datos
+                total_cobranzas = 0
+                for row, cobranza in enumerate(cobranzas_filtradas):
+                    self.cobranzas_table.insertRow(row)
+
+                    # ID
+                    self.cobranzas_table.setItem(row, 0, QTableWidgetItem(str(cobranza.get("id", ""))))
+
+                    # Fecha
+                    fecha = datetime.strptime(cobranza.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if cobranza.get('fecha') else ''
+                    self.cobranzas_table.setItem(row, 1, QTableWidgetItem(fecha))
+
+                    # Árbitro - Intentar diferentes estructuras de datos
+                    arbitro = ""
+                    # Método 1: usuario es un objeto con propiedad nombre
+                    if isinstance(cobranza.get("usuario"), dict) and "nombre" in cobranza.get("usuario", {}):
+                        arbitro = cobranza.get("usuario", {}).get("nombre", "")
+                    # Método 2: usuario_nombre como campo directo
+                    elif "usuario_nombre" in cobranza:
+                        arbitro = cobranza.get("usuario_nombre", "")
+                    # Método 3: nombre_usuario como campo directo
+                    elif "nombre_usuario" in cobranza:
+                        arbitro = cobranza.get("nombre_usuario", "")
+                    # Método 4: tenemos usuario_id pero necesitamos buscar el nombre
+                    elif "usuario_id" in cobranza and self.usuarios:
+                        usuario_id = cobranza.get("usuario_id")
+                        for usuario in self.usuarios:
+                            if usuario.get("id") == usuario_id:
+                                arbitro = usuario.get("nombre", "")
+                                break
+                    
+                    self.cobranzas_table.setItem(row, 2, QTableWidgetItem(arbitro))
+                    
+                    # Retención
+                    retencion_data = cobranza.get("retencion") or {}
+                    retencion = retencion_data.get("nombre", "")
+                    self.cobranzas_table.setItem(row, 3, QTableWidgetItem(retencion))
+                    
+                    # Tipo de Retención
+                    tipo_retencion = retencion_data.get("tipo", "")  # Obtener el tipo de retención
+                    self.cobranzas_table.setItem(row, 4, QTableWidgetItem(tipo_retencion))
+                    
+                    # Monto
+                    monto = cobranza.get("monto", 0)
+                    monto_item = QTableWidgetItem(f"${monto:,.2f}")
+                    monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.cobranzas_table.setItem(row, 5, monto_item)
+                    
+                    # Descripción
+                    descripcion = cobranza.get("descripcion", "")
+                    self.cobranzas_table.setItem(row, 6, QTableWidgetItem(descripcion))
+                    
+                    # Acumular total
+                    total_cobranzas += monto
                 
-                response = requests.get(url, headers=headers, params=params)
+                # Actualizar total
+                self.total_label.setText(f"Total de cobranzas: ${total_cobranzas:,.2f}")
                 
-                if response.status_code == 200:
-                    # La respuesta puede ser directamente una lista o un diccionario con una lista
-                    data = response.json()
-                    cobranzas_data = []
-                    
-                    # Verificar el tipo de datos recibidos
-                    if isinstance(data, list):
-                        # La respuesta ya es una lista de cobranzas
-                        cobranzas_data = data
-                    elif isinstance(data, dict):
-                        # La respuesta es un diccionario
-                        if "data" in data:
-                            cobranzas_data = data["data"]
-                        elif "cobranzas" in data:
-                            cobranzas_data = data["cobranzas"]
-                    
-                    if not isinstance(cobranzas_data, list):
-                        raise ValueError("No se pudo obtener una lista de cobranzas de la respuesta")
-
-                    print(f"Cobranzas cargadas: {len(cobranzas_data)}")
-
-                    # Filtrar por fecha (si la API no lo hace)
-                    cobranzas_filtradas = [
-                        cobranza for cobranza in cobranzas_data
-                        if desde <= cobranza.get("fecha", "") <= hasta
-                    ]
-
-                    # Limpiar tabla
-                    self.cobranzas_table.setRowCount(0)
-
-                    # Llenar tabla con datos
-                    total_cobranzas = 0
-                    for row, cobranza in enumerate(cobranzas_filtradas):
-                        self.cobranzas_table.insertRow(row)
-
-                        # ID
-                        self.cobranzas_table.setItem(row, 0, QTableWidgetItem(str(cobranza.get("id", ""))))
-
-                        # Fecha
-                        fecha = datetime.strptime(cobranza.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if cobranza.get('fecha') else ''
-                        self.cobranzas_table.setItem(row, 1, QTableWidgetItem(fecha))
-
-                        # Árbitro - Intentar diferentes estructuras de datos
-                        arbitro = ""
-                        # Método 1: usuario es un objeto con propiedad nombre
-                        if isinstance(cobranza.get("usuario"), dict) and "nombre" in cobranza.get("usuario", {}):
-                            arbitro = cobranza.get("usuario", {}).get("nombre", "")
-                        # Método 2: usuario_nombre como campo directo
-                        elif "usuario_nombre" in cobranza:
-                            arbitro = cobranza.get("usuario_nombre", "")
-                        # Método 3: nombre_usuario como campo directo
-                        elif "nombre_usuario" in cobranza:
-                            arbitro = cobranza.get("nombre_usuario", "")
-                        # Método 4: tenemos usuario_id pero necesitamos buscar el nombre
-                        elif "usuario_id" in cobranza and self.usuarios:
-                            usuario_id = cobranza.get("usuario_id")
-                            for usuario in self.usuarios:
-                                if usuario.get("id") == usuario_id:
-                                    arbitro = usuario.get("nombre", "")
-                                    break
-                        
-                        self.cobranzas_table.setItem(row, 2, QTableWidgetItem(arbitro))
-                        
-                        # Retención
-                        retencion_data = cobranza.get("retencion") or {}
-                        retencion = retencion_data.get("nombre", "")
-                        self.cobranzas_table.setItem(row, 3, QTableWidgetItem(retencion))
-                        
-                        # Monto
-                        monto = cobranza.get("monto", 0)
-                        monto_item = QTableWidgetItem(f"${monto:,.2f}")
-                        monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.cobranzas_table.setItem(row, 4, monto_item)
-                        
-                        # Descripción
-                        descripcion = cobranza.get("descripcion", "")
-                        self.cobranzas_table.setItem(row, 5, QTableWidgetItem(descripcion))
-                        
-                        # Acumular total
-                        total_cobranzas += monto
-                    
-                    # Actualizar total
-                    self.total_label.setText(f"Total de cobranzas: ${total_cobranzas:,.2f}")
-                    
-                    # Ajustar columnas
-                    self.cobranzas_table.resizeColumnsToContents()
-                elif response.status_code == 401:
-                    print("Error de autenticación al cargar cobranzas")
-                    # No mostrar mensaje aquí para no ser intrusivo
-                else:
-                    print(f"Error al cargar cobranzas: {response.text}")
-            except Exception as e:
-                print(f"Excepción al buscar cobranzas: {str(e)}")
+                # Ajustar columnas
+                self.cobranzas_table.resizeColumnsToContents()
+            elif response.status_code == 401:
+                print("Error de autenticación al cargar cobranzas")
+                # No mostrar mensaje aquí para no ser intrusivo
+            else:
+                print(f"Error al cargar cobranzas: {response.text}")
+        except Exception as e:
+            print(f"Excepción al buscar cobranzas: {str(e)}")
     
     def on_buscar_cobranza(self):
         """Busca una cobranza por su ID"""
