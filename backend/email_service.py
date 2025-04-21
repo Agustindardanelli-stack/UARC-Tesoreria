@@ -301,8 +301,7 @@ class EmailService:
         campos = [
             ("Fecha:", pago.fecha.strftime('%d/%m/%Y')),
             ("Beneficiario:", usuario.nombre if usuario else "No especificado"),
-            ("Monto:", f"$ {float(pago.monto):,.2f}"),
-            ("Concepto:", retencion.nombre if retencion else "Pago de arbitraje"),
+            ("Monto:", f"$ {float(pago.monto):,.2f}"),            
             ("Descripción:", pago.descripcion if hasattr(pago, 'descripcion') and pago.descripcion else "Sin descripción")
         ]
         
