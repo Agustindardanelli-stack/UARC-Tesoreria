@@ -220,11 +220,11 @@ def create_pago(
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
-    # Validar la retención solo si se proporciona
-    if pago.retencion_id is not None:
-        retencion = crud.get_retencion(db, retencion_id=pago.retencion_id)
-        if not retencion:
-            raise HTTPException(status_code=404, detail="Retención no encontrada")
+    # # Validar la retención solo si se proporciona
+    # if pago.retencion_id is not None:
+    #     retencion = crud.get_retencion(db, retencion_id=pago.retencion_id)
+    #     if not retencion:
+    #         raise HTTPException(status_code=404, detail="Retención no encontrada")
     
     return crud.create_pago(
         db=db, 
