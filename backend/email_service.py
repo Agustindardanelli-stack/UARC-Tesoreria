@@ -280,7 +280,7 @@ class EmailService:
         usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()
         
         # Obtener retención
-        retencion = db.query(models.Retencion).filter(models.Retencion.id == pago.retencion_id).first() if pago.retencion_id else None
+        # retencion = db.query(models.Retencion).filter(models.Retencion.id == pago.retencion_id).first() if pago.retencion_id else None
         
         # Detalles del pago
         p.setFont("Helvetica", 12)
