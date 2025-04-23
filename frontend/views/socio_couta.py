@@ -164,6 +164,8 @@ class SocioCuotaView(QWidget):
         self.cuotas_table.horizontalHeader().setStretchLastSection(True)
         self.cuotas_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.cuotas_table.setAlternatingRowColors(True)
+        # Añadir conexión para la selección en la tabla
+        self.cuotas_table.clicked.connect(self.on_seleccionar_cuota_listar)
         
         layout.addWidget(self.cuotas_table)
         
@@ -190,6 +192,35 @@ class SocioCuotaView(QWidget):
         montos_layout.addWidget(self.monto_pendiente_label)
         
         layout.addLayout(montos_layout)
+        
+        # Botones de acción para cuotas
+        acciones_layout = QHBoxLayout()
+        
+        # Botón para eliminar cuota
+        self.eliminar_cuota_btn = QPushButton("Eliminar Cuota Pendiente")
+        self.eliminar_cuota_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #d9534f;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #c9302c;
+            }
+            QPushButton:disabled {
+                background-color: #f2dede;
+                color: #b3a3a3;
+            }
+        """)
+        self.eliminar_cuota_btn.setEnabled(False)  # Deshabilitado inicialmente
+        self.eliminar_cuota_btn.clicked.connect(self.on_eliminar_cuota)
+        
+        acciones_layout.addStretch()
+        acciones_layout.addWidget(self.eliminar_cuota_btn)
+        
+        layout.addLayout(acciones_layout)
 
     def on_buscar_cuotas(self):
         """Busca cuotas según los filtros seleccionados"""
@@ -247,6 +278,32 @@ class SocioCuotaView(QWidget):
                 monto_total = 0
                 monto_pendiente = 0
                 
+                # Realizar análisis para encontrar árbitros con múltiples cuotas pendientes
+                arbitros_deudas = {}
+                
+                # Primera pasada: agrupar cuotas por árbitro
+                for cuota in cuotas_data:
+                    pagado = cuota.get("pagado", False)
+                    if not pagado:  # Solo procesar cuotas pendientes
+                        arbitro_id = None
+                        arbitro_nombre = ""
+                        
+                        if isinstance(cuota.get("usuario"), dict):
+                            arbitro_id = cuota.get("usuario", {}).get("id")
+                            arbitro_nombre = cuota.get("usuario", {}).get("nombre", "")
+                        
+                        if arbitro_id:
+                            if arbitro_id not in arbitros_deudas:
+                                arbitros_deudas[arbitro_id] = {
+                                    "nombre": arbitro_nombre,
+                                    "cuotas": [],
+                                    "monto_total": 0
+                                }
+                            
+                            arbitros_deudas[arbitro_id]["cuotas"].append(cuota)
+                            monto_pendiente_cuota = cuota.get("monto", 0) - cuota.get("monto_pagado", 0)
+                            arbitros_deudas[arbitro_id]["monto_total"] += monto_pendiente_cuota
+                
                 # Llenar tabla con datos
                 for row, cuota in enumerate(cuotas_data):
                     self.cuotas_table.insertRow(row)
@@ -267,8 +324,10 @@ class SocioCuotaView(QWidget):
                     
                     # Árbitro
                     arbitro = ""
+                    arbitro_id = None
                     if isinstance(cuota.get("usuario"), dict):
                         arbitro = cuota.get("usuario", {}).get("nombre", "")
+                        arbitro_id = cuota.get("usuario", {}).get("id")
                     
                     self.cuotas_table.setItem(row, 2, QTableWidgetItem(arbitro))
                     
@@ -284,6 +343,13 @@ class SocioCuotaView(QWidget):
                     estado_item = QTableWidgetItem(estado_text)
                     if not pagado:
                         estado_item.setForeground(Qt.red)
+                        
+                        # Si el árbitro tiene múltiples cuotas pendientes, resaltar esta fila
+                        if arbitro_id and arbitro_id in arbitros_deudas and len(arbitros_deudas[arbitro_id]["cuotas"]) > 1:
+                            for col in range(self.cuotas_table.columnCount()):
+                                item = self.cuotas_table.item(row, col)
+                                if item:
+                                    item.setBackground(QColor(255, 255, 200))  # Fondo amarillo claro
                     else:
                         estado_item.setForeground(Qt.darkGreen)
                     
@@ -302,6 +368,47 @@ class SocioCuotaView(QWidget):
                     else:
                         cuotas_pendientes += 1
                         monto_pendiente += monto - monto_pagado
+                
+                # Después de cargar todas las cuotas, añadir filas de resumen para árbitros con múltiples cuotas
+                for arbitro_id, datos in arbitros_deudas.items():
+                    if len(datos["cuotas"]) > 1:  # Solo mostrar resumen si hay más de una cuota
+                        row = self.cuotas_table.rowCount()
+                        self.cuotas_table.insertRow(row)
+                        
+                        # ID - Dejarlo vacío o poner un indicador
+                        self.cuotas_table.setItem(row, 0, QTableWidgetItem(""))
+                        
+                        # Fecha - Indicar que es un resumen
+                        fecha_item = QTableWidgetItem("RESUMEN")
+                        fecha_item.setFont(QFont("", -1, QFont.Bold))
+                        self.cuotas_table.setItem(row, 1, fecha_item)
+                        
+                        # Árbitro
+                        arbitro_item = QTableWidgetItem(datos["nombre"] + " - TOTAL")
+                        arbitro_item.setFont(QFont("", -1, QFont.Bold))
+                        self.cuotas_table.setItem(row, 2, arbitro_item)
+                        
+                        # Monto Total
+                        monto_total_item = QTableWidgetItem(f"${datos['monto_total']:,.2f}")
+                        monto_total_item.setFont(QFont("", -1, QFont.Bold))
+                        monto_total_item.setForeground(Qt.red)
+                        monto_total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                        self.cuotas_table.setItem(row, 3, monto_total_item)
+                        
+                        # Estado
+                        estado_item = QTableWidgetItem(f"{len(datos['cuotas'])} cuotas pendientes")
+                        estado_item.setFont(QFont("", -1, QFont.Bold))
+                        estado_item.setForeground(Qt.red)
+                        self.cuotas_table.setItem(row, 4, estado_item)
+                        
+                        # Monto Pagado - Dejarlo vacío
+                        self.cuotas_table.setItem(row, 5, QTableWidgetItem(""))
+                        
+                        # Dar un color de fondo a toda la fila para destacarla
+                        for col in range(self.cuotas_table.columnCount()):
+                            item = self.cuotas_table.item(row, col)
+                            if item:
+                                item.setBackground(QColor(255, 230, 230))  # Fondo rosado claro
                 
                 # Actualizar labels de estadísticas
                 self.total_cuotas_label.setText(f"Total cuotas: {total_cuotas}")
@@ -325,7 +432,7 @@ class SocioCuotaView(QWidget):
                 print(f"Error al cargar cuotas: {response.text}")
         except Exception as e:
             print(f"Excepción al buscar cuotas: {str(e)}")
-            QMessageBox.critical(self, "Error", f"Error al buscar cuotas: {str(e)}")    
+            QMessageBox.critical(self, "Error", f"Error al buscar cuotas: {str(e)}")   
     
     def setup_tab_pagar(self):
         layout = QVBoxLayout(self.tab_pagar)
@@ -822,6 +929,71 @@ class SocioCuotaView(QWidget):
                 print(f"Error al cargar cuotas por usuario: {response.text}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al buscar cuotas: {str(e)}")
+
+
+    def on_seleccionar_cuota_listar(self, index):
+        """Maneja la selección de una cuota en la tabla de listado"""
+        row = index.row()
+        
+        # Obtener información de la fila seleccionada
+        self.selected_cuota_id = int(self.cuotas_table.item(row, 0).text())
+        estado_texto = self.cuotas_table.item(row, 4).text()
+        
+        # Habilitar el botón solo si la cuota está pendiente
+        self.eliminar_cuota_btn.setEnabled(estado_texto == "Pendiente")
+
+
+    def on_eliminar_cuota(self):
+        """Elimina una cuota pendiente seleccionada"""
+        if not hasattr(self, 'selected_cuota_id'):
+            QMessageBox.warning(self, "Advertencia", "Por favor seleccione una cuota primero")
+            return
+        
+        # Diálogo de confirmación
+        respuesta = QMessageBox.question(
+            self,
+            "Confirmar eliminación",
+            f"¿Está seguro que desea eliminar la cuota con ID {self.selected_cuota_id}?\n\n"
+            "Esta acción eliminará permanentemente la cuota pendiente y no se puede deshacer.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if respuesta == QMessageBox.Yes:
+            try:
+                # Realizar petición a la API para eliminar
+                headers = session.get_headers()
+                url = f"{session.api_url}/cuotas/{self.selected_cuota_id}"
+                
+                response = requests.delete(url, headers=headers)
+                
+                if response.status_code == 200 or response.status_code == 204:
+                    QMessageBox.information(
+                        self, 
+                        "Éxito", 
+                        "La cuota ha sido eliminada exitosamente"
+                    )
+                    
+                    # Actualizar la tabla de cuotas
+                    self.on_buscar_cuotas()
+                    
+                    # Limpiar selección
+                    self.eliminar_cuota_btn.setEnabled(False)
+                    if hasattr(self, 'selected_cuota_id'):
+                        delattr(self, 'selected_cuota_id')
+                else:
+                    error_msg = "No se pudo eliminar la cuota"
+                    try:
+                        error_data = response.json()
+                        if "detail" in error_data:
+                            error_msg = error_data["detail"]
+                    except:
+                        pass
+                    QMessageBox.critical(self, "Error", f"{error_msg}. Código: {response.status_code}")
+                    print(f"Error al eliminar cuota: {response.text}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error al eliminar cuota: {str(e)}")
+                print(f"Excepción al eliminar cuota: {str(e)}")        
 
     def on_seleccionar_cuota(self, index):
         """Maneja el evento de seleccionar una cuota de la tabla"""
