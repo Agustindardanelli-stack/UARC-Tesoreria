@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, Date, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
+from datetime import datetime
 
 class Usuario(Base):
     __tablename__ = "usuarios"
@@ -157,10 +158,36 @@ class Cuota(Base):
     fecha_envio_email = Column(DateTime, nullable=True)
     email_destinatario = Column(String(100), nullable=True)
     
+    # Nuevos campos para deudas acumuladas
+    meses_atraso = Column(Integer, nullable=True)  # Meses de atraso
+    monto_total_pendiente = Column(Numeric(10, 2), nullable=True)  # Monto total de cuotas pendientes
+    cuotas_pendientes = Column(Integer, nullable=True)  # Número de cuotas pendientes
+    fecha_primera_deuda = Column(Date, nullable=True)  # Fecha de la primera cuota pendiente
+
     # Relaciones
     usuario = relationship("Usuario", back_populates="cuotas")
     auditorias = relationship("Auditoria", back_populates="cuota")
-
+    @classmethod
+    def calcular_meses_atraso(cls, fecha_cuota):
+        """
+        Calcula los meses de atraso desde una fecha de cuota
+        """
+        # Obtener fecha actual
+        fecha_actual = datetime.now().date()
+        
+        # Calcular meses de atraso
+        meses_atraso = (
+            (fecha_actual.year - fecha_cuota.year) * 12 + 
+            (fecha_actual.month - fecha_cuota.month)
+        )
+        
+        # Ajustar si el día actual es menor que el día de la cuota
+        if fecha_actual.day < fecha_cuota.day:
+            meses_atraso -= 1
+        
+        return max(0, meses_atraso)
+        
+        return max(0, meses_atraso)
 class Transaccion(Base):
     __tablename__ = "transacciones"
     

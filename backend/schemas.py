@@ -272,12 +272,21 @@ class CuotaUpdate(BaseModel):
 class Cuota(CuotaBase):
     id: int
     
+    # Campos temporales para deudas acumuladas
+    usuario_id: Optional[int] = None
+    fecha: date
+    monto: float
+    pagado: bool = False
+    monto_pagado: float = 0
+    meses_atraso: Optional[int] = None  # Nuevo campoNone
+    
     class Config:
         orm_mode = True
 
 class CuotaDetalle(Cuota):
     usuario: Optional[Usuario] = None
     usuario_auditoria: Optional[str] = None
+    
     class Config:
         orm_mode = True
 

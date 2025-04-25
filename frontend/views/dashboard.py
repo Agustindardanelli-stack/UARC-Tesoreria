@@ -177,7 +177,7 @@ class DashboardView(QWidget):
         self.content_layout = QVBoxLayout(self.content_widget)
         
         # Título
-        title_label = QLabel("Dashboard de Tesorería")
+        title_label = QLabel("Inicio")
         title_font = QFont()
         title_font.setPointSize(20)
         title_font.setBold(True)

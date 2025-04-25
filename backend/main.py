@@ -432,6 +432,24 @@ def read_cuotas(
     # Obtener cuotas
     cuotas = crud.get_cuotas(db, skip=skip, limit=limit, pagado=pagado)
     
+    # Calcular meses de atraso para cada cuota no pagada
+    from datetime import datetime
+    
+    for cuota in cuotas:
+        if not cuota.pagado:
+            # Calcular meses de atraso
+            meses_atraso = (
+                (datetime.now().date().year - cuota.fecha.year) * 12 + 
+                (datetime.now().date().month - cuota.fecha.month)
+            )
+            
+            # Ajustar si el día actual es menor que el día de la cuota
+            if datetime.now().date().day < cuota.fecha.day:
+                meses_atraso -= 1
+            
+            # Asignar meses de atraso
+            cuota.meses_atraso = max(0, meses_atraso)
+    
     # Obtener registros de auditoría para estas cuotas
     cuota_ids = [cuota.id for cuota in cuotas]
     auditorias = db.query(models.Auditoria)\
@@ -469,6 +487,24 @@ def read_cuotas_by_usuario(
     
     # Obtener cuotas del usuario
     cuotas = crud.get_cuotas_by_usuario(db, usuario_id=usuario_id, pagado=pagado)
+    
+    # Calcular meses de atraso para cada cuota no pagada
+    from datetime import datetime
+    
+    for cuota in cuotas:
+        if not cuota.pagado:
+            # Calcular meses de atraso
+            meses_atraso = (
+                (datetime.now().date().year - cuota.fecha.year) * 12 + 
+                (datetime.now().date().month - cuota.fecha.month)
+            )
+            
+            # Ajustar si el día actual es menor que el día de la cuota
+            if datetime.now().date().day < cuota.fecha.day:
+                meses_atraso -= 1
+            
+            # Asignar meses de atraso
+            cuota.meses_atraso = max(0, meses_atraso)
     
     # Obtener registros de auditoría para estas cuotas
     cuota_ids = [cuota.id for cuota in cuotas]
@@ -550,12 +586,12 @@ def pagar_cuota(
 def delete_cuota(
     cuota_id: int, 
     db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
+    
 ):
     return crud.delete_cuota(
         db=db, 
         cuota_id=cuota_id, 
-        current_user_id=current_user.id
+        
     )
 
 # Rutas de Partidas
