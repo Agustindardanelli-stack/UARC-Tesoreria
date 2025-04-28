@@ -1,7 +1,9 @@
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QVBoxLayout, QWidget, QMessageBox
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 
+import os
 # Importación de las vistas
 from views.login import LoginView
 from views.dashboard import DashboardView
@@ -18,6 +20,17 @@ from sesion import session
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(current_dir, "assets", "UarcLogo.png")
+        
+        # Añadir el icono de la aplicación
+        app_icon = QIcon(icon_path)
+        print(icon_path)
+        app.setWindowIcon(app_icon)
+
+       
         
         # Configuración de la ventana principal
         self.setWindowTitle("Gestion Integral UARC")
@@ -170,6 +183,7 @@ class MainWindow(QMainWindow):
             # Crear la vista de AddUserWindow solo cuando se necesite
             if not hasattr(self, 'add_user_view') or not self.add_user_view_created:
                 # Importamos aquí para evitar problemas de inicialización temprana
+    
                 from views.add_user import AddUserWindow
                 self.add_user_view = AddUserWindow(self)
                 self.add_user_view.navigation_requested.connect(self.navigate_to)
@@ -183,8 +197,8 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    
     # Configuración global de la aplicación
+    
     app.setStyle("Fusion")
     
     window = MainWindow()

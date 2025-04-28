@@ -8,9 +8,10 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, 
-    QTableWidgetItem, QSplitter, QFrame, QTabWidget, QSpacerItem, QSizePolicy
+    QTableWidgetItem, QSplitter, QFrame, QTabWidget, QSpacerItem, QSizePolicy, 
 )
-from PySide6.QtGui import QPixmap, QFont, QIcon
+# Asegúrate de tener esta importación al inicio del archivo
+from PySide6.QtGui import QPixmap, QFont, QIcon, QColor, QBrush
 from PySide6.QtCore import Qt, Signal, QDateTime, QTimer
 from .logo_loader import load_logo
 from sesion import session
@@ -334,8 +335,10 @@ class DashboardView(QWidget):
                 partidas_data = partidas_response.json()
                 
                 # Limpiar tabla
-                self.partidas_table.setColumnCount(7)
-                self.partidas_table.setHorizontalHeaderLabels(["Fecha", "Cuenta", "Detalle", "Usuario que realizó", "Ingreso", "Egreso", "Saldo"])
+                self.partidas_table.setColumnCount(8)  # Aumentamos a 8 para incluir usuario
+                self.partidas_table.setHorizontalHeaderLabels([
+                    "Fecha", "Tipo", "Detalle", "Usuario que realizó", "Nº Comprobante", "Ingreso", "Egreso", "Saldo"
+                ])
                 self.partidas_table.setRowCount(0)
                 
                 if partidas_data:
@@ -347,37 +350,81 @@ class DashboardView(QWidget):
                         fecha = datetime.strptime(partida_item.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if partida_item.get('fecha') else ''
                         self.partidas_table.setItem(row, 0, QTableWidgetItem(fecha))
                         
-                        # Cuenta
-                        self.partidas_table.setItem(row, 1, QTableWidgetItem(partida_item.get('cuenta', '')))
+                        # Determinar tipo de movimiento (Ingreso o Egreso)
+                        ingreso = partida_item.get('ingreso', 0)
+                        egreso = partida_item.get('egreso', 0)
+                        
+                        if ingreso > 0 and egreso == 0:
+                            tipo_movimiento = "INGRESO"
+                            color_fondo = QColor(232, 245, 233)  # Verde claro para ingresos
+                        elif egreso > 0 and ingreso == 0:
+                            tipo_movimiento = "EGRESO"
+                            color_fondo = QColor(255, 235, 238)  # Rojo claro para egresos
+                        else:
+                            tipo_movimiento = "AJUSTE"
+                            color_fondo = QColor(255, 253, 231)  # Amarillo claro para ajustes
+                        
+                        # Aplicar color a todos los items de la fila
+                        for col in range(8):
+                            if not self.partidas_table.item(row, col):
+                                self.partidas_table.setItem(row, col, QTableWidgetItem(""))
+                            self.partidas_table.item(row, col).setBackground(QBrush(color_fondo))
+                        
+                        # Tipo de movimiento
+                        tipo_item = QTableWidgetItem(tipo_movimiento)
+                        tipo_item.setTextAlignment(Qt.AlignCenter)
+                        if tipo_movimiento == "INGRESO":
+                            tipo_item.setForeground(QBrush(QColor("#4CAF50")))  # Verde para ingresos
+                        elif tipo_movimiento == "EGRESO":
+                            tipo_item.setForeground(QBrush(QColor("#F44336")))  # Rojo para egresos
+                        
+                        tipo_item.setFont(QFont("Arial", 9, QFont.Bold))
+                        self.partidas_table.setItem(row, 1, tipo_item)
                         
                         # Detalle
                         self.partidas_table.setItem(row, 2, QTableWidgetItem(partida_item.get('detalle', '')))
                         
                         # Usuario que realizó
-                        # usuario_accion = partida_item.get('usuario_auditoria', 'Sin registro')
-                        # self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
+                        usuario_obj = partida_item.get('usuario', {})
+                        usuario_accion = usuario_obj.get('nombre', 'Sin registro') if usuario_obj else 'Sin registro'
+
+                        self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
+                        
+                        # Número de comprobante
+                        num_comprobante = ""
+                        if tipo_movimiento == "INGRESO":
+                            num_comprobante = f"REC-{partida_item.get('id', '')}"
+                        elif tipo_movimiento == "EGRESO":
+                            num_comprobante = f"OP-{partida_item.get('id', '')}"
+                        self.partidas_table.setItem(row, 4, QTableWidgetItem(num_comprobante))
                         
                         # Ingreso
-                        ingreso_item = QTableWidgetItem(f"${partida_item.get('ingreso', 0):,.2f}")
+                        ingreso_item = QTableWidgetItem(f"${ingreso:,.2f}")
                         ingreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.partidas_table.setItem(row, 4, ingreso_item)
+                        if ingreso > 0:
+                            ingreso_item.setForeground(QBrush(QColor("#4CAF50")))  # Verde para ingresos
+                            ingreso_item.setFont(QFont("Arial", 9, QFont.Bold))
+                        self.partidas_table.setItem(row, 5, ingreso_item)
                         
                         # Egreso
-                        egreso_item = QTableWidgetItem(f"${partida_item.get('egreso', 0):,.2f}")
+                        egreso_item = QTableWidgetItem(f"${egreso:,.2f}")
                         egreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.partidas_table.setItem(row, 5, egreso_item)
+                        if egreso > 0:
+                            egreso_item.setForeground(QBrush(QColor("#F44336")))  # Rojo para egresos
+                            egreso_item.setFont(QFont("Arial", 9, QFont.Bold))
+                        self.partidas_table.setItem(row, 6, egreso_item)
                         
                         # Saldo
                         saldo_item = QTableWidgetItem(f"${partida_item.get('saldo', 0):,.2f}")
                         saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.partidas_table.setItem(row, 6, saldo_item)
+                        self.partidas_table.setItem(row, 7, saldo_item)
                     
                     # Ajustar columnas
                     self.partidas_table.resizeColumnsToContents()
                     
         except Exception as e:
-            pass
-    
+            print(f"Error al cargar partidas: {str(e)}")
+        
     # Método para ser llamado cuando se vuelve al dashboard
     def on_show(self):
         """Método que se llama cuando el dashboard se muestra después de navegar"""
