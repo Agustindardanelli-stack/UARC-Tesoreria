@@ -12,14 +12,101 @@ import io
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, 
     QTableWidgetItem, QFrame, QTabWidget, QSpacerItem, QSizePolicy,
-    QFormLayout, QDateEdit, QComboBox, QMessageBox, QFileDialog
+    QFormLayout, QDateEdit, QComboBox, QMessageBox, QFileDialog, QGroupBox,
+    QStyledItemDelegate, QHeaderView
 )
-from PySide6.QtGui import QFont
-from PySide6.QtCore import Qt, Signal, QDate
+from PySide6.QtGui import QFont, QColor, QPalette, QIcon, QPixmap, QLinearGradient, QBrush, QPainter
+from PySide6.QtCore import Qt, Signal, QDate, QSize, QPoint, QRect
 
 from views.dashboard import SidebarWidget, MatplotlibCanvas
 from sesion import session
 
+# Colores personalizados para una apariencia más profesional
+class AppColors:
+    PRIMARY = "#1976D2"  # Azul principal
+    SECONDARY = "#388E3C"  # Verde para ingresos
+    DANGER = "#D32F2F"  # Rojo para egresos
+    WARNING = "#F57C00"  # Naranja para alertas
+    BACKGROUND = "#F5F5F5"  # Fondo claro
+    CARD_BG = "#FFFFFF"  # Fondo de tarjetas
+    TEXT_PRIMARY = "#212121"  # Texto principal
+    TEXT_SECONDARY = "#757575"  # Texto secundario
+    BORDER = "#E0E0E0"  # Bordes
+
+# Estilo para botones
+BUTTON_STYLE = f"""
+    QPushButton {{
+        background-color: {AppColors.PRIMARY};
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-weight: bold;
+    }}
+    QPushButton:hover {{
+        background-color: #1565C0;
+    }}
+    QPushButton:pressed {{
+        background-color: #0D47A1;
+    }}
+"""
+
+# Estilo para tablas
+TABLE_STYLE = f"""
+    QTableWidget {{
+        background-color: {AppColors.CARD_BG};
+        alternate-background-color: #F9F9F9;
+        border: 1px solid {AppColors.BORDER};
+        border-radius: 4px;
+        gridline-color: {AppColors.BORDER};
+    }}
+    QHeaderView::section {{
+        background-color: #E3F2FD;
+        color: {AppColors.TEXT_PRIMARY};
+        padding: 6px;
+        font-weight: bold;
+        border: none;
+        border-bottom: 1px solid {AppColors.BORDER};
+    }}
+"""
+
+# Estilo para GroupBox
+GROUP_BOX_STYLE = f"""
+    QGroupBox {{
+        font-weight: bold;
+        border: 1px solid {AppColors.BORDER};
+        border-radius: 4px;
+        margin-top: 12px;
+        padding-top: 16px;
+        background-color: {AppColors.CARD_BG};
+    }}
+    QGroupBox::title {{
+        subcontrol-origin: margin;
+        left: 10px;
+        padding: 0 5px;
+        color: {AppColors.PRIMARY};
+    }}
+"""
+
+# Delegado personalizado para celdas numéricas en tablas
+class MoneyDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        if index.column() in [1, 2, 3]:  # Columnas con valores monetarios (Ingresos, Egresos, Balance)
+            value = index.data()
+            if value and "$" in value:
+                # Extraer el valor numérico y determinar si es positivo/negativo
+                try:
+                    num_value = float(value.replace('$', '').replace(',', ''))
+                    color = QColor(AppColors.SECONDARY) if num_value >= 0 else QColor(AppColors.DANGER)
+                    
+                    # Configurar el estilo del texto
+                    option.palette.setColor(QPalette.Text, color)
+                except:
+                    pass
+        
+        super().paint(painter, option, index)
+
+# Clase principal para la vista de reportes mejorada
 class ReportesView(QWidget):
     navigation_requested = Signal(str)  # Señal para solicitar navegación
     
@@ -27,10 +114,38 @@ class ReportesView(QWidget):
         super().__init__()
         self.setup_ui()
         self.connect_signals()
+        
+        # Aplicar estilo general
+        self.setStyleSheet(f"""
+            QWidget {{
+                background-color: {AppColors.BACKGROUND};
+                color: {AppColors.TEXT_PRIMARY};
+                font-family: 'Segoe UI', Arial, sans-serif;
+            }}
+            QLabel {{
+                color: {AppColors.TEXT_PRIMARY};
+            }}
+            QComboBox {{
+                padding: 5px;
+                border: 1px solid {AppColors.BORDER};
+                border-radius: 4px;
+                background-color: white;
+                min-width: 100px;
+            }}
+            QDateEdit {{
+                padding: 5px;
+                border: 1px solid {AppColors.BORDER};
+                border-radius: 4px;
+                background-color: white;
+                min-width: 120px;
+            }}
+        """)
     
     def setup_ui(self):
         # Layout principal
         self.main_layout = QHBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
         
         # Sidebar
         self.sidebar = SidebarWidget()
@@ -39,34 +154,63 @@ class ReportesView(QWidget):
         # Widget de contenido
         self.content_widget = QWidget()
         self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(20, 20, 20, 20)
+        self.content_layout.setSpacing(16)
         
-        # Título
-        title_label = QLabel("Reportes")
-        title_font = QFont()
-        title_font.setPointSize(20)
+        # Encabezado con título y descripción
+        header_layout = QVBoxLayout()
+        
+        # Título con estilo moderno
+        title_label = QLabel("Reportes Financieros")
+        title_font = QFont("Segoe UI", 22)
         title_font.setBold(True)
         title_label.setFont(title_font)
-        self.content_layout.addWidget(title_label)
         
-        # Tabs para los diferentes reportes
+        # Descripción
+        desc_label = QLabel("Visualización de ingresos, egresos y registro de operaciones")
+        desc_label.setStyleSheet(f"color: {AppColors.TEXT_SECONDARY}; font-size: 14px;")
+        
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(desc_label)
+        header_layout.addSpacing(20)
+        
+        self.content_layout.addLayout(header_layout)
+        
+        # Tabs para los diferentes reportes con estilo mejorado
         self.tabs = QTabWidget()
+        self.tabs.setStyleSheet(f"""
+            QTabWidget::pane {{
+                border: 1px solid {AppColors.BORDER};
+                border-radius: 4px;
+                background-color: {AppColors.CARD_BG};
+                top: -1px;
+            }}
+            QTabBar::tab {{
+                background-color: #E8E8E8;
+                color: {AppColors.TEXT_PRIMARY};
+                border: 1px solid {AppColors.BORDER};
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                min-width: 150px;
+                padding: 10px 15px;
+                font-weight: bold;
+            }}
+            QTabBar::tab:selected {{
+                background-color: {AppColors.CARD_BG};
+                border-bottom: 1px solid {AppColors.CARD_BG};
+            }}
+            QTabBar::tab:!selected {{
+                margin-top: 2px;
+            }}
+        """)
         
-        # Tab 1: Balance General
-        self.tab_balance = QWidget()
-        self.setup_tab_balance()
-        self.tabs.addTab(self.tab_balance, "Balance General")
-        
-        # Tab 2: Ingresos y Egresos
+        # Tab 1: Ingresos y Egresos
         self.tab_ingresos_egresos = QWidget()
         self.setup_tab_ingresos_egresos()
         self.tabs.addTab(self.tab_ingresos_egresos, "Ingresos y Egresos")
         
-        # Tab 3: Cuotas Pendientes
-        self.tab_cuotas = QWidget()
-        self.setup_tab_cuotas()
-        self.tabs.addTab(self.tab_cuotas, "Cuotas Pendientes")
-        
-        # Tab 4: Libro Diario
+        # Tab 2: Libro Diario
         self.tab_libro = QWidget()
         self.setup_tab_libro()
         self.tabs.addTab(self.tab_libro, "Libro Diario")
@@ -77,87 +221,21 @@ class ReportesView(QWidget):
         self.main_layout.addWidget(self.sidebar)
         self.main_layout.addWidget(self.content_widget)
     
-    def setup_tab_balance(self):
-        layout = QVBoxLayout(self.tab_balance)
-        
-        # Filtros
-        filtros_layout = QHBoxLayout()
-        
-        # Desde
-        desde_label = QLabel("Desde:")
-        self.balance_desde_date = QDateEdit()
-        self.balance_desde_date.setDate(QDate.currentDate().addMonths(-6))  # Últimos 6 meses por defecto
-        self.balance_desde_date.setCalendarPopup(True)
-        
-        # Hasta
-        hasta_label = QLabel("Hasta:")
-        self.balance_hasta_date = QDateEdit()
-        self.balance_hasta_date.setDate(QDate.currentDate())
-        self.balance_hasta_date.setCalendarPopup(True)
-        
-        # Botón de generar
-        self.balance_generar_btn = QPushButton("Generar y Descargar")
-        self.balance_generar_btn.clicked.connect(self.on_generar_balance)
-        
-        filtros_layout.addWidget(desde_label)
-        filtros_layout.addWidget(self.balance_desde_date)
-        filtros_layout.addWidget(hasta_label)
-        filtros_layout.addWidget(self.balance_hasta_date)
-        filtros_layout.addWidget(self.balance_generar_btn)
-        
-        layout.addLayout(filtros_layout)
-        
-        # Métricas principales
-        metricas_layout = QHBoxLayout()
-        
-        self.ingresos_label = QLabel("Ingresos Totales: $0.00")
-        self.ingresos_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #4CAF50;")
-        
-        self.egresos_label = QLabel("Egresos Totales: $0.00")
-        self.egresos_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #F44336;")
-        
-        self.balance_neto_label = QLabel("Balance Neto: $0.00")
-        self.balance_neto_label.setStyleSheet("font-size: 16px; font-weight: bold;")
-        
-        metricas_layout.addWidget(self.ingresos_label)
-        metricas_layout.addWidget(self.egresos_label)
-        metricas_layout.addWidget(self.balance_neto_label)
-        
-        layout.addLayout(metricas_layout)
-        
-        # Gráfico
-        self.balance_canvas = MatplotlibCanvas(self, width=8, height=4, dpi=100)
-        layout.addWidget(self.balance_canvas)
-        
-        # Tabla de detalle
-        detalle_label = QLabel("Detalle del Balance")
-        detalle_font = QFont()
-        detalle_font.setPointSize(14)
-        detalle_label.setFont(detalle_font)
-        layout.addWidget(detalle_label)
-        
-        self.balance_table = QTableWidget()
-        self.balance_table.setColumnCount(5)
-        self.balance_table.setHorizontalHeaderLabels(["Fecha", "Cuenta", "Ingreso", "Egreso", "Saldo"])
-        self.balance_table.horizontalHeader().setStretchLastSection(True)
-        self.balance_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.balance_table.setAlternatingRowColors(True)
-        
-        layout.addWidget(self.balance_table)
-        
-        # Botón de exportar
-        self.balance_exportar_btn = QPushButton("Exportar a Excel")
-        self.balance_exportar_btn.clicked.connect(self.on_exportar_balance)
-        layout.addWidget(self.balance_exportar_btn)
-    
     def setup_tab_ingresos_egresos(self):
         layout = QVBoxLayout(self.tab_ingresos_egresos)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(15)
         
-        # Selector de año
-        anio_layout = QHBoxLayout()
+        # Sección de filtros en un card
+        filtros_card = QGroupBox("Período de Análisis")
+        filtros_card.setStyleSheet(GROUP_BOX_STYLE)
+        filtros_layout = QHBoxLayout(filtros_card)
         
+        # Selector de año con estilo mejorado
         anio_label = QLabel("Seleccionar Año:")
+        anio_label.setStyleSheet("font-weight: bold;")
         self.anio_combo = QComboBox()
+        self.anio_combo.setFixedWidth(120)
         
         # Llenar combo con los últimos 5 años
         current_year = datetime.now().year
@@ -167,367 +245,217 @@ class ReportesView(QWidget):
         # Seleccionar año actual
         self.anio_combo.setCurrentIndex(4)  # Último elemento (año actual)
         
-        # Botón de generar
-        self.ie_generar_btn = QPushButton("Generar y Descargar")
+        # Botón de generar con ícono
+        self.ie_generar_btn = QPushButton("Generar Reporte")
+        self.ie_generar_btn.setStyleSheet(BUTTON_STYLE)
+        self.ie_generar_btn.setMinimumWidth(150)
         self.ie_generar_btn.clicked.connect(self.on_generar_ingresos_egresos)
         
-        anio_layout.addWidget(anio_label)
-        anio_layout.addWidget(self.anio_combo)
-        anio_layout.addWidget(self.ie_generar_btn)
-        anio_layout.addStretch()
+        filtros_layout.addWidget(anio_label)
+        filtros_layout.addWidget(self.anio_combo)
+        filtros_layout.addStretch()
+        filtros_layout.addWidget(self.ie_generar_btn)
         
-        layout.addLayout(anio_layout)
+        layout.addWidget(filtros_card)
         
-        # Gráficos
-        self.ie_canvas = MatplotlibCanvas(self, width=8, height=4, dpi=100)
-        layout.addWidget(self.ie_canvas)
+        # Card para los gráficos
+        graficos_card = QGroupBox("Visualización Gráfica")
+        graficos_card.setStyleSheet(GROUP_BOX_STYLE)
+        graficos_layout = QVBoxLayout(graficos_card)
         
-        self.balance_ie_canvas = MatplotlibCanvas(self, width=8, height=4, dpi=100)
-        layout.addWidget(self.balance_ie_canvas)
+        # Gráficos mejorados
+        self.ie_canvas = MatplotlibCanvas(self, width=8, height=3.5, dpi=100)
+        self.balance_ie_canvas = MatplotlibCanvas(self, width=8, height=3.5, dpi=100)
         
-        # Tabla de datos
-        datos_label = QLabel("Datos Mensuales")
-        datos_font = QFont()
-        datos_font.setPointSize(14)
-        datos_label.setFont(datos_font)
-        layout.addWidget(datos_label)
+        graficos_layout.addWidget(self.ie_canvas)
+        graficos_layout.addWidget(self.balance_ie_canvas)
         
+        layout.addWidget(graficos_card)
+        
+        # Card para los datos tabulares
+        datos_card = QGroupBox("Datos Mensuales")
+        datos_card.setStyleSheet(GROUP_BOX_STYLE)
+        datos_layout = QVBoxLayout(datos_card)
+        
+        # Tabla con estilo mejorado
         self.ie_table = QTableWidget()
         self.ie_table.setColumnCount(4)
         self.ie_table.setHorizontalHeaderLabels(["Mes", "Ingresos", "Egresos", "Balance"])
-        self.ie_table.horizontalHeader().setStretchLastSection(True)
+        self.ie_table.setStyleSheet(TABLE_STYLE)
+        self.ie_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.ie_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.ie_table.setAlternatingRowColors(True)
+        self.ie_table.setItemDelegate(MoneyDelegate())
         
-        layout.addWidget(self.ie_table)
+        datos_layout.addWidget(self.ie_table)
         
-        # Totales
-        totales_layout = QHBoxLayout()
+        layout.addWidget(datos_card)
         
+        # Card para los totales
+        totales_card = QGroupBox("Resumen Anual")
+        totales_card.setStyleSheet(GROUP_BOX_STYLE)
+        totales_layout = QHBoxLayout(totales_card)
+        
+        # Totales con diseño mejorado
         self.ie_total_ingresos_label = QLabel("Total Ingresos: $0.00")
-        self.ie_total_ingresos_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #4CAF50;")
+        self.ie_total_ingresos_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {AppColors.SECONDARY};")
         
         self.ie_total_egresos_label = QLabel("Total Egresos: $0.00")
-        self.ie_total_egresos_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #F44336;")
+        self.ie_total_egresos_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {AppColors.DANGER};")
         
         self.ie_balance_total_label = QLabel("Balance Total: $0.00")
-        self.ie_balance_total_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.ie_balance_total_label.setStyleSheet(f"font-size: 18px; font-weight: bold;")
         
         totales_layout.addWidget(self.ie_total_ingresos_label)
+        totales_layout.addStretch()
         totales_layout.addWidget(self.ie_total_egresos_label)
+        totales_layout.addStretch()
         totales_layout.addWidget(self.ie_balance_total_label)
         
-        layout.addLayout(totales_layout)
+        layout.addWidget(totales_card)
         
-        # Botón de exportar
+        # Botón de exportar al final
         self.ie_exportar_btn = QPushButton("Exportar a Excel")
+        self.ie_exportar_btn.setStyleSheet(f"""
+            {BUTTON_STYLE}
+            background-color: {AppColors.SECONDARY};
+        """)
+        self.ie_exportar_btn.setMinimumWidth(200)
         self.ie_exportar_btn.clicked.connect(self.on_exportar_ingresos_egresos)
-        layout.addWidget(self.ie_exportar_btn)
-    
-    def setup_tab_cuotas(self):
-        layout = QVBoxLayout(self.tab_cuotas)
         
-        # Métricas
-        metricas_layout = QHBoxLayout()
+        export_layout = QHBoxLayout()
+        export_layout.addStretch()
+        export_layout.addWidget(self.ie_exportar_btn)
+        export_layout.addStretch()
         
-        self.cuotas_pendientes_label = QLabel("Cuotas Pendientes: 0")
-        self.cuotas_pendientes_label.setStyleSheet("font-size: 16px; font-weight: bold;")
-        
-        self.monto_pendiente_label = QLabel("Monto Pendiente: $0.00")
-        self.monto_pendiente_label.setStyleSheet("font-size: 16px; font-weight: bold;")
-        
-        metricas_layout.addWidget(self.cuotas_pendientes_label)
-        metricas_layout.addWidget(self.monto_pendiente_label)
-        
-        layout.addLayout(metricas_layout)
-        
-        # Gráfico
-        self.cuotas_canvas = MatplotlibCanvas(self, width=8, height=4, dpi=100)
-        layout.addWidget(self.cuotas_canvas)
-        
-        # Tabla de detalle
-        detalle_label = QLabel("Detalle de Cuotas Pendientes")
-        detalle_font = QFont()
-        detalle_font.setPointSize(14)
-        detalle_label.setFont(detalle_font)
-        layout.addWidget(detalle_label)
-        
-        self.cuotas_table = QTableWidget()
-        self.cuotas_table.setColumnCount(6)
-        self.cuotas_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Monto", "Monto Pagado", "Pendiente"])
-        self.cuotas_table.horizontalHeader().setStretchLastSection(True)
-        self.cuotas_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.cuotas_table.setAlternatingRowColors(True)
-        
-        layout.addWidget(self.cuotas_table)
-        
-        # Botón de generar y exportar
-        buttons_layout = QHBoxLayout()
-        
-        self.cuotas_generar_btn = QPushButton("Generar y Descargar")
-        self.cuotas_generar_btn.clicked.connect(self.on_generar_cuotas)
-        
-        self.cuotas_exportar_btn = QPushButton("Exportar a Excel")
-        self.cuotas_exportar_btn.clicked.connect(self.on_exportar_cuotas)
-        
-        buttons_layout.addWidget(self.cuotas_generar_btn)
-        buttons_layout.addWidget(self.cuotas_exportar_btn)
-        
-        layout.addLayout(buttons_layout)
+        layout.addLayout(export_layout)
     
     def setup_tab_libro(self):
         layout = QVBoxLayout(self.tab_libro)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(15)
         
-        # Filtros
-        filtros_layout = QHBoxLayout()
+        # Card para los filtros
+        filtros_card = QGroupBox("Filtros de Búsqueda")
+        filtros_card.setStyleSheet(GROUP_BOX_STYLE)
+        filtros_layout = QHBoxLayout(filtros_card)
         
-        # Desde
+        # Desde con mejor estilo
         desde_label = QLabel("Desde:")
+        desde_label.setStyleSheet("font-weight: bold;")
         self.libro_desde_date = QDateEdit()
+        self.libro_desde_date.setFixedWidth(130)
         self.libro_desde_date.setDate(QDate.currentDate().addDays(-30))  # Último mes por defecto
         self.libro_desde_date.setCalendarPopup(True)
         
-        # Hasta
+        # Hasta con mejor estilo
         hasta_label = QLabel("Hasta:")
+        hasta_label.setStyleSheet("font-weight: bold;")
         self.libro_hasta_date = QDateEdit()
+        self.libro_hasta_date.setFixedWidth(130)
         self.libro_hasta_date.setDate(QDate.currentDate())
         self.libro_hasta_date.setCalendarPopup(True)
         
-        # Tipo
+        # Tipo con mejor estilo
         tipo_label = QLabel("Tipo:")
+        tipo_label.setStyleSheet("font-weight: bold;")
         self.tipo_combo = QComboBox()
+        self.tipo_combo.setFixedWidth(120)
         self.tipo_combo.addItems(["Todos", "Ingreso", "Egreso"])
         
-        # Botón de búsqueda
-        self.libro_buscar_btn = QPushButton("Buscar y Descargar")
+        # Botón de búsqueda mejorado
+        self.libro_buscar_btn = QPushButton("Buscar")
+        self.libro_buscar_btn.setStyleSheet(BUTTON_STYLE)
+        self.libro_buscar_btn.setMinimumWidth(120)
         self.libro_buscar_btn.clicked.connect(self.on_buscar_libro)
         
         filtros_layout.addWidget(desde_label)
         filtros_layout.addWidget(self.libro_desde_date)
+        filtros_layout.addSpacing(10)
         filtros_layout.addWidget(hasta_label)
         filtros_layout.addWidget(self.libro_hasta_date)
+        filtros_layout.addSpacing(10)
         filtros_layout.addWidget(tipo_label)
         filtros_layout.addWidget(self.tipo_combo)
+        filtros_layout.addStretch()
         filtros_layout.addWidget(self.libro_buscar_btn)
         
-        layout.addLayout(filtros_layout)
+        layout.addWidget(filtros_card)
         
-        # Tabla de partidas
+        # Card para la tabla
+        tabla_card = QGroupBox("Libro Diario")
+        tabla_card.setStyleSheet(GROUP_BOX_STYLE)
+        tabla_layout = QVBoxLayout(tabla_card)
+        
+        # Tabla mejorada
         self.libro_table = QTableWidget()
         self.libro_table.setColumnCount(8)
         self.libro_table.setHorizontalHeaderLabels(["ID", "Fecha", "Cuenta", "Detalle", "Ingreso", "Egreso", "Saldo", "Usuario"])
-        self.libro_table.horizontalHeader().setStretchLastSection(True)
+        self.libro_table.setStyleSheet(TABLE_STYLE)
         self.libro_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.libro_table.setAlternatingRowColors(True)
+        self.libro_table.setItemDelegate(MoneyDelegate())
         
-        layout.addWidget(self.libro_table)
+        # Configurar el ancho de las columnas
+        self.libro_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)  # ID
+        self.libro_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Fecha
+        self.libro_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Cuenta
+        self.libro_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)  # Detalle
+        self.libro_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Ingreso
+        self.libro_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Egreso
+        self.libro_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Saldo
+        self.libro_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Usuario
         
-        # Totales
-        totales_layout = QHBoxLayout()
+        tabla_layout.addWidget(self.libro_table)
         
+        layout.addWidget(tabla_card)
+        
+        # Card para los totales
+        totales_card = QGroupBox("Resumen del Período")
+        totales_card.setStyleSheet(GROUP_BOX_STYLE)
+        totales_layout = QHBoxLayout(totales_card)
+        
+        # Totales mejorados
         self.libro_total_ingresos_label = QLabel("Total Ingresos: $0.00")
-        self.libro_total_ingresos_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #4CAF50;")
+        self.libro_total_ingresos_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {AppColors.SECONDARY};")
         
         self.libro_total_egresos_label = QLabel("Total Egresos: $0.00")
-        self.libro_total_egresos_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #F44336;")
+        self.libro_total_egresos_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {AppColors.DANGER};")
         
         self.libro_balance_label = QLabel("Balance: $0.00")
-        self.libro_balance_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.libro_balance_label.setStyleSheet(f"font-size: 18px; font-weight: bold;")
         
         totales_layout.addWidget(self.libro_total_ingresos_label)
+        totales_layout.addStretch()
         totales_layout.addWidget(self.libro_total_egresos_label)
+        totales_layout.addStretch()
         totales_layout.addWidget(self.libro_balance_label)
         
-        layout.addLayout(totales_layout)
+        layout.addWidget(totales_card)
         
-        # Botón de exportar
+        # Botón de exportar mejorado
         self.libro_exportar_btn = QPushButton("Exportar a Excel")
+        self.libro_exportar_btn.setStyleSheet(f"""
+            {BUTTON_STYLE}
+            background-color: {AppColors.SECONDARY};
+        """)
+        self.libro_exportar_btn.setMinimumWidth(200)
         self.libro_exportar_btn.clicked.connect(self.on_exportar_libro)
-        layout.addWidget(self.libro_exportar_btn)
+        
+        export_layout = QHBoxLayout()
+        export_layout.addStretch()
+        export_layout.addWidget(self.libro_exportar_btn)
+        export_layout.addStretch()
+        
+        layout.addLayout(export_layout)
     
     def connect_signals(self):
         self.sidebar.navigation_requested.connect(self.navigation_requested)
     
     def refresh_data(self):
         """Carga los datos iniciales"""
-        self.on_generar_balance()
         self.on_generar_ingresos_egresos()
-        self.on_generar_cuotas()
         self.on_buscar_libro()
-    
-    # Métodos para Balance General
-    def on_generar_balance(self):
-        """Genera el reporte de balance general y lo descarga"""
-        try:
-            # Obtener fechas
-            desde = self.balance_desde_date.date().toString("yyyy-MM-dd")
-            hasta = self.balance_hasta_date.date().toString("yyyy-MM-dd")
-            
-            # Llamada a la API
-            headers = session.get_headers()
-            response = requests.get(
-                f"{session.api_url}/reportes/balance",
-                headers=headers,
-                params={"fecha_desde": desde, "fecha_hasta": hasta}
-            )
-            
-            if response.status_code == 200:
-                balance_data = response.json()
-                
-                # Actualizar métricas
-                ingresos_totales = balance_data.get('ingresos_totales', 0)
-                egresos_totales = balance_data.get('egresos_totales', 0)
-                balance_neto = balance_data.get('balance_neto', 0)
-                
-                self.ingresos_label.setText(f"Ingresos Totales: ${ingresos_totales:,.2f}")
-                self.egresos_label.setText(f"Egresos Totales: ${egresos_totales:,.2f}")
-                
-                variacion = balance_data.get('variacion_porcentual', 0)
-                variacion_text = f" ({variacion:+.1f}%)" if variacion != 0 else ""
-                self.balance_neto_label.setText(f"Balance Neto: ${balance_neto:,.2f}{variacion_text}")
-                
-                # Gráfico de evolución del balance
-                if 'historico' in balance_data and balance_data['historico']:
-                    historico = balance_data['historico']
-                    
-                    # Limpiar el gráfico anterior
-                    self.balance_canvas.axes.clear()
-                    
-                    # Configurar datos
-                    fechas = [item.get('fecha', '') for item in historico]
-                    balances = [item.get('balance_acumulado', 0) for item in historico]
-                    
-                    # Crear gráfico
-                    self.balance_canvas.axes.plot(fechas, balances, 'o-', color='blue')
-                    self.balance_canvas.axes.set_xlabel('Fecha')
-                    self.balance_canvas.axes.set_ylabel('Balance Acumulado ($)')
-                    self.balance_canvas.axes.set_title('Evolución del Balance')
-                    
-                    # Rotar etiquetas para mejor legibilidad
-                    self.balance_canvas.axes.tick_params(axis='x', rotation=45)
-                    
-                    self.balance_canvas.fig.tight_layout()
-                    self.balance_canvas.draw()
-                
-                # Tabla de detalle
-                if 'detalle' in balance_data and balance_data['detalle']:
-                    detalle = balance_data['detalle']
-                    
-                    # Limpiar tabla
-                    self.balance_table.setRowCount(0)
-                    
-                    # Llenar tabla con datos
-                    for row, item in enumerate(detalle):
-                        self.balance_table.insertRow(row)
-                        
-                        # Fecha
-                        fecha = datetime.strptime(item.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if item.get('fecha') else ''
-                        self.balance_table.setItem(row, 0, QTableWidgetItem(fecha))
-                        
-                        # Cuenta
-                        self.balance_table.setItem(row, 1, QTableWidgetItem(item.get('cuenta', '')))
-                        
-                        # Ingreso
-                        ingreso = item.get('ingreso', 0)
-                        ingreso_item = QTableWidgetItem(f"${ingreso:,.2f}")
-                        ingreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.balance_table.setItem(row, 2, ingreso_item)
-                        
-                        # Egreso
-                        egreso = item.get('egreso', 0)
-                        egreso_item = QTableWidgetItem(f"${egreso:,.2f}")
-                        egreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.balance_table.setItem(row, 3, egreso_item)
-                        
-                        # Saldo
-                        saldo = item.get('saldo', 0)
-                        saldo_item = QTableWidgetItem(f"${saldo:,.2f}")
-                        saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.balance_table.setItem(row, 4, saldo_item)
-                    
-                    # Ajustar columnas
-                    self.balance_table.resizeColumnsToContents()
-                
-                # Descargar automáticamente
-                self.descargar_reporte_balance()
-            else:
-                QMessageBox.warning(self, "Error", "No se pudo obtener el balance")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al generar balance: {str(e)}")
-    
-    def descargar_reporte_balance(self):
-        """Descarga automáticamente el reporte de balance en Excel"""
-        try:
-            # Verificar si hay datos para exportar
-            if self.balance_table.rowCount() == 0:
-                QMessageBox.warning(self, "Advertencia", "No hay datos para descargar")
-                return
-            
-            # Definir nombre del archivo con fecha
-            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
-            periodo = f"{self.balance_desde_date.date().toString('yyyyMMdd')}-{self.balance_hasta_date.date().toString('yyyyMMdd')}"
-            nombre_archivo = f"Balance_{periodo}_{fecha_actual}.xlsx"
-            
-            # Ruta para guardar (en directorio de descargas por defecto)
-            descargas_path = os.path.join(os.path.expanduser("~"), "Downloads")
-            file_path = os.path.join(descargas_path, nombre_archivo)
-            
-            # Crear DataFrame con los datos de la tabla
-            data = []
-            for row in range(self.balance_table.rowCount()):
-                row_data = {}
-                for col in range(self.balance_table.columnCount()):
-                    header = self.balance_table.horizontalHeaderItem(col).text()
-                    item = self.balance_table.item(row, col)
-                    row_data[header] = item.text() if item else ""
-                data.append(row_data)
-            
-            df = pd.DataFrame(data)
-            
-            # Guardar a Excel
-            df.to_excel(file_path, index=False)
-            
-            QMessageBox.information(self, "Éxito", f"Reporte descargado exitosamente en {file_path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al descargar reporte: {str(e)}")
-    
-    def on_exportar_balance(self):
-        """Exporta el balance a Excel (permite seleccionar ubicación)"""
-        try:
-            # Verificar si hay datos para exportar
-            if self.balance_table.rowCount() == 0:
-                QMessageBox.warning(self, "Advertencia", "No hay datos para exportar")
-                return
-            
-            # Seleccionar ruta para guardar
-            options = QFileDialog.Options()
-            file_path, _ = QFileDialog.getSaveFileName(
-                self, "Guardar Excel", "", "Excel Files (*.xlsx);;All Files (*)", options=options
-            )
-            
-            if file_path:
-                # Asegurar que tiene extensión .xlsx
-                if not file_path.endswith('.xlsx'):
-                    file_path += '.xlsx'
-                
-                # Crear DataFrame con los datos de la tabla
-                data = []
-                for row in range(self.balance_table.rowCount()):
-                    row_data = {}
-                    for col in range(self.balance_table.columnCount()):
-                        header = self.balance_table.horizontalHeaderItem(col).text()
-                        item = self.balance_table.item(row, col)
-                        row_data[header] = item.text() if item else ""
-                    data.append(row_data)
-                
-                df = pd.DataFrame(data)
-                
-                # Guardar a Excel
-                df.to_excel(file_path, index=False)
-                
-                QMessageBox.information(self, "Éxito", f"Datos exportados exitosamente a {file_path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al exportar: {str(e)}")
     
     # Métodos para Ingresos y Egresos
     def on_generar_ingresos_egresos(self):
@@ -555,40 +483,73 @@ class ReportesView(QWidget):
                     self.ie_canvas.axes.clear()
                     self.balance_ie_canvas.axes.clear()
                     
-                    # Configurar datos para gráficos
-                    meses = [item.get('mes', '') for item in datos]
+                    # Configurar datos para gráficos con mejor estilo
+                    meses = [item.get('nombre_mes', '') for item in datos]
                     ingresos = [item.get('ingresos', 0) for item in datos]
                     egresos = [item.get('egresos', 0) for item in datos]
                     balances = [item.get('balance', 0) for item in datos]
                     
-                    # Crear gráfico de barras para ingresos/egresos
+                    # Crear gráfico de barras para ingresos/egresos con mejor estilo
                     x = range(len(meses))
                     width = 0.35
                     
-                    self.ie_canvas.axes.bar([i - width/2 for i in x], ingresos, width, label='Ingresos', color='#4CAF50')
-                    self.ie_canvas.axes.bar([i + width/2 for i in x], egresos, width, label='Egresos', color='#F44336')
+                    # Colores más atractivos
+                    ingreso_color = AppColors.SECONDARY
+                    egreso_color = AppColors.DANGER
                     
-                    self.ie_canvas.axes.set_xlabel('Mes')
-                    self.ie_canvas.axes.set_ylabel('Monto ($)')
-                    self.ie_canvas.axes.set_title(f'Ingresos y Egresos Mensuales - {anio}')
+                    # Configurar fondo y estilo
+                    self.ie_canvas.fig.patch.set_facecolor('#FFFFFF')
+                    self.ie_canvas.axes.set_facecolor('#F8F9FA')
+                    
+                    # Crear barras
+                    self.ie_canvas.axes.bar([i - width/2 for i in x], ingresos, width, label='Ingresos', color=ingreso_color, alpha=0.8)
+                    self.ie_canvas.axes.bar([i + width/2 for i in x], egresos, width, label='Egresos', color=egreso_color, alpha=0.8)
+                    
+                    # Líneas de cuadrícula suaves
+                    self.ie_canvas.axes.grid(True, linestyle='--', alpha=0.3)
+                    
+                    # Etiquetas y títulos
+                    self.ie_canvas.axes.set_xlabel('Mes', fontweight='bold')
+                    self.ie_canvas.axes.set_ylabel('Monto ($)', fontweight='bold')
+                    self.ie_canvas.axes.set_title(f'Ingresos y Egresos Mensuales - {anio}', fontsize=14, fontweight='bold')
                     self.ie_canvas.axes.set_xticks(x)
-                    self.ie_canvas.axes.set_xticklabels(meses)
-                    self.ie_canvas.axes.legend()
+                    self.ie_canvas.axes.set_xticklabels(meses, rotation=45, ha='right')
+                    self.ie_canvas.axes.legend(frameon=True, fancybox=True, shadow=True)
                     
+                    # Ajustar diseño
                     self.ie_canvas.fig.tight_layout()
                     self.ie_canvas.draw()
                     
-                    # Crear gráfico de barras para balance mensual
-                    self.balance_ie_canvas.axes.bar(x, balances, color=[
-                        '#4CAF50' if bal >= 0 else '#F44336' for bal in balances
-                    ])
+                    # Crear gráfico de barras para balance mensual con mejor estilo
+                    # Configurar fondo y estilo
+                    self.balance_ie_canvas.fig.patch.set_facecolor('#FFFFFF')
+                    self.balance_ie_canvas.axes.set_facecolor('#F8F9FA')
                     
-                    self.balance_ie_canvas.axes.set_xlabel('Mes')
-                    self.balance_ie_canvas.axes.set_ylabel('Balance ($)')
-                    self.balance_ie_canvas.axes.set_title(f'Balance Mensual - {anio}')
+                    # Crear barras con colores condicionales
+                    bars = self.balance_ie_canvas.axes.bar(x, balances, color=[
+                        AppColors.SECONDARY if bal >= 0 else AppColors.DANGER for bal in balances
+                    ], alpha=0.8)
+                    
+                    # Añadir valores sobre las barras
+                    for bar in bars:
+                        height = bar.get_height()
+                        y_pos = height + 0.05 * max(abs(min(balances)), max(balances)) if height >= 0 else height - 0.1 * max(abs(min(balances)), max(balances))
+                        self.balance_ie_canvas.axes.text(bar.get_x() + bar.get_width()/2., y_pos,
+                                f'${abs(height):,.0f}',
+                                ha='center', va='bottom' if height >= 0 else 'top', rotation=0,
+                                color='black', fontsize=8)
+                    
+                    # Líneas de cuadrícula suaves
+                    self.balance_ie_canvas.axes.grid(True, linestyle='--', alpha=0.3)
+                    
+                    # Etiquetas y títulos
+                    self.balance_ie_canvas.axes.set_xlabel('Mes', fontweight='bold')
+                    self.balance_ie_canvas.axes.set_ylabel('Balance ($)', fontweight='bold')
+                    self.balance_ie_canvas.axes.set_title(f'Balance Mensual - {anio}', fontsize=14, fontweight='bold')
                     self.balance_ie_canvas.axes.set_xticks(x)
-                    self.balance_ie_canvas.axes.set_xticklabels(meses)
+                    self.balance_ie_canvas.axes.set_xticklabels(meses, rotation=45, ha='right')
                     
+                    # Ajustar diseño
                     self.balance_ie_canvas.fig.tight_layout()
                     self.balance_ie_canvas.draw()
                     
@@ -600,24 +561,32 @@ class ReportesView(QWidget):
                         self.ie_table.insertRow(row)
                         
                         # Mes
-                        self.ie_table.setItem(row, 0, QTableWidgetItem(item.get('mes', '')))
+                        self.ie_table.setItem(row, 0, QTableWidgetItem(item.get('nombre_mes', '')))
                         
                         # Ingresos
                         ingreso = item.get('ingresos', 0)
                         ingreso_item = QTableWidgetItem(f"${ingreso:,.2f}")
                         ingreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                        if ingreso > 0:
+                            ingreso_item.setForeground(QColor(AppColors.SECONDARY))
                         self.ie_table.setItem(row, 1, ingreso_item)
                         
                         # Egresos
                         egreso = item.get('egresos', 0)
                         egreso_item = QTableWidgetItem(f"${egreso:,.2f}")
                         egreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                        if egreso > 0:
+                            egreso_item.setForeground(QColor(AppColors.DANGER))
                         self.ie_table.setItem(row, 2, egreso_item)
                         
                         # Balance
                         balance = item.get('balance', 0)
                         balance_item = QTableWidgetItem(f"${balance:,.2f}")
                         balance_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                        if balance >= 0:
+                            balance_item.setForeground(QColor(AppColors.SECONDARY))
+                        else:
+                            balance_item.setForeground(QColor(AppColors.DANGER))
                         self.ie_table.setItem(row, 3, balance_item)
                         
                         # Acumular totales
@@ -630,9 +599,13 @@ class ReportesView(QWidget):
                     # Actualizar totales
                     self.ie_total_ingresos_label.setText(f"Total Ingresos: ${total_ingresos:,.2f}")
                     self.ie_total_egresos_label.setText(f"Total Egresos: ${total_egresos:,.2f}")
-                    self.ie_balance_total_label.setText(f"Balance Total: ${total_ingresos - total_egresos:,.2f}")
                     
-                    # Descargar automáticamente
+                    balance_total = total_ingresos - total_egresos
+                    balance_color = AppColors.SECONDARY if balance_total >= 0 else AppColors.DANGER
+                    self.ie_balance_total_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {balance_color};")
+                    self.ie_balance_total_label.setText(f"Balance Total: ${balance_total:,.2f}")
+                    
+                    ## Descargar automáticamente
                     self.descargar_reporte_ingresos_egresos()
                 else:
                     QMessageBox.warning(self, "Advertencia", f"No hay datos disponibles para el año {anio}")
@@ -670,8 +643,47 @@ class ReportesView(QWidget):
             
             df = pd.DataFrame(data)
             
-            # Guardar a Excel
-            df.to_excel(file_path, index=False)
+            # Crear un escritor de Excel con formato
+            writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
+            df.to_excel(writer, sheet_name='Ingresos y Egresos', index=False)
+            
+            # Obtener el libro y la hoja de trabajo
+            workbook = writer.book
+            worksheet = writer.sheets['Ingresos y Egresos']
+            
+            # Definir formatos para las celdas
+            header_format = workbook.add_format({
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'top',
+                'fg_color': '#D9EAD3',
+                'border': 1
+            })
+            
+            money_format = workbook.add_format({
+                'num_format': '$#,##0.00',
+                'border': 1
+            })
+            
+            # Aplicar formatos
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+                column_len = max(df[value].astype(str).str.len().max(), len(value) + 2)
+                worksheet.set_column(col_num, col_num, column_len)
+            
+            # Aplicar formato monetario a las columnas de montos
+            for col_num, column in enumerate(df.columns):
+                if "Ingresos" in column or "Egresos" in column or "Balance" in column:
+                    # Aplicar formato monetario a la columna
+                    for row_num in range(1, len(df) + 1):
+                        cell_value = df.iloc[row_num-1][column]
+                        if isinstance(cell_value, str) and '$' in cell_value:
+                            # Convertir de string a número para formato
+                            numeric_value = float(cell_value.replace('$', '').replace(',', ''))
+                            worksheet.write(row_num, col_num, numeric_value, money_format)
+            
+            # Guardar el archivo
+            writer.close()
             
             QMessageBox.information(self, "Éxito", f"Reporte descargado exitosamente en {file_path}")
         except Exception as e:
@@ -687,8 +699,10 @@ class ReportesView(QWidget):
             
             # Seleccionar ruta para guardar
             options = QFileDialog.Options()
+            anio = self.anio_combo.currentData()
+            default_name = f"Ingresos_Egresos_{anio}.xlsx"
             file_path, _ = QFileDialog.getSaveFileName(
-                self, "Guardar Excel", "", "Excel Files (*.xlsx);;All Files (*)", options=options
+                self, "Guardar Excel", default_name, "Excel Files (*.xlsx);;All Files (*)", options=options
             )
             
             if file_path:
@@ -708,204 +722,47 @@ class ReportesView(QWidget):
                 
                 df = pd.DataFrame(data)
                 
-                # Guardar a Excel
-                df.to_excel(file_path, index=False)
+                # Crear un escritor de Excel con formato
+                writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
+                df.to_excel(writer, sheet_name='Ingresos y Egresos', index=False)
                 
-                QMessageBox.information(self, "Éxito", f"Datos exportados exitosamente a {file_path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al exportar: {str(e)}")
-    
-    # Métodos para Cuotas Pendientes
-    def on_generar_cuotas(self):
-        """Genera el reporte de cuotas pendientes y lo descarga"""
-        try:
-            # Llamada a la API
-            headers = session.get_headers()
-            url = f"{session.api_url}/reportes/cuotas_pendientes"
-            
-            print(f"Realizando petición GET a: {url}")
-            
-            response = requests.get(
-                url,
-                headers=headers
-            )
-            
-            if response.status_code == 200:
-                cuotas_data = response.json()
+                # Obtener el libro y la hoja de trabajo
+                workbook = writer.book
+                worksheet = writer.sheets['Ingresos y Egresos']
                 
-                # Manejar tanto si es un diccionario como si es una lista
-                if isinstance(cuotas_data, dict):
-                    cantidad = cuotas_data.get('cantidad_pendientes', 0)
-                    monto_pendiente = cuotas_data.get('monto_total_pendiente', 0)
-                    cuotas = cuotas_data.get('cuotas', [])
-                elif isinstance(cuotas_data, list):
-                    # Si es una lista, asumimos que es directamente la lista de cuotas
-                    cuotas = cuotas_data
-                    cantidad = len(cuotas)
-                    monto_pendiente = sum(cuota.get('monto_pendiente', 0) for cuota in cuotas)
-                else:
-                    cuotas = []
-                    cantidad = 0
-                    monto_pendiente = 0
+                # Definir formatos para las celdas
+                header_format = workbook.add_format({
+                    'bold': True,
+                    'text_wrap': True,
+                    'valign': 'top',
+                    'fg_color': '#D9EAD3',
+                    'border': 1
+                })
                 
-                self.cuotas_pendientes_label.setText(f"Cuotas Pendientes: {cantidad}")
-                self.monto_pendiente_label.setText(f"Monto Pendiente: ${monto_pendiente:,.2f}")
+                money_format = workbook.add_format({
+                    'num_format': '$#,##0.00',
+                    'border': 1
+                })
                 
-                # Limpiar tabla
-                self.cuotas_table.setRowCount(0)
+                # Aplicar formatos
+                for col_num, value in enumerate(df.columns.values):
+                    worksheet.write(0, col_num, value, header_format)
+                    column_len = max(df[value].astype(str).str.len().max(), len(value) + 2)
+                    worksheet.set_column(col_num, col_num, column_len)
                 
-                # Actualizar tabla si hay cuotas
-                if cuotas:
-                    # Crear gráfico para mostrar distribución de cuotas
-                    self.cuotas_canvas.axes.clear()
-                    
-                    # Podemos agrupar por estado, árbitro o fecha
-                    # Aquí agruparemos por árbitro como ejemplo
-                    arbitros = {}
-                    
-                    for row, cuota in enumerate(cuotas):
-                        self.cuotas_table.insertRow(row)
-                        
-                        # ID
-                        cuota_id = cuota.get('id', '')
-                        self.cuotas_table.setItem(row, 0, QTableWidgetItem(str(cuota_id)))
-                        
-                        # Fecha
-                        fecha_str = cuota.get('fecha', '')
-                        if fecha_str:
-                            try:
-                                fecha = datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y')
-                            except:
-                                fecha = fecha_str
-                        else:
-                            fecha = ''
-                        self.cuotas_table.setItem(row, 1, QTableWidgetItem(fecha))
-                        
-                        # Árbitro
-                        arbitro = cuota.get('arbitro', {}).get('nombre', '') if isinstance(cuota.get('arbitro', ''), dict) else cuota.get('arbitro', '')
-                        self.cuotas_table.setItem(row, 2, QTableWidgetItem(arbitro))
-                        
-                        # Contabilizar para el gráfico
-                        if arbitro in arbitros:
-                            arbitros[arbitro] += 1
-                        else:
-                            arbitros[arbitro] = 1
-                        
-                        # Monto
-                        monto = cuota.get('monto', 0)
-                        monto_item = QTableWidgetItem(f"${monto:,.2f}")
-                        monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.cuotas_table.setItem(row, 3, monto_item)
-                        
-                        # Monto Pagado
-                        monto_pagado = cuota.get('monto_pagado', 0)
-                        monto_pagado_item = QTableWidgetItem(f"${monto_pagado:,.2f}")
-                        monto_pagado_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.cuotas_table.setItem(row, 4, monto_pagado_item)
-                        
-                        # Pendiente
-                        pendiente = monto - monto_pagado
-                        pendiente_item = QTableWidgetItem(f"${pendiente:,.2f}")
-                        pendiente_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.cuotas_table.setItem(row, 5, pendiente_item)
-                    
-                    # Ajustar columnas
-                    self.cuotas_table.resizeColumnsToContents()
-                    
-                    # Crear gráfico de pastel para cuotas por árbitro
-                    labels = list(arbitros.keys())
-                    sizes = list(arbitros.values())
-                    
-                    if labels:  # Verificar que hay datos para el gráfico
-                        self.cuotas_canvas.axes.pie(
-                            sizes, labels=labels, autopct='%1.1f%%',
-                            startangle=90, shadow=True
-                        )
-                        self.cuotas_canvas.axes.set_title('Distribución de Cuotas Pendientes por Árbitro')
-                        self.cuotas_canvas.axes.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
-                        self.cuotas_canvas.fig.tight_layout()
-                        self.cuotas_canvas.draw()
-                    
-                    # Descargar automáticamente
-                    self.descargar_reporte_cuotas()
-                else:
-                    self.cuotas_canvas.axes.clear()
-                    self.cuotas_canvas.draw()
-                    QMessageBox.information(self, "Información", "No hay cuotas pendientes")
-                    
-            else:
-                QMessageBox.warning(self, "Error", f"No se pudieron obtener las cuotas: {response.status_code}")
-        except Exception as e:
-            print(f"Error al generar reporte de cuotas: {e}")
-            QMessageBox.critical(self, "Error", f"Error al generar reporte: {str(e)}")
-    
-    def descargar_reporte_cuotas(self):
-        """Descarga automáticamente el reporte de cuotas pendientes en Excel"""
-        try:
-            # Verificar si hay datos para exportar
-            if self.cuotas_table.rowCount() == 0:
-                return
-            
-            # Definir nombre del archivo con fecha
-            fecha_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
-            nombre_archivo = f"Cuotas_Pendientes_{fecha_actual}.xlsx"
-            
-            # Ruta para guardar (en directorio de descargas por defecto)
-            descargas_path = os.path.join(os.path.expanduser("~"), "Downloads")
-            file_path = os.path.join(descargas_path, nombre_archivo)
-            
-            # Crear DataFrame con los datos de la tabla
-            data = []
-            for row in range(self.cuotas_table.rowCount()):
-                row_data = {}
-                for col in range(self.cuotas_table.columnCount()):
-                    header = self.cuotas_table.horizontalHeaderItem(col).text()
-                    item = self.cuotas_table.item(row, col)
-                    row_data[header] = item.text() if item else ""
-                data.append(row_data)
-            
-            df = pd.DataFrame(data)
-            
-            # Guardar a Excel
-            df.to_excel(file_path, index=False)
-            
-            QMessageBox.information(self, "Éxito", f"Reporte descargado exitosamente en {file_path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al descargar reporte: {str(e)}")
-    
-    def on_exportar_cuotas(self):
-        """Exporta el reporte de cuotas pendientes a Excel (permite seleccionar ubicación)"""
-        try:
-            # Verificar si hay datos para exportar
-            if self.cuotas_table.rowCount() == 0:
-                QMessageBox.warning(self, "Advertencia", "No hay datos para exportar")
-                return
-            
-            # Seleccionar ruta para guardar
-            options = QFileDialog.Options()
-            file_path, _ = QFileDialog.getSaveFileName(
-                self, "Guardar Excel", "", "Excel Files (*.xlsx);;All Files (*)", options=options
-            )
-            
-            if file_path:
-                # Asegurar que tiene extensión .xlsx
-                if not file_path.endswith('.xlsx'):
-                    file_path += '.xlsx'
+                # Aplicar formato monetario a las columnas de montos
+                for col_num, column in enumerate(df.columns):
+                    if "Ingresos" in column or "Egresos" in column or "Balance" in column:
+                        # Aplicar formato monetario a la columna
+                        for row_num in range(1, len(df) + 1):
+                            cell_value = df.iloc[row_num-1][column]
+                            if isinstance(cell_value, str) and '$' in cell_value:
+                                # Convertir de string a número para formato
+                                numeric_value = float(cell_value.replace('$', '').replace(',', ''))
+                                worksheet.write(row_num, col_num, numeric_value, money_format)
                 
-                # Crear DataFrame con los datos de la tabla
-                data = []
-                for row in range(self.cuotas_table.rowCount()):
-                    row_data = {}
-                    for col in range(self.cuotas_table.columnCount()):
-                        header = self.cuotas_table.horizontalHeaderItem(col).text()
-                        item = self.cuotas_table.item(row, col)
-                        row_data[header] = item.text() if item else ""
-                    data.append(row_data)
-                
-                df = pd.DataFrame(data)
-                
-                # Guardar a Excel
-                df.to_excel(file_path, index=False)
+                # Guardar el archivo
+                writer.close()
                 
                 QMessageBox.information(self, "Éxito", f"Datos exportados exitosamente a {file_path}")
         except Exception as e:
@@ -919,6 +776,9 @@ class ReportesView(QWidget):
             desde = self.libro_desde_date.date().toString("yyyy-MM-dd")
             hasta = self.libro_hasta_date.date().toString("yyyy-MM-dd")
             tipo = self.tipo_combo.currentText().lower()
+            
+            # Mostrar mensaje de carga
+            QMessageBox.information(self, "Procesando", "Obteniendo datos del libro diario, espere un momento...")
             
             # Preparar parámetros
             params = {
@@ -955,14 +815,20 @@ class ReportesView(QWidget):
                     self.libro_table.insertRow(row)
                     
                     # ID
-                    self.libro_table.setItem(row, 0, QTableWidgetItem(str(partida.get('id', ''))))
+                    id_item = QTableWidgetItem(str(partida.get('id', '')))
+                    id_item.setTextAlignment(Qt.AlignCenter)
+                    self.libro_table.setItem(row, 0, id_item)
                     
                     # Fecha
                     fecha = datetime.strptime(partida.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if partida.get('fecha') else ''
-                    self.libro_table.setItem(row, 1, QTableWidgetItem(fecha))
+                    fecha_item = QTableWidgetItem(fecha)
+                    fecha_item.setTextAlignment(Qt.AlignCenter)
+                    self.libro_table.setItem(row, 1, fecha_item)
                     
                     # Cuenta
-                    self.libro_table.setItem(row, 2, QTableWidgetItem(partida.get('cuenta', '')))
+                    cuenta_item = QTableWidgetItem(partida.get('cuenta', ''))
+                    cuenta_item.setTextAlignment(Qt.AlignCenter)
+                    self.libro_table.setItem(row, 2, cuenta_item)
                     
                     # Detalle
                     self.libro_table.setItem(row, 3, QTableWidgetItem(partida.get('detalle', '')))
@@ -971,22 +837,30 @@ class ReportesView(QWidget):
                     ingreso = partida.get('ingreso', 0)
                     ingreso_item = QTableWidgetItem(f"${ingreso:,.2f}")
                     ingreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    if ingreso > 0:
+                        ingreso_item.setForeground(QColor(AppColors.SECONDARY))
                     self.libro_table.setItem(row, 4, ingreso_item)
                     
                     # Egreso
                     egreso = partida.get('egreso', 0)
                     egreso_item = QTableWidgetItem(f"${egreso:,.2f}")
                     egreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    if egreso > 0:
+                        egreso_item.setForeground(QColor(AppColors.DANGER))
                     self.libro_table.setItem(row, 5, egreso_item)
                     
                     # Saldo
                     saldo = partida.get('saldo', 0)
                     saldo_item = QTableWidgetItem(f"${saldo:,.2f}")
                     saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    if saldo >= 0:
+                        saldo_item.setForeground(QColor(AppColors.SECONDARY))
+                    else:
+                        saldo_item.setForeground(QColor(AppColors.DANGER))
                     self.libro_table.setItem(row, 6, saldo_item)
                     
                     # Usuario
-                    usuario = partida.get('usuario', {}).get('nombre', '') if partida.get('usuario') else ''
+                    usuario = partida.get('usuario', {}).get('nombre', '') if partida.get('usuario') else partida.get('usuario_auditoria', '')
                     self.libro_table.setItem(row, 7, QTableWidgetItem(usuario))
                     
                     # Acumular totales
@@ -999,7 +873,11 @@ class ReportesView(QWidget):
                 # Actualizar totales
                 self.libro_total_ingresos_label.setText(f"Total Ingresos: ${total_ingresos:,.2f}")
                 self.libro_total_egresos_label.setText(f"Total Egresos: ${total_egresos:,.2f}")
-                self.libro_balance_label.setText(f"Balance: ${total_ingresos - total_egresos:,.2f}")
+                
+                balance = total_ingresos - total_egresos
+                balance_color = AppColors.SECONDARY if balance >= 0 else AppColors.DANGER
+                self.libro_balance_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {balance_color};")
+                self.libro_balance_label.setText(f"Balance: ${balance:,.2f}")
                 
                 # Descargar automáticamente
                 self.descargar_libro_diario()
@@ -1038,8 +916,52 @@ class ReportesView(QWidget):
             
             df = pd.DataFrame(data)
             
-            # Guardar a Excel
-            df.to_excel(file_path, index=False)
+            # Crear un escritor de Excel con formato
+            writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
+            df.to_excel(writer, sheet_name='Libro Diario', index=False)
+            
+            # Obtener el libro y la hoja de trabajo
+            workbook = writer.book
+            worksheet = writer.sheets['Libro Diario']
+            
+            # Definir formatos para las celdas
+            header_format = workbook.add_format({
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'top',
+                'fg_color': '#D9EAD3',
+                'border': 1
+            })
+            
+            money_format = workbook.add_format({
+                'num_format': '$#,##0.00',
+                'border': 1
+            })
+            
+            date_format = workbook.add_format({
+                'num_format': 'dd/mm/yyyy',
+                'border': 1
+            })
+            
+            # Aplicar formatos
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+                column_len = max(df[value].astype(str).str.len().max(), len(value) + 2)
+                worksheet.set_column(col_num, col_num, column_len)
+            
+            # Aplicar formato monetario a las columnas de montos
+            for col_num, column in enumerate(df.columns):
+                if "Ingreso" in column or "Egreso" in column or "Saldo" in column:
+                    # Aplicar formato monetario a la columna
+                    for row_num in range(1, len(df) + 1):
+                        cell_value = df.iloc[row_num-1][column]
+                        if isinstance(cell_value, str) and '$' in cell_value:
+                            # Convertir de string a número para formato
+                            numeric_value = float(cell_value.replace('$', '').replace(',', ''))
+                            worksheet.write(row_num, col_num, numeric_value, money_format)
+            
+            # Guardar el archivo
+            writer.close()
             
             QMessageBox.information(self, "Éxito", f"Reporte descargado exitosamente en {file_path}")
         except Exception as e:
@@ -1055,8 +977,10 @@ class ReportesView(QWidget):
             
             # Seleccionar ruta para guardar
             options = QFileDialog.Options()
+            periodo = f"{self.libro_desde_date.date().toString('yyyyMMdd')}-{self.libro_hasta_date.date().toString('yyyyMMdd')}"
+            default_name = f"Libro_Diario_{periodo}.xlsx"
             file_path, _ = QFileDialog.getSaveFileName(
-                self, "Guardar Excel", "", "Excel Files (*.xlsx);;All Files (*)", options=options
+                self, "Guardar Excel", default_name, "Excel Files (*.xlsx);;All Files (*)", options=options
             )
             
             if file_path:
@@ -1076,8 +1000,47 @@ class ReportesView(QWidget):
                 
                 df = pd.DataFrame(data)
                 
-                # Guardar a Excel
-                df.to_excel(file_path, index=False)
+                # Crear un escritor de Excel con formato
+                writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
+                df.to_excel(writer, sheet_name='Libro Diario', index=False)
+                
+                # Obtener el libro y la hoja de trabajo
+                workbook = writer.book
+                worksheet = writer.sheets['Libro Diario']
+                
+                # Definir formatos para las celdas
+                header_format = workbook.add_format({
+                    'bold': True,
+                    'text_wrap': True,
+                    'valign': 'top',
+                    'fg_color': '#D9EAD3',
+                    'border': 1
+                })
+                
+                money_format = workbook.add_format({
+                    'num_format': '$#,##0.00',
+                    'border': 1
+                })
+                
+                # Aplicar formatos
+                for col_num, value in enumerate(df.columns.values):
+                    worksheet.write(0, col_num, value, header_format)
+                    column_len = max(df[value].astype(str).str.len().max(), len(value) + 2)
+                    worksheet.set_column(col_num, col_num, column_len)
+                
+                # Aplicar formato monetario a las columnas de montos
+                for col_num, column in enumerate(df.columns):
+                    if "Ingreso" in column or "Egreso" in column or "Saldo" in column:
+                        # Aplicar formato monetario a la columna
+                        for row_num in range(1, len(df) + 1):
+                            cell_value = df.iloc[row_num-1][column]
+                            if isinstance(cell_value, str) and '$' in cell_value:
+                                # Convertir de string a número para formato
+                                numeric_value = float(cell_value.replace('$', '').replace(',', ''))
+                                worksheet.write(row_num, col_num, numeric_value, money_format)
+                
+                # Guardar el archivo
+                writer.close()
                 
                 QMessageBox.information(self, "Éxito", f"Datos exportados exitosamente a {file_path}")
         except Exception as e:

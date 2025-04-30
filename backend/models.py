@@ -185,9 +185,8 @@ class Cuota(Base):
         if fecha_actual.day < fecha_cuota.day:
             meses_atraso -= 1
         
-        return max(0, meses_atraso)
+        return max(0, meses_atraso)       
         
-        return max(0, meses_atraso)
 class Transaccion(Base):
     __tablename__ = "transacciones"
     
@@ -198,6 +197,7 @@ class Transaccion(Base):
     usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
     referencia = Column(Text, nullable=True)
     created_at = Column(DateTime, default=func.current_timestamp())
+    saldo = Column(Numeric(10, 2), nullable=True) 
     
     __table_args__ = (
         CheckConstraint("tipo IN ('ingreso', 'egreso')", name="transacciones_tipo_check"),

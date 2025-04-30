@@ -8,11 +8,14 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, 
-    QTableWidgetItem, QSplitter, QFrame, QTabWidget, QSpacerItem, QSizePolicy, 
+    QTableWidgetItem, QSplitter, QFrame, QTabWidget, QSpacerItem, QSizePolicy,
 )
 # Asegúrate de tener esta importación al inicio del archivo
 from PySide6.QtGui import QPixmap, QFont, QIcon, QColor, QBrush
-from PySide6.QtCore import Qt, Signal, QDateTime, QTimer
+from PySide6.QtCore import Qt, Signal, QDateTime, QTimer 
+from concurrent.futures import ThreadPoolExecutor
+
+
 from .logo_loader import load_logo
 from sesion import session
 
@@ -23,6 +26,9 @@ class SidebarWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setup_ui()
+
+        self.executor = ThreadPoolExecutor(max_workers=1)
+
 
     def setup_ui(self):
         # Layout principal
@@ -238,10 +244,27 @@ class DashboardView(QWidget):
         self.time_label.setText(f"<b>Hora actual:</b> {datetime.now().strftime('%H:%M:%S')}")
     
     def refresh_data(self):
-        """Actualiza los datos del dashboard"""
-        self.load_balance_data()
-        self.load_partidas_data()
-    
+         if not session.token:
+              print("Sesión no iniciada. No se cargarán los datos del dashboard.")
+              return
+         self.load_balance_data()
+         self.load_partidas_data()
+
+
+    def on_show(self):
+        """Se llama cuando el dashboard se muestra después del login"""
+        self.update_time()
+
+        # Mostrar valores temporales
+        self.balance_indicator.findChildren(QLabel)[1].setText("Cargando...")
+        self.ingresos_indicator.findChildren(QLabel)[1].setText("...")
+        self.egresos_indicator.findChildren(QLabel)[1].setText("...")
+        self.cuotas_indicator.findChildren(QLabel)[1].setText("...")
+
+        # Ejecutar en segundo plano
+        self.executor.submit(self.refresh_data)
+
+        
     def load_balance_data(self):
         """Carga los datos del balance"""
         try:
@@ -323,32 +346,58 @@ class DashboardView(QWidget):
             pass
     
     def load_partidas_data(self):
-        """Carga las últimas partidas"""
+        """Carga las últimas partidas y obtiene los saldos correspondientes de las transacciones"""
         try:
             headers = session.get_headers()
+            
+            # Primero cargamos las partidas
             partidas_response = requests.get(
                 f"{session.api_url}/partidas?limit=10",
                 headers=headers
-            )            
+            )
             
+            # Luego obtenemos las transacciones para tener los saldos
+            transacciones_response = requests.get(
+                f"{session.api_url}/transacciones?limit=50",  # Obtener más transacciones para tener suficientes saldos
+                headers=headers
+            )
+            
+            # Crear un diccionario de fechas y saldos de transacciones
+            saldos_por_fecha = {}
+            if transacciones_response.status_code == 200:
+                transacciones_data = transacciones_response.json()
+                # Ordenar transacciones por fecha y ID
+                transacciones_data.sort(key=lambda x: (x.get('fecha', ''), x.get('id', 0)))
+                
+                for transaccion in transacciones_data:
+                    fecha = transaccion.get('fecha', '')
+                    saldo = transaccion.get('saldo', 0)
+                    # Guardamos el último saldo para cada fecha
+                    saldos_por_fecha[fecha] = saldo
+            
+            # Procesar las partidas
             if partidas_response.status_code == 200:
                 partidas_data = partidas_response.json()
                 
                 # Limpiar tabla
-                self.partidas_table.setColumnCount(8)  # Aumentamos a 8 para incluir usuario
+                self.partidas_table.setColumnCount(8)
                 self.partidas_table.setHorizontalHeaderLabels([
                     "Fecha", "Tipo", "Detalle", "Usuario que realizó", "Nº Comprobante", "Ingreso", "Egreso", "Saldo"
                 ])
                 self.partidas_table.setRowCount(0)
                 
                 if partidas_data:
+                    # Ordenar partidas por fecha (descendente) y luego por ID (descendente)
+                    partidas_data.sort(key=lambda x: (x.get('fecha', ''), x.get('id', 0)), reverse=True)
+                    
                     # Llenar tabla con datos
                     for row, partida_item in enumerate(partidas_data):
                         self.partidas_table.insertRow(row)
                         
                         # Fecha
-                        fecha = datetime.strptime(partida_item.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if partida_item.get('fecha') else ''
-                        self.partidas_table.setItem(row, 0, QTableWidgetItem(fecha))
+                        fecha_str = partida_item.get('fecha', '')
+                        fecha_display = datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y') if fecha_str else ''
+                        self.partidas_table.setItem(row, 0, QTableWidgetItem(fecha_display))
                         
                         # Determinar tipo de movimiento (Ingreso o Egreso)
                         ingreso = partida_item.get('ingreso', 0)
@@ -387,7 +436,6 @@ class DashboardView(QWidget):
                         # Usuario que realizó
                         usuario_obj = partida_item.get('usuario', {})
                         usuario_accion = usuario_obj.get('nombre', 'Sin registro') if usuario_obj else 'Sin registro'
-
                         self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
                         
                         # Número de comprobante
@@ -414,9 +462,19 @@ class DashboardView(QWidget):
                             egreso_item.setFont(QFont("Arial", 9, QFont.Bold))
                         self.partidas_table.setItem(row, 6, egreso_item)
                         
-                        # Saldo
-                        saldo_item = QTableWidgetItem(f"${partida_item.get('saldo', 0):,.2f}")
+                        # Saldo - Buscar en el diccionario de saldos por fecha
+                        # Primero intentamos obtener el saldo de la partida
+                        saldo = partida_item.get('saldo', None)
+                        
+                        # Si el saldo no está disponible o es 0, buscamos en las transacciones
+                        if saldo is None or saldo == 0:
+                            saldo = saldos_por_fecha.get(fecha_str, 0)
+                        
+                        saldo_item = QTableWidgetItem(f"${saldo:,.2f}")
                         saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                        # Agregar un color distintivo al saldo
+                        saldo_item.setForeground(QBrush(QColor("#1565C0")))  # Azul oscuro
+                        saldo_item.setFont(QFont("Arial", 9, QFont.Bold))
                         self.partidas_table.setItem(row, 7, saldo_item)
                     
                     # Ajustar columnas
@@ -424,6 +482,8 @@ class DashboardView(QWidget):
                     
         except Exception as e:
             print(f"Error al cargar partidas: {str(e)}")
+                    
+ 
         
     # Método para ser llamado cuando se vuelve al dashboard
     def on_show(self):

@@ -279,8 +279,7 @@ class EmailService:
         # Obtener usuario/árbitro
         usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()
         
-        # Obtener retención
-        retencion = db.query(models.Retencion).filter(models.Retencion.id == pago.retencion_id).first() if pago.retencion_id else None
+        
         
         # Detalles del pago
         p.setFont("Helvetica", 12)
@@ -301,8 +300,7 @@ class EmailService:
         campos = [
             ("Fecha:", pago.fecha.strftime('%d/%m/%Y')),
             ("Beneficiario:", usuario.nombre if usuario else "No especificado"),
-            ("Monto:", f"$ {float(pago.monto):,.2f}"),
-            ("Concepto:", retencion.nombre if retencion else "Pago de arbitraje"),
+            ("Monto:", f"$ {float(pago.monto):,.2f}"),            
             ("Descripción:", pago.descripcion if hasattr(pago, 'descripcion') and pago.descripcion else "Sin descripción")
         ]
         

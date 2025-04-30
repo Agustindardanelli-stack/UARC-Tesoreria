@@ -218,14 +218,8 @@ def create_pago(
     # Validar que el usuario exista
     usuario = crud.get_usuario(db, usuario_id=pago.usuario_id)
     if not usuario:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
-    # Validar la retención solo si se proporciona
-    if pago.retencion_id is not None:
-        retencion = crud.get_retencion(db, retencion_id=pago.retencion_id)
-        if not retencion:
-            raise HTTPException(status_code=404, detail="Retención no encontrada")
-    
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")    
+       
     return crud.create_pago(
         db=db, 
         pago=pago, 
@@ -239,8 +233,8 @@ def read_pagos(
     db: Session = Depends(get_db), 
     current_user: models.Usuario = Depends(get_current_active_user)
 ):
-    # Obtener pagos
-    pagos = crud.get_pagos(db, skip=skip, limit=limit, current_user_id=current_user.id)
+    # Obtener pagos - MODIFICADO: quitado el parámetro current_user_id
+    pagos = crud.get_pagos(db, skip=skip, limit=limit)
     
     # Obtener registros de auditoría para estos pagos
     pago_ids = [pago.id for pago in pagos]
@@ -264,7 +258,6 @@ def read_pagos(
         pago.usuario_auditoria = auditoria_map.get(str(pago.id), 'Sin registro')
     
     return pagos
-    
 
 @app.get(f"{settings.API_PREFIX}/pagos/{{pago_id}}", response_model=schemas.PagoDetalle, tags=["Pagos"])
 def read_pago(pago_id: int, db: Session = Depends(get_db), current_user: models.Usuario = Depends(get_current_active_user)):
@@ -631,7 +624,7 @@ def read_partidas(
     tipo: Optional[str] = None,
     cuenta: Optional[str] = None,
     db: Session = Depends(get_db), 
-    
+    current_user: models.Usuario = Depends(get_current_active_user)
 ):
     # Obtener partidas
     partidas = crud.get_partida(
@@ -641,8 +634,7 @@ def read_partidas(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
         tipo=tipo,
-        cuenta=cuenta,
-        
+        cuenta=cuenta
     )
     
     # Obtener registros de auditoría para estas partidas
@@ -653,13 +645,14 @@ def read_partidas(
             models.Auditoria.registro_id.in_(partida_ids)
         )\
         .join(models.Usuario, models.Auditoria.usuario_id == models.Usuario.id, isouter=True)\
+        .order_by(models.Auditoria.fecha.desc())\
         .all()
     
-    # Crear un diccionario de mapeo de auditorías
-    auditoria_map = {
-        str(a.registro_id): a.usuario.nombre if a.usuario else 'Sin usuario' 
-        for a in auditorias
-    }
+    # Crear un diccionario de mapeo de auditorías 
+    auditoria_map = {}
+    for a in auditorias:
+        if str(a.registro_id) not in auditoria_map:
+            auditoria_map[str(a.registro_id)] = a.usuario.nombre if a.usuario else 'Sin usuario'
     
     # Añadir información de auditoría a cada partida
     for partida in partidas:
@@ -764,6 +757,18 @@ def create_transaccion(
         current_user_id=current_user.id
     )
 
+@app.post(f"{settings.API_PREFIX}/transacciones", response_model=schemas.Transaccion, tags=["Transacciones"])
+def create_transaccion(
+    transaccion: schemas.TransaccionCreate, 
+    db: Session = Depends(get_db), 
+    current_user: models.Usuario = Depends(is_tesorero)
+):
+    return crud.create_transaccion(
+        db=db, 
+        transaccion=transaccion, 
+        current_user_id=current_user.id
+    )
+
 @app.get(f"{settings.API_PREFIX}/transacciones", response_model=List[schemas.TransaccionDetalle], tags=["Transacciones"])
 def read_transacciones(
     skip: int = 0, 
@@ -771,8 +776,7 @@ def read_transacciones(
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
     tipo: Optional[str] = None,
-    db: Session = Depends(get_db), 
-    
+    db: Session = Depends(get_db)
 ):
     transacciones = crud.get_transacciones(
         db, 
@@ -817,6 +821,16 @@ def delete_transaccion(
         current_user_id=current_user.id
     )
 
+# Nuevo endpoint para recalcular saldos
+@app.post(f"{settings.API_PREFIX}/transacciones/recalcular-saldos", tags=["Transacciones"])
+def recalcular_saldos(
+    db: Session = Depends(get_db), 
+    current_user: models.Usuario = Depends(is_tesorero)
+):
+    """
+    Recalcula los saldos de todas las transacciones
+    """
+    return crud.recalcular_saldos_transacciones(db)
 # Rutas de Auditoría
 @app.get(f"{settings.API_PREFIX}/auditoria", response_model=List[schemas.AuditoriaDetalle], tags=["Auditoría"])
 def read_auditoria(
