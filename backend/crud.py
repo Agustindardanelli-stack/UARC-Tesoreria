@@ -161,13 +161,13 @@ def delete_retencion(db: Session, retencion_id: int):
     if not db_retencion:
         raise HTTPException(status_code=404, detail="Retención no encontrada")
     
-    # Verificar si hay pagos con esta retención
-    pagos_con_retencion = db.query(models.Pago).filter(models.Pago.retencion_id == retencion_id).count()
-    if pagos_con_retencion > 0:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"No se puede eliminar la retención porque hay {pagos_con_retencion} pagos asociados a ella"
-        )
+    # # Verificar si hay pagos con esta retención
+    # # pagos_con_retencion = db.query(models.Pago).filter(models.Pago.retencion_id == retencion_id).count()
+    # if pagos_con_retencion > 0:
+    #     raise HTTPException(
+    #         status_code=400, 
+    #         detail=f"No se puede eliminar la retención porque hay {pagos_con_retencion} pagos asociados a ella"
+    #     )
     
     db.delete(db_retencion)
     db.commit()

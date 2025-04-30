@@ -12,7 +12,7 @@ class Session(QObject):
         super().__init__()
         self.token = None
         self.user_info = None
-        self.api_url = "http://localhost:8000/api"
+        self.api_url = "https://uarc-tesoreria.onrender.com/api"
 
 
     def set_token(self, token):
