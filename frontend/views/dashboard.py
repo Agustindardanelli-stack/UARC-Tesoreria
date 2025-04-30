@@ -8,10 +8,14 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, 
-    QTableWidgetItem, QSplitter, QFrame, QTabWidget, QSpacerItem, QSizePolicy
+    QTableWidgetItem, QSplitter, QFrame, QTabWidget, QSpacerItem, QSizePolicy,
 )
-from PySide6.QtGui import QPixmap, QFont, QIcon
-from PySide6.QtCore import Qt, Signal, QDateTime, QTimer
+# Asegúrate de tener esta importación al inicio del archivo
+from PySide6.QtGui import QPixmap, QFont, QIcon, QColor, QBrush
+from PySide6.QtCore import Qt, Signal, QDateTime, QTimer 
+from concurrent.futures import ThreadPoolExecutor
+
+
 from .logo_loader import load_logo
 from sesion import session
 
@@ -22,6 +26,9 @@ class SidebarWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setup_ui()
+
+        self.executor = ThreadPoolExecutor(max_workers=1)
+
 
     def setup_ui(self):
         # Layout principal
@@ -177,7 +184,7 @@ class DashboardView(QWidget):
         self.content_layout = QVBoxLayout(self.content_widget)
         
         # Título
-        title_label = QLabel("Dashboard de Tesorería")
+        title_label = QLabel("Inicio")
         title_font = QFont()
         title_font.setPointSize(20)
         title_font.setBold(True)
@@ -237,10 +244,27 @@ class DashboardView(QWidget):
         self.time_label.setText(f"<b>Hora actual:</b> {datetime.now().strftime('%H:%M:%S')}")
     
     def refresh_data(self):
-        """Actualiza los datos del dashboard"""
-        self.load_balance_data()
-        self.load_partidas_data()
-    
+         if not session.token:
+              print("Sesión no iniciada. No se cargarán los datos del dashboard.")
+              return
+         self.load_balance_data()
+         self.load_partidas_data()
+
+
+    def on_show(self):
+        """Se llama cuando el dashboard se muestra después del login"""
+        self.update_time()
+
+        # Mostrar valores temporales
+        self.balance_indicator.findChildren(QLabel)[1].setText("Cargando...")
+        self.ingresos_indicator.findChildren(QLabel)[1].setText("...")
+        self.egresos_indicator.findChildren(QLabel)[1].setText("...")
+        self.cuotas_indicator.findChildren(QLabel)[1].setText("...")
+
+        # Ejecutar en segundo plano
+        self.executor.submit(self.refresh_data)
+
+        
     def load_balance_data(self):
         """Carga los datos del balance"""
         try:
@@ -322,62 +346,145 @@ class DashboardView(QWidget):
             pass
     
     def load_partidas_data(self):
-        """Carga las últimas partidas"""
+        """Carga las últimas partidas y obtiene los saldos correspondientes de las transacciones"""
         try:
             headers = session.get_headers()
+            
+            # Primero cargamos las partidas
             partidas_response = requests.get(
                 f"{session.api_url}/partidas?limit=10",
                 headers=headers
-            )            
+            )
             
+            # Luego obtenemos las transacciones para tener los saldos
+            transacciones_response = requests.get(
+                f"{session.api_url}/transacciones?limit=50",  # Obtener más transacciones para tener suficientes saldos
+                headers=headers
+            )
+            
+            # Crear un diccionario de fechas y saldos de transacciones
+            saldos_por_fecha = {}
+            if transacciones_response.status_code == 200:
+                transacciones_data = transacciones_response.json()
+                # Ordenar transacciones por fecha y ID
+                transacciones_data.sort(key=lambda x: (x.get('fecha', ''), x.get('id', 0)))
+                
+                for transaccion in transacciones_data:
+                    fecha = transaccion.get('fecha', '')
+                    saldo = transaccion.get('saldo', 0)
+                    # Guardamos el último saldo para cada fecha
+                    saldos_por_fecha[fecha] = saldo
+            
+            # Procesar las partidas
             if partidas_response.status_code == 200:
                 partidas_data = partidas_response.json()
                 
                 # Limpiar tabla
-                self.partidas_table.setColumnCount(7)
-                self.partidas_table.setHorizontalHeaderLabels(["Fecha", "Cuenta", "Detalle", "Usuario que realizó", "Ingreso", "Egreso", "Saldo"])
+                self.partidas_table.setColumnCount(8)
+                self.partidas_table.setHorizontalHeaderLabels([
+                    "Fecha", "Tipo", "Detalle", "Usuario que realizó", "Nº Comprobante", "Ingreso", "Egreso", "Saldo"
+                ])
                 self.partidas_table.setRowCount(0)
                 
                 if partidas_data:
+                    # Ordenar partidas por fecha (descendente) y luego por ID (descendente)
+                    partidas_data.sort(key=lambda x: (x.get('fecha', ''), x.get('id', 0)), reverse=True)
+                    
                     # Llenar tabla con datos
                     for row, partida_item in enumerate(partidas_data):
                         self.partidas_table.insertRow(row)
                         
                         # Fecha
-                        fecha = datetime.strptime(partida_item.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if partida_item.get('fecha') else ''
-                        self.partidas_table.setItem(row, 0, QTableWidgetItem(fecha))
+                        fecha_str = partida_item.get('fecha', '')
+                        fecha_display = datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y') if fecha_str else ''
+                        self.partidas_table.setItem(row, 0, QTableWidgetItem(fecha_display))
                         
-                        # Cuenta
-                        self.partidas_table.setItem(row, 1, QTableWidgetItem(partida_item.get('cuenta', '')))
+                        # Determinar tipo de movimiento (Ingreso o Egreso)
+                        ingreso = partida_item.get('ingreso', 0)
+                        egreso = partida_item.get('egreso', 0)
+                        
+                        if ingreso > 0 and egreso == 0:
+                            tipo_movimiento = "INGRESO"
+                            color_fondo = QColor(232, 245, 233)  # Verde claro para ingresos
+                        elif egreso > 0 and ingreso == 0:
+                            tipo_movimiento = "EGRESO"
+                            color_fondo = QColor(255, 235, 238)  # Rojo claro para egresos
+                        else:
+                            tipo_movimiento = "AJUSTE"
+                            color_fondo = QColor(255, 253, 231)  # Amarillo claro para ajustes
+                        
+                        # Aplicar color a todos los items de la fila
+                        for col in range(8):
+                            if not self.partidas_table.item(row, col):
+                                self.partidas_table.setItem(row, col, QTableWidgetItem(""))
+                            self.partidas_table.item(row, col).setBackground(QBrush(color_fondo))
+                        
+                        # Tipo de movimiento
+                        tipo_item = QTableWidgetItem(tipo_movimiento)
+                        tipo_item.setTextAlignment(Qt.AlignCenter)
+                        if tipo_movimiento == "INGRESO":
+                            tipo_item.setForeground(QBrush(QColor("#4CAF50")))  # Verde para ingresos
+                        elif tipo_movimiento == "EGRESO":
+                            tipo_item.setForeground(QBrush(QColor("#F44336")))  # Rojo para egresos
+                        
+                        tipo_item.setFont(QFont("Arial", 9, QFont.Bold))
+                        self.partidas_table.setItem(row, 1, tipo_item)
                         
                         # Detalle
                         self.partidas_table.setItem(row, 2, QTableWidgetItem(partida_item.get('detalle', '')))
                         
                         # Usuario que realizó
-                        # usuario_accion = partida_item.get('usuario_auditoria', 'Sin registro')
-                        # self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
+                        usuario_obj = partida_item.get('usuario', {})
+                        usuario_accion = usuario_obj.get('nombre', 'Sin registro') if usuario_obj else 'Sin registro'
+                        self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
+                        
+                        # Número de comprobante
+                        num_comprobante = ""
+                        if tipo_movimiento == "INGRESO":
+                            num_comprobante = f"REC-{partida_item.get('id', '')}"
+                        elif tipo_movimiento == "EGRESO":
+                            num_comprobante = f"OP-{partida_item.get('id', '')}"
+                        self.partidas_table.setItem(row, 4, QTableWidgetItem(num_comprobante))
                         
                         # Ingreso
-                        ingreso_item = QTableWidgetItem(f"${partida_item.get('ingreso', 0):,.2f}")
+                        ingreso_item = QTableWidgetItem(f"${ingreso:,.2f}")
                         ingreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.partidas_table.setItem(row, 4, ingreso_item)
+                        if ingreso > 0:
+                            ingreso_item.setForeground(QBrush(QColor("#4CAF50")))  # Verde para ingresos
+                            ingreso_item.setFont(QFont("Arial", 9, QFont.Bold))
+                        self.partidas_table.setItem(row, 5, ingreso_item)
                         
                         # Egreso
-                        egreso_item = QTableWidgetItem(f"${partida_item.get('egreso', 0):,.2f}")
+                        egreso_item = QTableWidgetItem(f"${egreso:,.2f}")
                         egreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.partidas_table.setItem(row, 5, egreso_item)
+                        if egreso > 0:
+                            egreso_item.setForeground(QBrush(QColor("#F44336")))  # Rojo para egresos
+                            egreso_item.setFont(QFont("Arial", 9, QFont.Bold))
+                        self.partidas_table.setItem(row, 6, egreso_item)
                         
-                        # Saldo
-                        saldo_item = QTableWidgetItem(f"${partida_item.get('saldo', 0):,.2f}")
+                        # Saldo - Buscar en el diccionario de saldos por fecha
+                        # Primero intentamos obtener el saldo de la partida
+                        saldo = partida_item.get('saldo', None)
+                        
+                        # Si el saldo no está disponible o es 0, buscamos en las transacciones
+                        if saldo is None or saldo == 0:
+                            saldo = saldos_por_fecha.get(fecha_str, 0)
+                        
+                        saldo_item = QTableWidgetItem(f"${saldo:,.2f}")
                         saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        self.partidas_table.setItem(row, 6, saldo_item)
+                        # Agregar un color distintivo al saldo
+                        saldo_item.setForeground(QBrush(QColor("#1565C0")))  # Azul oscuro
+                        saldo_item.setFont(QFont("Arial", 9, QFont.Bold))
+                        self.partidas_table.setItem(row, 7, saldo_item)
                     
                     # Ajustar columnas
                     self.partidas_table.resizeColumnsToContents()
                     
         except Exception as e:
-            pass
-    
+            print(f"Error al cargar partidas: {str(e)}")
+                    
+ 
+        
     # Método para ser llamado cuando se vuelve al dashboard
     def on_show(self):
         """Método que se llama cuando el dashboard se muestra después de navegar"""

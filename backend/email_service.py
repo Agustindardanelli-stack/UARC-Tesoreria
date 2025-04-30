@@ -277,10 +277,8 @@ class EmailService:
         p.drawCentredString(width/2, height - 2*inch, "ORDEN DE PAGO")
         
         # Obtener usuario/árbitro
-        usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()
-        
-        # Obtener retención
-        # retencion = db.query(models.Retencion).filter(models.Retencion.id == pago.retencion_id).first() if pago.retencion_id else None
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()        
+
         
         # Detalles del pago
         p.setFont("Helvetica", 12)

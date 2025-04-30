@@ -175,7 +175,8 @@ def delete_retencion(db: Session, retencion_id: int):
 
 # Funciones CRUD para Pagos
 @audit_trail("pagos")
-def create_pago(db: Session, pago: schemas.PagoCreate):
+def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
+    # Crear el pago
     db_pago = models.Pago(**pago.dict())
     db.add(db_pago)
     db.commit()
@@ -185,16 +186,21 @@ def create_pago(db: Session, pago: schemas.PagoCreate):
     usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
     nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
     
+    # Obtener la última partida para calcular el saldo
+    ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
+    saldo_anterior = ultima_partida.saldo if ultima_partida else 0
+    nuevo_saldo = saldo_anterior - db_pago.monto
+    
     # Crear partida asociada al pago (egreso)
     partida = models.Partida(
         fecha=db_pago.fecha,
-        detalle=f"Pago {nombre_usuario}",  # Eliminé el guión
+        detalle=f"Pago {nombre_usuario}",
         monto=db_pago.monto,
         tipo="egreso",
         cuenta="CAJA",
-        usuario_id=db_pago.usuario_id,
+        usuario_id=current_user_id,  # Usuario que realiza la acción
         pago_id=db_pago.id,
-        saldo=0,
+        saldo=nuevo_saldo,
         ingreso=0,
         egreso=db_pago.monto
     )
@@ -241,6 +247,7 @@ def create_pago(db: Session, pago: schemas.PagoCreate):
     
     return db_pago
 
+# Añadir función para reenviar órdenes de pago
 def reenviar_orden_pago(db: Session, pago_id: int, email: str = None, current_user_id: int = None):
     # Obtener el pago
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
@@ -273,7 +280,6 @@ def reenviar_orden_pago(db: Session, pago_id: int, email: str = None, current_us
         sender_email=email_config.email_from
     )
     
-    # Usando el método para órdenes de pago
     success, message = email_service.send_payment_receipt_email(
         db=db,
         pago=db_pago, 
@@ -306,7 +312,6 @@ def get_pago(db: Session, pago_id: int):
     return pago
 
 
-@audit_trail("pagos")
 @audit_trail("pagos")
 def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate):
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
@@ -407,7 +412,7 @@ def reenviar_recibo(db: Session, cobranza_id: int, email: str = None):
 # Funciones CRUD para Cobranzas
 # Funciones CRUD para Cobranzas
 @audit_trail("cobranza")
-def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate):
+def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_id: int):
     # Validar retencion_id si se proporciona
     if cobranza.retencion_id is not None:
         retencion = db.query(models.Retencion).filter(models.Retencion.id == cobranza.retencion_id).first()
@@ -419,15 +424,20 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate):
     db.commit()
     db.refresh(db_cobranza)
     
+    # Obtener la última partida para calcular el saldo
+    ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
+    saldo_anterior = ultima_partida.saldo if ultima_partida else 0
+    nuevo_saldo = saldo_anterior + db_cobranza.monto
+    
     partida = models.Partida(
         fecha=db_cobranza.fecha,
         detalle=f"Cobranza - {db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first().nombre}",
         monto=db_cobranza.monto,
         tipo="ingreso",
         cuenta="CAJA",
-        usuario_id=db_cobranza.usuario_id,
+        usuario_id=current_user_id,  # Usuario que REALIZA la acción
         cobranza_id=db_cobranza.id,
-        saldo=0,
+        saldo=nuevo_saldo,
         ingreso=db_cobranza.monto,
         egreso=0
     )
@@ -532,31 +542,143 @@ def delete_cobranza(db: Session, cobranza_id: int):
 
 # Funciones CRUD para Cuotas
 @audit_trail("cuota")
-def create_cuota(db: Session, cuota: schemas.CuotaCreate):
+def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int):
+    # Crear la cuota
     db_cuota = models.Cuota(**cuota.dict())
     db.add(db_cuota)
     db.commit()
     db.refresh(db_cuota)
+    
+    # Opcional: crear una partida asociada a la cuota
+    # Obtener información del usuario para el detalle
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
+    nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
+    
+    partida = models.Partida(
+        fecha=db_cuota.fecha,
+        detalle=f"Cuota {nombre_usuario}",
+        monto=db_cuota.monto,
+        tipo="ingreso",
+        cuenta="CUOTAS",
+        usuario_id=current_user_id,  # Usuario que realiza la acción
+        saldo=0,
+        ingreso=db_cuota.monto,
+        egreso=0
+    )
+    db.add(partida)
+    db.commit()
+    
     return db_cuota
 
 def get_cuota(db: Session, cuota_id: int):
     return db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
 
 def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bool] = None):
+    # Consulta base de cuotas
     query = db.query(models.Cuota)
     
+    # Filtrar por estado de pago si se especifica
     if pagado is not None:
         query = query.filter(models.Cuota.pagado == pagado)
     
-    return query.order_by(desc(models.Cuota.fecha)).offset(skip).limit(limit).all()
+    # Ordenar por fecha, más recientes primero
+    cuotas = query.order_by(desc(models.Cuota.fecha)).offset(skip).limit(limit).all()
+    
+    # Procesar cuotas para mostrar deudas acumuladas
+    cuotas_procesadas = []
+    usuarios_cuotas = {}
+    fecha_actual = datetime.now().date()
+
+    for cuota in cuotas:
+        # Si la cuota no está pagada, agrupar por usuario
+        if not cuota.pagado:
+            if cuota.usuario_id not in usuarios_cuotas:
+                usuarios_cuotas[cuota.usuario_id] = {
+                    'cuotas': [],
+                    'monto_total': 0,
+                    'fecha_primera': cuota.fecha
+                }
+            
+            usuarios_cuotas[cuota.usuario_id]['cuotas'].append(cuota)
+            usuarios_cuotas[cuota.usuario_id]['monto_total'] += cuota.monto
+            
+            # Actualizar fecha primera si es más antigua
+            if cuota.fecha < usuarios_cuotas[cuota.usuario_id]['fecha_primera']:
+                usuarios_cuotas[cuota.usuario_id]['fecha_primera'] = cuota.fecha
+
+    # Modificar las cuotas para incluir información de deuda
+    for cuota in cuotas:
+        # Si el usuario tiene múltiples cuotas pendientes, añadir información
+        if not cuota.pagado and cuota.usuario_id in usuarios_cuotas:
+            info_usuario = usuarios_cuotas[cuota.usuario_id]
+            
+            # Calcular meses de atraso
+            meses_atraso = (fecha_actual.year - cuota.fecha.year) * 12 + (fecha_actual.month - cuota.fecha.month)
+            
+            # Si hay más de una cuota pendiente, añadir información adicional
+            if len(info_usuario['cuotas']) > 1:
+                cuota.monto_total_pendiente = float(info_usuario['monto_total'])
+                cuota.cuotas_pendientes = len(info_usuario['cuotas'])
+                cuota.fecha_primera_deuda = info_usuario['fecha_primera']
+                cuota.meses_atraso = meses_atraso
+        
+        cuotas_procesadas.append(cuota)
+    
+    return cuotas_procesadas
+
+def calcular_meses_atraso(fecha_cuota):
+    """
+    Calcula los meses de atraso desde una fecha de cuota
+    """
+    # Obtener fecha actual
+    fecha_actual = datetime.now().date()
+    
+    # Calcular meses de atraso
+    meses_atraso = (
+        (fecha_actual.year - fecha_cuota.year) * 12 + 
+        (fecha_actual.month - fecha_cuota.month)
+    )
+    
+    # Ajustar si el día actual es menor que el día de la cuota
+    if fecha_actual.day < fecha_cuota.day:
+        meses_atraso -= 1
+    
+    return max(0, meses_atraso)
 
 def get_cuotas_by_usuario(db: Session, usuario_id: int, pagado: Optional[bool] = None):
+    # Consulta base de cuotas para un usuario específico
     query = db.query(models.Cuota).filter(models.Cuota.usuario_id == usuario_id)
     
+    # Filtrar por estado de pago si se especifica
     if pagado is not None:
         query = query.filter(models.Cuota.pagado == pagado)
     
-    return query.order_by(desc(models.Cuota.fecha)).all()
+    # Ordenar por fecha, más recientes primero
+    cuotas = query.order_by(desc(models.Cuota.fecha)).all()
+    
+    # Procesar cuotas no pagadas
+    cuotas_pendientes = [cuota for cuota in cuotas if not cuota.pagado]
+    fecha_actual = datetime.now().date()
+    
+    # Si hay cuotas pendientes, añadir información de deuda
+    if cuotas_pendientes:
+        # Calcular monto total de cuotas pendientes
+        monto_total_pendiente = sum(cuota.monto for cuota in cuotas_pendientes)
+        
+        # Encontrar la fecha de la primera cuota pendiente
+        fecha_primera_deuda = min(cuota.fecha for cuota in cuotas_pendientes)
+        
+        # Calcular meses de atraso
+        meses_atraso = (fecha_actual.year - fecha_primera_deuda.year) * 12 + (fecha_actual.month - fecha_primera_deuda.month)
+        
+        # Añadir información a cada cuota pendiente
+        for cuota in cuotas_pendientes:
+            cuota.monto_total_pendiente = float(monto_total_pendiente)
+            cuota.cuotas_pendientes = len(cuotas_pendientes)
+            cuota.fecha_primera_deuda = fecha_primera_deuda
+            cuota.meses_atraso = meses_atraso
+    
+    return cuotas
 @audit_trail("cuota")
 def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate):
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
@@ -722,16 +844,42 @@ def delete_cuota(db: Session, cuota_id: int):
 # Funciones CRUD para Partidas
 @audit_trail("partidas")
 def create_partida(db: Session, partida: schemas.PartidaCreate, current_user_id: int = None):
-    db_partida = models.Partida(**partida.dict())
+    # Obtener la última partida para calcular el saldo
+    ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
+    
+    # Calcular nuevo saldo
+    saldo_anterior = ultima_partida.saldo if ultima_partida else 0
+    
+    if partida.tipo == 'ingreso':
+        nuevo_saldo = saldo_anterior + partida.monto
+    else:  # egreso
+        nuevo_saldo = saldo_anterior - partida.monto
+    
+    # Crear partida con el saldo calculado
+    db_partida = models.Partida(**partida.dict(exclude={'saldo'}), saldo=nuevo_saldo)
+    
+    # Si se proporciona current_user_id, establecerlo como usuario
+    if current_user_id:
+        db_partida.usuario_id = current_user_id
+    
     db.add(db_partida)
     db.commit()
     db.refresh(db_partida)
     return db_partida
 
 @audit_trail("partidas")
-def get_partida(db: Session, partida_id: int = None, skip: int = 0, limit: int = 100,
-               fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
-               tipo: Optional[str] = None, cuenta: Optional[str] = None, current_user_id: int = None):
+def get_partida(
+    db: Session, 
+    partida_id: int = None, 
+    skip: int = 0, 
+    limit: int = 100, 
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None,
+    tipo: Optional[str] = None,
+    cuenta: Optional[str] = None,
+    current_user_id: int = None
+):
+    # Si se busca una partida específica
     if partida_id:
         return db.query(models.Partida).filter(models.Partida.id == partida_id).first()
     
@@ -750,7 +898,43 @@ def get_partida(db: Session, partida_id: int = None, skip: int = 0, limit: int =
     if cuenta:
         query = query.filter(models.Partida.cuenta == cuenta)
     
-    return query.order_by(desc(models.Partida.fecha)).offset(skip).limit(limit).all()
+    # Ordenar por fecha
+    query = query.order_by(models.Partida.fecha.desc(), models.Partida.id.desc())
+    
+    # Aplicar paginación
+    partidas = query.offset(skip).limit(limit).all()
+    
+    # Obtener el último saldo calculado
+    ultima_partida = db.query(models.Partida).order_by(models.Partida.fecha.desc(), models.Partida.id.desc()).first()
+    saldo_inicial = ultima_partida.saldo if ultima_partida else 0
+    
+    # Calcular saldos acumulativos
+    saldo_acumulado = saldo_inicial
+    for partida in reversed(partidas):
+        # Ajustar saldo antes de asignarlo
+        if partida.tipo == 'ingreso':
+            saldo_acumulado -= partida.monto
+        else:  # egreso
+            saldo_acumulado += partida.monto
+        
+        partida.saldo = saldo_acumulado
+    
+    # Obtener información de auditoría para cada partida
+    for partida in partidas:
+        # Buscar el primer registro de auditoría para esta partida
+        auditoria = db.query(models.Auditoria)\
+            .filter(
+                models.Auditoria.tabla_afectada == 'partidas', 
+                models.Auditoria.registro_id == partida.id
+            )\
+            .join(models.Usuario, models.Auditoria.usuario_id == models.Usuario.id, isouter=True)\
+            .order_by(models.Auditoria.fecha.desc())\
+            .first()
+        
+        # Asignar nombre de usuario de auditoría
+        partida.usuario_auditoria = auditoria.usuario.nombre if auditoria and auditoria.usuario else 'Sin registro'
+    
+    return list(reversed(partidas))
 
 @audit_trail("partidas")
 def update_partida(db: Session, partida_id: int, partida_update: schemas.PartidaUpdate, current_user_id: int = None):
@@ -834,11 +1018,59 @@ def delete_categoria(db: Session, categoria_id: int):
     return {"message": "Categoría eliminada exitosamente"}
 
 # Funciones CRUD para Transacciones
-def create_transaccion(db: Session, transaccion: schemas.TransaccionCreate):
-    db_transaccion = models.Transaccion(**transaccion.dict())
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
+from fastapi import HTTPException
+from typing import Optional
+import models
+import schemas
+
+def create_transaccion(db: Session, transaccion: schemas.TransaccionCreate, current_user_id: Optional[int] = None):
+    """
+    Crea una nueva transacción y calcula el saldo acumulado
+    """
+    # Crear el diccionario con los datos de la transacción
+    transaccion_data = transaccion.dict()
+    
+    # Crear objeto de transacción sin guardar aún (sin el saldo)
+    db_transaccion = models.Transaccion(**transaccion_data)
+    
+    # Obtener la última transacción para obtener el último saldo
+    ultima_transaccion = db.query(models.Transaccion).order_by(
+        desc(models.Transaccion.id)
+    ).first()
+    
+    ultimo_saldo = 0  # Saldo inicial si no hay transacciones previas
+    
+    if ultima_transaccion and hasattr(ultima_transaccion, 'saldo') and ultima_transaccion.saldo is not None:
+        ultimo_saldo = float(ultima_transaccion.saldo)
+    
+    # Calcular nuevo saldo
+    if db_transaccion.tipo == "ingreso":
+        nuevo_saldo = ultimo_saldo + float(db_transaccion.monto)
+    else:  # egreso
+        nuevo_saldo = ultimo_saldo - float(db_transaccion.monto)
+    
+    # Asignar el nuevo saldo a la transacción
+    db_transaccion.saldo = nuevo_saldo
+    
+    # Guardar en la base de datos
     db.add(db_transaccion)
     db.commit()
     db.refresh(db_transaccion)
+    
+    # Registrar en auditoría si se proporciona un usuario
+    if current_user_id:
+        auditoria = models.Auditoria(
+            usuario_id=current_user_id,
+            accion="crear",
+            tabla_afectada="transacciones",
+            registro_id=db_transaccion.id,
+            detalles=f"Creación de transacción: {db_transaccion.tipo} por {db_transaccion.monto}"
+        )
+        db.add(auditoria)
+        db.commit()
+    
     return db_transaccion
 
 def get_transaccion(db: Session, transaccion_id: int):
@@ -861,28 +1093,188 @@ def get_transacciones(db: Session, skip: int = 0, limit: int = 100,
     
     return query.order_by(desc(models.Transaccion.fecha)).offset(skip).limit(limit).all()
 
-def update_transaccion(db: Session, transaccion_id: int, transaccion_update: schemas.TransaccionUpdate):
+def update_transaccion(db: Session, transaccion_id: int, transaccion_update: schemas.TransaccionUpdate, current_user_id: Optional[int] = None):
     db_transaccion = db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
     if not db_transaccion:
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
     
     update_data = transaccion_update.dict(exclude_unset=True)
     
+    # Guardar valores anteriores para registrar en auditoría
+    old_values = {
+        "tipo": db_transaccion.tipo,
+        "monto": float(db_transaccion.monto),
+        "fecha": db_transaccion.fecha
+    }
+    
+    # Si se cambia el tipo o monto, recalcular todos los saldos a partir de esta transacción
+    recalcular_saldos = False
+    if "tipo" in update_data or "monto" in update_data:
+        recalcular_saldos = True
+    
+    # Actualizar los campos de la transacción
     for key, value in update_data.items():
         setattr(db_transaccion, key, value)
     
+    # Guardar cambios iniciales
     db.commit()
     db.refresh(db_transaccion)
+    
+    # Si es necesario recalcular saldos
+    if recalcular_saldos:
+        # Obtener todas las transacciones desde esta en adelante
+        transacciones = db.query(models.Transaccion).filter(
+            models.Transaccion.fecha >= db_transaccion.fecha
+        ).order_by(
+            models.Transaccion.fecha,
+            models.Transaccion.id
+        ).all()
+        
+        # Obtener el saldo anterior a esta transacción
+        transaccion_anterior = db.query(models.Transaccion).filter(
+            models.Transaccion.id < transaccion_id
+        ).order_by(
+            desc(models.Transaccion.id)
+        ).first()
+        
+        saldo_actual = 0
+        if transaccion_anterior and hasattr(transaccion_anterior, 'saldo') and transaccion_anterior.saldo is not None:
+            saldo_actual = float(transaccion_anterior.saldo)
+        
+        # Recalcular saldos para cada transacción
+        for t in transacciones:
+            if t.tipo == "ingreso":
+                saldo_actual += float(t.monto)
+            else:  # egreso
+                saldo_actual -= float(t.monto)
+            
+            # Actualizar el saldo
+            t.saldo = saldo_actual
+        
+        # Guardar cambios de saldos
+        db.commit()
+    
+    # Registrar en auditoría si se proporciona un usuario
+    if current_user_id:
+        # Crear registro de cambios
+        cambios = []
+        for key, old_value in old_values.items():
+            if key in update_data and update_data[key] != old_value:
+                cambios.append(f"{key}: {old_value} -> {update_data[key]}")
+        
+        cambios_str = ", ".join(cambios) if cambios else "Sin cambios en campos principales"
+        
+        auditoria = models.Auditoria(
+            usuario_id=current_user_id,
+            accion="actualizar",
+            tabla_afectada="transacciones",
+            registro_id=db_transaccion.id,
+            detalles=f"Actualización de transacción: {cambios_str}"
+        )
+        db.add(auditoria)
+        db.commit()
+    
     return db_transaccion
 
-def delete_transaccion(db: Session, transaccion_id: int):
+def delete_transaccion(db: Session, transaccion_id: int, current_user_id: Optional[int] = None):
     db_transaccion = db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
     if not db_transaccion:
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
     
+    # Guardar información de la transacción para el registro de auditoría
+    transaccion_info = {
+        "id": db_transaccion.id,
+        "tipo": db_transaccion.tipo,
+        "monto": float(db_transaccion.monto),
+        "fecha": db_transaccion.fecha
+    }
+    
+    # Eliminar la transacción
     db.delete(db_transaccion)
     db.commit()
+    
+    # Recalcular saldos después de eliminar la transacción
+    transacciones = db.query(models.Transaccion).filter(
+        models.Transaccion.fecha >= transaccion_info["fecha"]
+    ).order_by(
+        models.Transaccion.fecha,
+        models.Transaccion.id
+    ).all()
+    
+    if transacciones:
+        # Obtener el saldo anterior a la fecha de la transacción eliminada
+        transaccion_anterior = db.query(models.Transaccion).filter(
+            models.Transaccion.fecha < transaccion_info["fecha"]
+        ).order_by(
+            desc(models.Transaccion.fecha),
+            desc(models.Transaccion.id)
+        ).first()
+        
+        saldo_actual = 0
+        if transaccion_anterior and hasattr(transaccion_anterior, 'saldo') and transaccion_anterior.saldo is not None:
+            saldo_actual = float(transaccion_anterior.saldo)
+        
+        # Recalcular saldos para cada transacción
+        for t in transacciones:
+            if t.tipo == "ingreso":
+                saldo_actual += float(t.monto)
+            else:  # egreso
+                saldo_actual -= float(t.monto)
+            
+            # Actualizar el saldo
+            t.saldo = saldo_actual
+        
+        # Guardar cambios de saldos
+        db.commit()
+    
+    # Registrar en auditoría si se proporciona un usuario
+    if current_user_id:
+        auditoria = models.Auditoria(
+            usuario_id=current_user_id,
+            accion="eliminar",
+            tabla_afectada="transacciones",
+            registro_id=transaccion_info["id"],
+            detalles=f"Eliminación de transacción: {transaccion_info['tipo']} por {transaccion_info['monto']} del {transaccion_info['fecha']}"
+        )
+        db.add(auditoria)
+        db.commit()
+    
     return {"message": "Transacción eliminada exitosamente"}
+
+def recalcular_saldos_transacciones(db: Session):
+    """
+    Recalcula los saldos de todas las transacciones en orden cronológico
+    """
+    # Obtener todas las transacciones ordenadas por fecha y luego por ID
+    transacciones = db.query(models.Transaccion).order_by(
+        models.Transaccion.fecha,
+        models.Transaccion.id
+    ).all()
+    
+    if not transacciones:
+        return {"message": "No hay transacciones para recalcular", "transacciones_actualizadas": 0}
+    
+    saldo_actual = 0
+    transacciones_actualizadas = 0
+    
+    # Recalcular saldos para cada transacción
+    for transaccion in transacciones:
+        if transaccion.tipo == "ingreso":
+            saldo_actual += float(transaccion.monto)
+        else:  # egreso
+            saldo_actual -= float(transaccion.monto)
+        
+        # Actualizar el saldo
+        transaccion.saldo = saldo_actual
+        transacciones_actualizadas += 1
+    
+    # Guardar cambios
+    db.commit()
+    
+    return {
+        "message": "Saldos recalculados correctamente", 
+        "transacciones_actualizadas": transacciones_actualizadas
+    }
 
 # Funciones para Auditoría
 def get_partida(db: Session, partida_id: int = None, skip: int = 0, limit: int = 100, 
