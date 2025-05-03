@@ -277,9 +277,8 @@ class EmailService:
         p.drawCentredString(width/2, height - 2*inch, "ORDEN DE PAGO")
         
         # Obtener usuario/árbitro
-        usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()
-        
-        
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()        
+
         
         # Detalles del pago
         p.setFont("Helvetica", 12)

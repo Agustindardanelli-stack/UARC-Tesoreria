@@ -218,8 +218,13 @@ def create_pago(
     # Validar que el usuario exista
     usuario = crud.get_usuario(db, usuario_id=pago.usuario_id)
     if not usuario:
+
         raise HTTPException(status_code=404, detail="Usuario no encontrado")    
        
+
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+  
     return crud.create_pago(
         db=db, 
         pago=pago, 
