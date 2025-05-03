@@ -542,31 +542,32 @@ def delete_cobranza(db: Session, cobranza_id: int):
 
 # Funciones CRUD para Cuotas
 @audit_trail("cuota")
-def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int):
+def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, no_generar_movimiento: bool = False):
     # Crear la cuota
     db_cuota = models.Cuota(**cuota.dict())
     db.add(db_cuota)
     db.commit()
     db.refresh(db_cuota)
     
-    # Opcional: crear una partida asociada a la cuota
-    # Obtener información del usuario para el detalle
-    usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
-    nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
-    
-    partida = models.Partida(
-        fecha=db_cuota.fecha,
-        detalle=f"Cuota {nombre_usuario}",
-        monto=db_cuota.monto,
-        tipo="ingreso",
-        cuenta="CUOTAS",
-        usuario_id=current_user_id,  # Usuario que realiza la acción
-        saldo=0,
-        ingreso=db_cuota.monto,
-        egreso=0
-    )
-    db.add(partida)
-    db.commit()
+    # Solo crear partida si no_generar_movimiento es False
+    if not no_generar_movimiento:
+        # Obtener información del usuario para el detalle
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
+        nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
+        
+        partida = models.Partida(
+            fecha=db_cuota.fecha,
+            detalle=f"Cuota {nombre_usuario}",
+            monto=db_cuota.monto,
+            tipo="ingreso",
+            cuenta="CUOTAS",
+            usuario_id=current_user_id,  # Usuario que realiza la acción
+            saldo=0,
+            ingreso=db_cuota.monto,
+            egreso=0
+        )
+        db.add(partida)
+        db.commit()
     
     return db_cuota
 
@@ -694,7 +695,7 @@ def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate):
     db.refresh(db_cuota)
     return db_cuota
 @audit_trail("cuota")
-def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float):
+def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id: int, generar_movimiento: bool = True):
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
     if not db_cuota:
         raise HTTPException(status_code=404, detail="Cuota no encontrada")
@@ -707,31 +708,33 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float):
     db_cuota.fecha_pago = func.now()
     db_cuota.pagado = True
     
-    # Crear cobranza asociada
-    cobranza = models.Cobranza(
-        fecha=func.now(),
-        monto=monto_pagado,
-        usuario_id=db_cuota.usuario_id
-    )
-    db.add(cobranza)
-    db.commit()
-    db.refresh(cobranza)
-    
-    # Crear partida asociada a la cobranza
-    partida = models.Partida(
-        fecha=func.now(),
-        detalle=f"Pago de cuota del {db_cuota.fecha.strftime('%d/%m/%Y')}",
-        monto=monto_pagado,
-        tipo="ingreso",
-        cuenta="CAJA",
-        usuario_id=db_cuota.usuario_id,
-        cobranza_id=cobranza.id,
-        saldo=0,
-        ingreso=monto_pagado,
-        egreso=0
-    )
-    db.add(partida)
-    db.commit()
+    # Crear cobranza y partida solo si generar_movimiento es True
+    if generar_movimiento:
+        # Crear cobranza asociada
+        cobranza = models.Cobranza(
+            fecha=func.now(),
+            monto=monto_pagado,
+            usuario_id=db_cuota.usuario_id
+        )
+        db.add(cobranza)
+        db.commit()
+        db.refresh(cobranza)
+        
+        # Crear partida asociada a la cobranza
+        partida = models.Partida(
+            fecha=func.now(),
+            detalle=f"Pago de cuota del {db_cuota.fecha.strftime('%d/%m/%Y')}",
+            monto=monto_pagado,
+            tipo="ingreso",
+            cuenta="CAJA",
+            usuario_id=db_cuota.usuario_id,
+            cobranza_id=cobranza.id,
+            saldo=0,
+            ingreso=monto_pagado,
+            egreso=0
+        )
+        db.add(partida)
+        db.commit()
     
     try:
         # Obtener usuario para su email
@@ -776,7 +779,6 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float):
     
     db.refresh(db_cuota)
     return db_cuota
-# Función para reenviar recibo en crud.py
 def reenviar_recibo_cuota(db: Session, cuota_id: int, email: str = None):
     # Obtener la cuota
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()

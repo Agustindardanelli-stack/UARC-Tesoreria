@@ -597,7 +597,9 @@ class SocioCuotaView(QWidget):
                     "fecha": fecha,
                     "monto": monto,
                     "pagado": False,
-                    "monto_pagado": 0
+                    "monto_pagado": 0,
+                    # Añadir un campo para indicar que no debe generar movimiento
+                    "no_generar_movimiento": True
                 }
                 
                 try:
@@ -645,7 +647,9 @@ class SocioCuotaView(QWidget):
                 "fecha": fecha,
                 "monto": monto,
                 "pagado": False,
-                "monto_pagado": 0
+                "monto_pagado": 0,
+                # Añadir un campo para indicar que no debe generar movimiento
+                "no_generar_movimiento": True
             }
             
             try:
@@ -702,11 +706,15 @@ class SocioCuotaView(QWidget):
             # Enviar solicitud para pagar la cuota
             headers = session.get_headers()
             
+            # Asegurarse de que en el pago SÍ se genera el movimiento
             url = f"{session.api_url}/cuotas/{self.current_cuota['id']}/pagar"
             print(f"Realizando petición PUT a: {url}")
             
-            # Enviar monto_pagado como parámetro de consulta (query parameter)
-            params = {"monto_pagado": monto_a_pagar}
+            # Enviar monto_pagado como parámetro de consulta y generar_movimiento=True
+            params = {
+                "monto_pagado": monto_a_pagar,
+                "generar_movimiento": True  # Parámetro explícito para generar movimiento solo al pagar
+            }
             print(f"Parámetros: {params}")
             
             response = requests.put(
@@ -784,7 +792,6 @@ class SocioCuotaView(QWidget):
                 print(f"Error al registrar pago de cuota: {response.text}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al registrar pago: {str(e)}")
-
     # Añadir esta función para enviar recibos manualmente
     def enviar_recibo_manualmente(self, cuota_id, email):
         """Envía un recibo manualmente usando la API"""
