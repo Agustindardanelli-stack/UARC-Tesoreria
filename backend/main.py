@@ -404,6 +404,7 @@ def delete_cobranza(
 @app.post(f"{settings.API_PREFIX}/cuotas", response_model=schemas.Cuota, tags=["Cuotas"])
 def create_cuota(
     cuota: schemas.CuotaCreate, 
+    no_generar_movimiento: bool = True,  # Agregar este parámetro
     db: Session = Depends(get_db), 
     current_user: models.Usuario = Depends(is_tesorero)
 ):
@@ -416,7 +417,8 @@ def create_cuota(
     return crud.create_cuota(
         db=db, 
         cuota=cuota, 
-        current_user_id=current_user.id
+        current_user_id=current_user.id,
+        no_generar_movimiento=no_generar_movimiento  # Agregar este parámetro
     )
 
 @app.get(f"{settings.API_PREFIX}/cuotas", response_model=List[schemas.CuotaDetalle], tags=["Cuotas"])
@@ -570,6 +572,7 @@ def update_cuota(
 def pagar_cuota(
     cuota_id: int, 
     monto_pagado: float, 
+    generar_movimiento: bool = True,  # Agregar este parámetro
     db: Session = Depends(get_db), 
     current_user: models.Usuario = Depends(is_tesorero)
 ):
@@ -577,7 +580,8 @@ def pagar_cuota(
         db=db, 
         cuota_id=cuota_id, 
         monto_pagado=monto_pagado, 
-        current_user_id=current_user.id
+        current_user_id=current_user.id,
+        generar_movimiento=generar_movimiento  # Agregar este parámetro
     )
 
 @app.delete(f"{settings.API_PREFIX}/cuotas/{{cuota_id}}", tags=["Cuotas"])

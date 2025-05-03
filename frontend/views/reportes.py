@@ -629,6 +629,19 @@ class ReportesView(QWidget):
             
             # Ruta para guardar (en directorio de descargas por defecto)
             descargas_path = os.path.join(os.path.expanduser("~"), "Downloads")
+            
+            # Verificar si el directorio existe, y si no, crear uno alternativo
+            if not os.path.exists(descargas_path):
+                # Intentar crear el directorio
+                try:
+                    os.makedirs(descargas_path)
+                    print(f"Directorio creado: {descargas_path}")
+                except Exception as e:
+                    print(f"No se pudo crear el directorio de descargas: {str(e)}")
+                    # Usar un directorio alternativo (el directorio actual)
+                    descargas_path = os.getcwd()
+                    print(f"Usando directorio alternativo: {descargas_path}")
+            
             file_path = os.path.join(descargas_path, nombre_archivo)
             
             # Crear DataFrame con los datos de la tabla
@@ -688,6 +701,7 @@ class ReportesView(QWidget):
             QMessageBox.information(self, "Éxito", f"Reporte descargado exitosamente en {file_path}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al descargar reporte: {str(e)}")
+
     
     def on_exportar_ingresos_egresos(self):
         """Exporta el reporte de ingresos y egresos a Excel (permite seleccionar ubicación)"""
@@ -701,14 +715,33 @@ class ReportesView(QWidget):
             options = QFileDialog.Options()
             anio = self.anio_combo.currentData()
             default_name = f"Ingresos_Egresos_{anio}.xlsx"
+            
+            # Obtener directorio existente
+            descargas_path = os.path.join(os.path.expanduser("~"), "Downloads")
+            if not os.path.exists(descargas_path):
+                descargas_path = os.getcwd()
+            
             file_path, _ = QFileDialog.getSaveFileName(
-                self, "Guardar Excel", default_name, "Excel Files (*.xlsx);;All Files (*)", options=options
+                self, "Guardar Excel", os.path.join(descargas_path, default_name), 
+                "Excel Files (*.xlsx);;All Files (*)", options=options
             )
             
             if file_path:
                 # Asegurar que tiene extensión .xlsx
                 if not file_path.endswith('.xlsx'):
                     file_path += '.xlsx'
+                
+                # Verificar si el directorio destino existe
+                destino_path = os.path.dirname(file_path)
+                if not os.path.exists(destino_path):
+                    try:
+                        os.makedirs(destino_path)
+                    except Exception as e:
+                        # Si no se puede crear, volver al directorio de trabajo
+                        nuevo_path = os.path.join(os.getcwd(), os.path.basename(file_path))
+                        QMessageBox.warning(self, "Advertencia", 
+                            f"No se puede guardar en la ruta especificada. Se guardará en: {nuevo_path}")
+                        file_path = nuevo_path
                 
                 # Crear DataFrame con los datos de la tabla
                 data = []
@@ -767,6 +800,7 @@ class ReportesView(QWidget):
                 QMessageBox.information(self, "Éxito", f"Datos exportados exitosamente a {file_path}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al exportar: {str(e)}")
+
     
     # Métodos para Libro Diario
     def on_buscar_libro(self):
@@ -902,6 +936,19 @@ class ReportesView(QWidget):
             
             # Ruta para guardar (en directorio de descargas por defecto)
             descargas_path = os.path.join(os.path.expanduser("~"), "Downloads")
+            
+            # Verificar si el directorio existe, y si no, crear uno alternativo
+            if not os.path.exists(descargas_path):
+                # Intentar crear el directorio
+                try:
+                    os.makedirs(descargas_path)
+                    print(f"Directorio creado: {descargas_path}")
+                except Exception as e:
+                    print(f"No se pudo crear el directorio de descargas: {str(e)}")
+                    # Usar un directorio alternativo (el directorio actual)
+                    descargas_path = os.getcwd()
+                    print(f"Usando directorio alternativo: {descargas_path}")
+            
             file_path = os.path.join(descargas_path, nombre_archivo)
             
             # Crear DataFrame con los datos de la tabla
@@ -966,7 +1013,8 @@ class ReportesView(QWidget):
             QMessageBox.information(self, "Éxito", f"Reporte descargado exitosamente en {file_path}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al descargar reporte: {str(e)}")
-    
+
+        
     def on_exportar_libro(self):
         """Exporta el libro diario a Excel (permite seleccionar ubicación)"""
         try:
@@ -979,14 +1027,33 @@ class ReportesView(QWidget):
             options = QFileDialog.Options()
             periodo = f"{self.libro_desde_date.date().toString('yyyyMMdd')}-{self.libro_hasta_date.date().toString('yyyyMMdd')}"
             default_name = f"Libro_Diario_{periodo}.xlsx"
+            
+            # Obtener directorio existente
+            descargas_path = os.path.join(os.path.expanduser("~"), "Downloads")
+            if not os.path.exists(descargas_path):
+                descargas_path = os.getcwd()
+            
             file_path, _ = QFileDialog.getSaveFileName(
-                self, "Guardar Excel", default_name, "Excel Files (*.xlsx);;All Files (*)", options=options
+                self, "Guardar Excel", os.path.join(descargas_path, default_name), 
+                "Excel Files (*.xlsx);;All Files (*)", options=options
             )
             
             if file_path:
                 # Asegurar que tiene extensión .xlsx
                 if not file_path.endswith('.xlsx'):
                     file_path += '.xlsx'
+                    
+                # Verificar si el directorio destino existe
+                destino_path = os.path.dirname(file_path)
+                if not os.path.exists(destino_path):
+                    try:
+                        os.makedirs(destino_path)
+                    except Exception as e:
+                        # Si no se puede crear, volver al directorio de trabajo
+                        nuevo_path = os.path.join(os.getcwd(), os.path.basename(file_path))
+                        QMessageBox.warning(self, "Advertencia", 
+                            f"No se puede guardar en la ruta especificada. Se guardará en: {nuevo_path}")
+                        file_path = nuevo_path
                 
                 # Crear DataFrame con los datos de la tabla
                 data = []
