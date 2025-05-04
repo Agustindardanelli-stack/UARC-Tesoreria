@@ -360,7 +360,7 @@ def delete_pago(db: Session, pago_id: int):
 
 
 # Añadir función para reenviar recibos
-def reenviar_recibo(db: Session, cobranza_id: int, email: str = None):
+def reenviar_recibo(db: Session, cobranza_id: int, email: str = None , current_user_id: int = None):
     # Obtener la cobranza
     db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
     if not db_cobranza:
@@ -779,7 +779,7 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
     
     db.refresh(db_cuota)
     return db_cuota
-def reenviar_recibo_cuota(db: Session, cuota_id: int, email: str = None):
+def reenviar_recibo_cuota(db: Session, cuota_id: int, email: str = None , current_user_id: int = None):
     # Obtener la cuota
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
     if not db_cuota:
