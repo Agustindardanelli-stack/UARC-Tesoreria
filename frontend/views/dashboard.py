@@ -390,6 +390,19 @@ class DashboardView(QWidget):
                     # Ordenar partidas por fecha (descendente) y luego por ID (descendente)
                     partidas_data.sort(key=lambda x: (x.get('fecha', ''), x.get('id', 0)), reverse=True)
                     
+                    # Obtener saldo actual del balance para usarlo como base
+                    balance_actual = 0
+                    try:
+                        balance_response = requests.get(
+                            f"{session.api_url}/reportes/balance",
+                            headers=headers
+                        )
+                        if balance_response.status_code == 200:
+                            balance_data = balance_response.json()
+                            balance_actual = balance_data.get('saldo', 0)
+                    except Exception as e:
+                        print(f"Error al obtener balance: {str(e)}")
+                    
                     # Llenar tabla con datos
                     for row, partida_item in enumerate(partidas_data):
                         self.partidas_table.insertRow(row)
@@ -462,13 +475,69 @@ class DashboardView(QWidget):
                             egreso_item.setFont(QFont("Arial", 9, QFont.Bold))
                         self.partidas_table.setItem(row, 6, egreso_item)
                         
-                        # Saldo - Buscar en el diccionario de saldos por fecha
-                        # Primero intentamos obtener el saldo de la partida
-                        saldo = partida_item.get('saldo', None)
+                        # Saldo - CÓDIGO CORREGIDO
+                        saldo = 0
                         
-                        # Si el saldo no está disponible o es 0, buscamos en las transacciones
-                        if saldo is None or saldo == 0:
-                            saldo = saldos_por_fecha.get(fecha_str, 0)
+                        if row == 0:
+                            # Si es la primera fila (más reciente), verificar si tiene saldo en BD
+                            saldo_bd = partida_item.get('saldo', 0)
+                            
+                            # Si el saldo en BD es válido, usarlo
+                            if saldo_bd > 0:
+                                saldo = saldo_bd
+                            else:
+                                # Si no, usar el saldo del balance actual
+                                saldo = balance_actual
+                                
+                                # Si estamos seguros de que ésta es la última transacción,
+                                # actualizar su saldo en la base de datos
+                                try:
+                                    if partida_item.get('id'):
+                                        update_url = f"{session.api_url}/partidas/{partida_item.get('id')}"
+                                        headers_update = session.get_headers()
+                                        headers_update["Content-Type"] = "application/json"
+                                        update_data = {"saldo": saldo}
+                                        
+                                        requests.put(update_url, headers=headers_update, json=update_data)
+                                        print(f"Saldo actualizado para partida {partida_item.get('id')}: {saldo}")
+                                except Exception as e:
+                                    print(f"Error al actualizar saldo: {str(e)}")
+                        else:
+                            # Para el resto de filas, calcular en base a la fila anterior
+                            try:
+                                # Obtener saldo de la fila anterior
+                                anterior_saldo_text = self.partidas_table.item(row-1, 7).text()
+                                anterior_saldo = float(anterior_saldo_text.replace('$', '').replace(',', ''))
+                                
+                                # El saldo de esta fila depende de si es un ingreso o egreso
+                                if tipo_movimiento == "INGRESO":
+                                    # Para filas anteriores a la primera, restar el ingreso
+                                    # (ya que estamos retrocediendo en el tiempo)
+                                    saldo = anterior_saldo - ingreso
+                                elif tipo_movimiento == "EGRESO":
+                                    # Para egresos, sumar el egreso (restamos en sentido inverso)
+                                    saldo = anterior_saldo + egreso
+                                else:
+                                    # Para ajustes, no modificar
+                                    saldo = anterior_saldo
+                                    
+                                # Si hay discrepancia con el saldo almacenado, actualizar BD
+                                saldo_bd = partida_item.get('saldo', 0)
+                                if abs(saldo - saldo_bd) > 0.01 and partida_item.get('id'):
+                                    try:
+                                        update_url = f"{session.api_url}/partidas/{partida_item.get('id')}"
+                                        headers_update = session.get_headers()
+                                        headers_update["Content-Type"] = "application/json"
+                                        update_data = {"saldo": saldo}
+                                        
+                                        requests.put(update_url, headers=headers_update, json=update_data)
+                                        print(f"Saldo corregido para partida {partida_item.get('id')}: {saldo}")
+                                    except Exception as e:
+                                        print(f"Error al actualizar saldo: {str(e)}")
+                            except Exception as e:
+                                # Si hay error al calcular, intentar usar saldo de BD
+                                saldo = partida_item.get('saldo', 0)
+                                print(f"Error al calcular saldo para fila {row}: {str(e)}")
                         
                         saldo_item = QTableWidgetItem(f"${saldo:,.2f}")
                         saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -482,7 +551,7 @@ class DashboardView(QWidget):
                     
         except Exception as e:
             print(f"Error al cargar partidas: {str(e)}")
-                    
+                        
  
         
     # Método para ser llamado cuando se vuelve al dashboard
