@@ -102,5 +102,6 @@ pip-lock.txt
 # ejemplo:
 echo "backend/alembic.ini" >> .gitignore
 echo "backend/alembic/" >> .gitignore
+echo "frontend_/sesion.py" 
 # datos_sensibles.txt
 # archivos_de_prueba/
