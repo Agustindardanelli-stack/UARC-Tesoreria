@@ -705,22 +705,22 @@ class SocioCuotaView(QWidget):
         try:
             # Enviar solicitud para pagar la cuota
             headers = session.get_headers()
+            headers["Content-Type"] = "application/json"  # Añadir este encabezado para enviar JSON
             
-            # Asegurarse de que en el pago SÍ se genera el movimiento
             url = f"{session.api_url}/cuotas/{self.current_cuota['id']}/pagar"
             print(f"Realizando petición PUT a: {url}")
             
-            # Enviar monto_pagado como parámetro de consulta y generar_movimiento=True
-            params = {
+            # Crear objeto JSON con los datos del pago
+            data = {
                 "monto_pagado": monto_a_pagar,
-                "generar_movimiento": True  # Parámetro explícito para generar movimiento solo al pagar
+                "generar_movimiento": True,
+                "actualizar_saldo": True  # Añadir este campo explícito
             }
-            print(f"Parámetros: {params}")
             
             response = requests.put(
                 url,
                 headers=headers,
-                params=params
+                json=data  # Usar json en lugar de params
             )
             
             if response.status_code == 200:
@@ -779,6 +779,11 @@ class SocioCuotaView(QWidget):
                     self.on_buscar_cuota_id()
                     
                 self.on_buscar_cuotas()  # Actualizar lista general de cuotas
+                
+                # Actualizar el dashboard para que muestre los saldos correctos
+                # Enviar señal para actualizar el dashboard si es posible
+                if hasattr(self, 'dashboard_update_requested') and callable(self.dashboard_update_requested):
+                    self.dashboard_update_requested.emit()
                 
             else:
                 error_msg = "Error al registrar el pago"
