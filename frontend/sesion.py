@@ -14,7 +14,6 @@ class Session(QObject):
         self.user_info = None
         self.api_url = "https://uarc-tesoreria.onrender.com/api"
 
-
     def set_token(self, token):
         self.token = token
 
