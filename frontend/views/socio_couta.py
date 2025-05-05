@@ -705,22 +705,21 @@ class SocioCuotaView(QWidget):
         try:
             # Enviar solicitud para pagar la cuota
             headers = session.get_headers()
-            headers["Content-Type"] = "application/json"  # Añadir este encabezado para enviar JSON
             
             url = f"{session.api_url}/cuotas/{self.current_cuota['id']}/pagar"
             print(f"Realizando petición PUT a: {url}")
             
-            # Crear objeto JSON con los datos del pago
-            data = {
+            # Usar params en lugar de json para enviar los parámetros como query parameters
+            params = {
                 "monto_pagado": monto_a_pagar,
                 "generar_movimiento": True,
-                "actualizar_saldo": True  # Añadir este campo explícito
+                "actualizar_saldo": True
             }
             
             response = requests.put(
                 url,
                 headers=headers,
-                json=data  # Usar json en lugar de params
+                params=params  # Usar params en lugar de json
             )
             
             if response.status_code == 200:
