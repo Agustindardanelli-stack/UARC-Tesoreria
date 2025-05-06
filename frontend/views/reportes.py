@@ -389,8 +389,8 @@ class ReportesView(QWidget):
         
         # Tabla mejorada
         self.libro_table = QTableWidget()
-        self.libro_table.setColumnCount(8)
-        self.libro_table.setHorizontalHeaderLabels(["ID", "Fecha", "Cuenta", "Detalle", "Ingreso", "Egreso", "Saldo", "Usuario"])
+        self.libro_table.setColumnCount(9)
+        self.libro_table.setHorizontalHeaderLabels(["ID", "Fecha", "Cuenta", "Detalle", "Nº Comprobante", "Ingreso", "Egreso", "Saldo", "Usuario"])
         self.libro_table.setStyleSheet(TABLE_STYLE)
         self.libro_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.libro_table.setAlternatingRowColors(True)
@@ -605,8 +605,7 @@ class ReportesView(QWidget):
                     self.ie_balance_total_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {balance_color};")
                     self.ie_balance_total_label.setText(f"Balance Total: ${balance_total:,.2f}")
                     
-                    ## Descargar automáticamente
-                    self.descargar_reporte_ingresos_egresos()
+                    # LÍNEA ELIMINADA: self.descargar_reporte_ingresos_egresos()
                 else:
                     QMessageBox.warning(self, "Advertencia", f"No hay datos disponibles para el año {anio}")
             else:
@@ -804,7 +803,7 @@ class ReportesView(QWidget):
     
     # Métodos para Libro Diario
     def on_buscar_libro(self):
-        """Busca partidas para el libro diario y descarga el reporte"""
+        """Busca partidas para el libro diario ordenadas por ID"""
         try:
             # Obtener filtros
             desde = self.libro_desde_date.date().toString("yyyy-MM-dd")
@@ -837,12 +836,36 @@ class ReportesView(QWidget):
             if response.status_code == 200:
                 partidas = response.json()
                 
+                # NUEVO: Ordenar partidas por ID (orden numérico ascendente)
+                try:
+                    # Convertir IDs a números para ordenamiento correcto
+                    for partida in partidas:
+                        # Asegurar que ID sea un número (para ordenamiento correcto)
+                        if 'id' in partida and partida['id'] is not None:
+                            partida['id_numeric'] = int(partida['id'])
+                        else:
+                            partida['id_numeric'] = 0
+                    
+                    # Ordenar por ID numérico (ascendente)
+                    partidas = sorted(partidas, key=lambda x: x.get('id_numeric', 0))
+                    print(f"Datos ordenados por ID, total: {len(partidas)} registros")
+                except Exception as e:
+                    print(f"Error al ordenar por ID: {str(e)}")
+                
                 # Limpiar tabla
                 self.libro_table.setRowCount(0)
                 
                 # Variables para totales
                 total_ingresos = 0
                 total_egresos = 0
+                
+                # Identificar todas las cuotas societarias
+                cuotas_societarias = []
+                for partida in partidas:
+                    detalle = partida.get('detalle', '').lower()
+                    ingreso = partida.get('ingreso', 0)
+                    if 'cuota' in detalle and ingreso > 0:
+                        cuotas_societarias.append(partida.get('id'))
                 
                 # Llenar tabla con datos
                 for row, partida in enumerate(partidas):
@@ -867,13 +890,44 @@ class ReportesView(QWidget):
                     # Detalle
                     self.libro_table.setItem(row, 3, QTableWidgetItem(partida.get('detalle', '')))
                     
+                    # Nº Comprobante (MODIFICADO)
+                    nro_comprobante = ""
+                    
+                    # Verificar si es una cuota societaria
+                    detalle = partida.get('detalle', '').lower()
+                    ingreso = partida.get('ingreso', 0)
+                    egreso = partida.get('egreso', 0)
+                    
+                    if ingreso > 0 and egreso == 0 and 'cuota' in detalle:
+                        # Es una cuota societaria
+                        if partida.get('id') in cuotas_societarias:
+                            # Encontrar la posición de este ID en la lista de cuotas
+                            posicion = cuotas_societarias.index(partida.get('id')) + 1
+                            # Usar posición inversa para numerar desde 1 en adelante
+                            num_recibo = str(len(cuotas_societarias) - posicion + 1)
+                            nro_comprobante = f"C.S.-{num_recibo}"
+                        else:
+                            # Por si acaso no está en la lista (no debería ocurrir)
+                            nro_comprobante = f"C.S.-{partida.get('id')}"
+                    elif partida.get('cobranza_id'):
+                        nro_comprobante = f"REC-{partida.get('cobranza_id')}"
+                    elif partida.get('pago_id'):
+                        nro_comprobante = f"O.P-{partida.get('pago_id')}"
+                    elif partida.get('id'):
+                        # Si no tiene referencias pero tiene ID, usar el ID
+                        nro_comprobante = f"O.P-{partida.get('id')}"
+                    
+                    comprobante_item = QTableWidgetItem(nro_comprobante)
+                    comprobante_item.setTextAlignment(Qt.AlignCenter)
+                    self.libro_table.setItem(row, 4, comprobante_item)
+                    
                     # Ingreso
                     ingreso = partida.get('ingreso', 0)
                     ingreso_item = QTableWidgetItem(f"${ingreso:,.2f}")
                     ingreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     if ingreso > 0:
                         ingreso_item.setForeground(QColor(AppColors.SECONDARY))
-                    self.libro_table.setItem(row, 4, ingreso_item)
+                    self.libro_table.setItem(row, 5, ingreso_item)
                     
                     # Egreso
                     egreso = partida.get('egreso', 0)
@@ -881,7 +935,7 @@ class ReportesView(QWidget):
                     egreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     if egreso > 0:
                         egreso_item.setForeground(QColor(AppColors.DANGER))
-                    self.libro_table.setItem(row, 5, egreso_item)
+                    self.libro_table.setItem(row, 6, egreso_item)
                     
                     # Saldo
                     saldo = partida.get('saldo', 0)
@@ -891,11 +945,11 @@ class ReportesView(QWidget):
                         saldo_item.setForeground(QColor(AppColors.SECONDARY))
                     else:
                         saldo_item.setForeground(QColor(AppColors.DANGER))
-                    self.libro_table.setItem(row, 6, saldo_item)
+                    self.libro_table.setItem(row, 7, saldo_item)
                     
                     # Usuario
                     usuario = partida.get('usuario', {}).get('nombre', '') if partida.get('usuario') else partida.get('usuario_auditoria', '')
-                    self.libro_table.setItem(row, 7, QTableWidgetItem(usuario))
+                    self.libro_table.setItem(row, 8, QTableWidgetItem(usuario))
                     
                     # Acumular totales
                     total_ingresos += ingreso
@@ -913,13 +967,13 @@ class ReportesView(QWidget):
                 self.libro_balance_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {balance_color};")
                 self.libro_balance_label.setText(f"Balance: ${balance:,.2f}")
                 
-                # Descargar automáticamente
-                self.descargar_libro_diario()
             else:
                 QMessageBox.warning(self, "Error", "No se pudieron obtener las partidas")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al buscar partidas: {str(e)}")
-    
+        
+        # Modificar la función descargar_libro_diario() para ordenar por ID
+
     def descargar_libro_diario(self):
         """Descarga automáticamente el libro diario en Excel"""
         try:
@@ -962,6 +1016,17 @@ class ReportesView(QWidget):
                 data.append(row_data)
             
             df = pd.DataFrame(data)
+            
+            # NUEVA SECCIÓN: Ordenar el DataFrame por ID (ascendente)
+            try:
+                # Convertir columna ID a numérico para ordenamiento correcto
+                df['ID'] = pd.to_numeric(df['ID'], errors='coerce')
+                # Ordenar por ID de forma descendente (de mayor a menor)
+                df = df.sort_values(by='ID', ascending=False)
+                print("Datos ordenados por ID correctamente")
+            except Exception as e:
+                print(f"Error al ordenar por ID: {str(e)}")
+                # Si hay error en ordenamiento, continuar sin ordenar
             
             # Crear un escritor de Excel con formato
             writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
@@ -1015,6 +1080,8 @@ class ReportesView(QWidget):
             QMessageBox.critical(self, "Error", f"Error al descargar reporte: {str(e)}")
 
         
+    # También modificar la función on_exportar_libro() para ordenar por ID
+
     def on_exportar_libro(self):
         """Exporta el libro diario a Excel (permite seleccionar ubicación)"""
         try:
@@ -1066,6 +1133,17 @@ class ReportesView(QWidget):
                     data.append(row_data)
                 
                 df = pd.DataFrame(data)
+                
+                # NUEVA SECCIÓN: Ordenar el DataFrame por ID (descendente)
+                try:
+                    # Convertir columna ID a numérico para ordenamiento correcto
+                    df['ID'] = pd.to_numeric(df['ID'], errors='coerce')
+                    # Ordenar por ID de forma descendente (de mayor a menor)
+                    df = df.sort_values(by='ID', ascending=False)
+                    print("Datos ordenados por ID correctamente")
+                except Exception as e:
+                    print(f"Error al ordenar por ID: {str(e)}")
+                    # Si hay error en ordenamiento, continuar sin ordenar
                 
                 # Crear un escritor de Excel con formato
                 writer = pd.ExcelWriter(file_path, engine='xlsxwriter')

@@ -8,11 +8,11 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, 
-    QTableWidgetItem, QSplitter, QFrame, QTabWidget, QSpacerItem, QSizePolicy,
+    QTableWidgetItem, QSplitter, QFrame, QTabWidget, QSpacerItem, QSizePolicy
 )
 # Asegúrate de tener esta importación al inicio del archivo
-from PySide6.QtGui import QPixmap, QFont, QIcon, QColor, QBrush
-from PySide6.QtCore import Qt, Signal, QDateTime, QTimer 
+from PySide6.QtGui import QPixmap, QFont, QIcon, QColor, QBrush 
+from PySide6.QtCore import Qt, Signal, QDateTime, QTimer , QEvent
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -170,7 +170,13 @@ class DashboardView(QWidget):
     
     # Cargar datos iniciales una sola vez
         self.refresh_data()
-    
+    def event(self, event):
+        """Maneja eventos personalizados para actualizar datos"""
+        if event.type() == QEvent.User + 1:  # Evento personalizado para actualización
+            # Actualizar solo los datos relevantes sin recargar todo
+            self.refresh_data()
+            return True
+        return super().event(event)
     def setup_ui(self):
         # Layout principal
         self.main_layout = QHBoxLayout(self)
@@ -218,24 +224,39 @@ class DashboardView(QWidget):
         self.content_layout.addLayout(indicators_layout)
         
         # Tabla de partidas recientes
-        self.partidas_label = QLabel("Últimos movimientos")
+        self.partidas_label = QLabel("Todos los movimientos")
         partidas_font = QFont()
         partidas_font.setPointSize(16)
         self.partidas_label.setFont(partidas_font)
         self.content_layout.addWidget(self.partidas_label)
         
+        # Crear la tabla con configuración para scroll
         self.partidas_table = QTableWidget()
-        self.partidas_table.setColumnCount(6)
-        self.partidas_table.setHorizontalHeaderLabels(["Fecha", "Cuenta", "Detalle", "Ingreso", "Egreso", "Saldo"])
+        self.partidas_table.setColumnCount(8)
+        self.partidas_table.setHorizontalHeaderLabels([
+            "Fecha", "Tipo", "Detalle", "Usuario que realizó", "Nº Comprobante", "Ingreso", "Egreso", "Saldo"
+        ])
         self.partidas_table.horizontalHeader().setStretchLastSection(True)
         self.partidas_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.partidas_table.setAlternatingRowColors(True)
+        
+        # Configurar el scroll
+        self.partidas_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.partidas_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
+        # Establecer una altura fija para mostrar un número limitado de filas
+        # Ajusta este valor para mostrar más o menos filas según necesites
+        self.partidas_table.setMinimumHeight(400)
+        
+        # Agregar la tabla al layout principal
         self.content_layout.addWidget(self.partidas_table)
+        
+        # NO agregamos el botón para ver todos los movimientos
         
         # Agregar al layout principal
         self.main_layout.addWidget(self.sidebar)
         self.main_layout.addWidget(self.content_widget)
-    
+        
     def connect_signals(self):
         self.sidebar.navigation_requested.connect(self.navigation_requested)
     
@@ -249,6 +270,12 @@ class DashboardView(QWidget):
               return
          self.load_balance_data()
          self.load_partidas_data()
+         
+         # Restaurar el estado del botón "Ver todos los movimientos"
+         self.partidas_label.setText("Últimos movimientos")
+         
+         # Reconectar el botón para cargar todos
+        
 
 
     def on_show(self):
@@ -346,19 +373,19 @@ class DashboardView(QWidget):
             pass
     
     def load_partidas_data(self):
-        """Carga las últimas partidas y obtiene los saldos correspondientes de las transacciones"""
+        """Carga todas las partidas disponibles con scroll automático"""
         try:
             headers = session.get_headers()
             
-            # Primero cargamos las partidas
+            # Cargar todas las partidas sin límite
             partidas_response = requests.get(
-                f"{session.api_url}/partidas?limit=10",
+                f"{session.api_url}/partidas",  # Sin parámetro limit para cargar todas
                 headers=headers
             )
             
             # Luego obtenemos las transacciones para tener los saldos
             transacciones_response = requests.get(
-                f"{session.api_url}/transacciones?limit=50",  # Obtener más transacciones para tener suficientes saldos
+                f"{session.api_url}/transacciones",  # Sin parámetro limit
                 headers=headers
             )
             
@@ -366,7 +393,7 @@ class DashboardView(QWidget):
             saldos_por_fecha = {}
             if transacciones_response.status_code == 200:
                 transacciones_data = transacciones_response.json()
-                # Ordenar transacciones por fecha y ID
+                # Ordenar transacciones por fecha y por ID
                 transacciones_data.sort(key=lambda x: (x.get('fecha', ''), x.get('id', 0)))
                 
                 for transaccion in transacciones_data:
@@ -378,6 +405,9 @@ class DashboardView(QWidget):
             # Procesar las partidas
             if partidas_response.status_code == 200:
                 partidas_data = partidas_response.json()
+                
+                # Actualizar título con la cantidad de registros
+                self.partidas_label.setText(f"Todos los movimientos ({len(partidas_data)} registros)")
                 
                 # Limpiar tabla
                 self.partidas_table.setColumnCount(8)
@@ -403,6 +433,17 @@ class DashboardView(QWidget):
                     except Exception as e:
                         print(f"Error al obtener balance: {str(e)}")
                     
+                    # Contador para cuotas societarias
+                    cuota_counter = 0
+                    
+                    # Identificar todas las partidas que son cuotas societarias
+                    cuotas_societarias = []
+                    for item in partidas_data:
+                        detalle = item.get('detalle', '').lower()
+                        ingreso = item.get('ingreso', 0)
+                        if 'cuota' in detalle and ingreso > 0:
+                            cuotas_societarias.append(item.get('id'))
+                    
                     # Llenar tabla con datos
                     for row, partida_item in enumerate(partidas_data):
                         self.partidas_table.insertRow(row)
@@ -412,11 +453,15 @@ class DashboardView(QWidget):
                         fecha_display = datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y') if fecha_str else ''
                         self.partidas_table.setItem(row, 0, QTableWidgetItem(fecha_display))
                         
-                        # Determinar tipo de movimiento (Ingreso o Egreso)
+                        # Determinar tipo de movimiento (Ingreso, Egreso, Anulación o Ajuste)
                         ingreso = partida_item.get('ingreso', 0)
                         egreso = partida_item.get('egreso', 0)
                         
-                        if ingreso > 0 and egreso == 0:
+                        # CAMBIO AQUÍ: Verificar primero si es anulación
+                        if partida_item.get('tipo', '') == "anulacion":
+                            tipo_movimiento = "ANULACIÓN"
+                            color_fondo = QColor(255, 240, 230)  # Naranja claro para anulaciones
+                        elif ingreso > 0 and egreso == 0:
                             tipo_movimiento = "INGRESO"
                             color_fondo = QColor(232, 245, 233)  # Verde claro para ingresos
                         elif egreso > 0 and ingreso == 0:
@@ -426,19 +471,23 @@ class DashboardView(QWidget):
                             tipo_movimiento = "AJUSTE"
                             color_fondo = QColor(255, 253, 231)  # Amarillo claro para ajustes
                         
-                        # Aplicar color a todos los items de la fila
+                        # Aplicar color de fondo a todos los elementos de la fila
                         for col in range(8):
                             if not self.partidas_table.item(row, col):
                                 self.partidas_table.setItem(row, col, QTableWidgetItem(""))
                             self.partidas_table.item(row, col).setBackground(QBrush(color_fondo))
                         
-                        # Tipo de movimiento
+                        # Tipo de movimiento con formato especial
                         tipo_item = QTableWidgetItem(tipo_movimiento)
                         tipo_item.setTextAlignment(Qt.AlignCenter)
+                        
+                        # Establecer color del texto según el tipo de movimiento
                         if tipo_movimiento == "INGRESO":
                             tipo_item.setForeground(QBrush(QColor("#4CAF50")))  # Verde para ingresos
                         elif tipo_movimiento == "EGRESO":
                             tipo_item.setForeground(QBrush(QColor("#F44336")))  # Rojo para egresos
+                        elif tipo_movimiento == "ANULACIÓN":
+                            tipo_item.setForeground(QBrush(QColor("#FF9800")))  # Naranja para anulaciones
                         
                         tipo_item.setFont(QFont("Arial", 9, QFont.Bold))
                         self.partidas_table.setItem(row, 1, tipo_item)
@@ -451,13 +500,45 @@ class DashboardView(QWidget):
                         usuario_accion = usuario_obj.get('nombre', 'Sin registro') if usuario_obj else 'Sin registro'
                         self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
                         
-                        # Número de comprobante
+                        # Número de comprobante - CÓDIGO MODIFICADO
                         num_comprobante = ""
-                        if tipo_movimiento == "INGRESO":
+                        
+                        # Verificar si es un pago de cuota societaria basándose en el detalle
+                        detalle = partida_item.get('detalle', '').lower()
+                        if tipo_movimiento == "INGRESO" and ('cuota' in detalle):
+                            # Contador para cuotas societarias
+                            # Obtener la posición de esta cuota en la lista de cuotas encontradas
+                            if partida_item.get('id') in cuotas_societarias:
+                                # Encontrar la posición de este ID en la lista ordenada de cuotas
+                                posicion = cuotas_societarias.index(partida_item.get('id')) + 1
+                                # Usar el contador como número (comenzando desde el final para que sea 1, 2, 3...)
+                                num_recibo = str(len(cuotas_societarias) - posicion + 1)
+                                num_comprobante = f"C.S.-{num_recibo}"
+                            else:
+                                # Si por alguna razón no está en la lista, usar una numeración genérica
+                                num_comprobante = f"C.S.-{partida_item.get('id')}"
+                        elif partida_item.get('cobranza_id'):
+                            # Otros ingresos asociados a cobranzas
+                            num_comprobante = f"REC-{partida_item.get('cobranza_id')}"
+                        elif partida_item.get('pago_id'):
+                            # Pagos
+                            num_comprobante = f"O.P-{partida_item.get('pago_id')}"
+                        elif tipo_movimiento == "INGRESO":
+                            # Otros ingresos sin ID de cobranza
                             num_comprobante = f"REC-{partida_item.get('id', '')}"
                         elif tipo_movimiento == "EGRESO":
-                            num_comprobante = f"OP-{partida_item.get('id', '')}"
-                        self.partidas_table.setItem(row, 4, QTableWidgetItem(num_comprobante))
+                            # Egresos sin ID de pago
+                            num_comprobante = f"O.P-{partida_item.get('id', '')}"
+                        elif tipo_movimiento == "ANULACIÓN":
+                            # Anulaciones
+                            num_comprobante = f"ANUL-{partida_item.get('id', '')}"
+                        else:
+                            # Valor por defecto
+                            num_comprobante = f"O.P-{partida_item.get('id', '')}"
+                        
+                        comprobante_item = QTableWidgetItem(num_comprobante)
+                        comprobante_item.setTextAlignment(Qt.AlignCenter)
+                        self.partidas_table.setItem(row, 4, comprobante_item)
                         
                         # Ingreso
                         ingreso_item = QTableWidgetItem(f"${ingreso:,.2f}")
@@ -479,46 +560,38 @@ class DashboardView(QWidget):
                         saldo = 0
                         
                         if row == 0:
-                            # Si es la primera fila (más reciente), verificar si tiene saldo en BD
-                            saldo_bd = partida_item.get('saldo', 0)
                             
-                            # Si el saldo en BD es válido, usarlo
-                            if saldo_bd > 0:
-                                saldo = saldo_bd
-                            else:
-                                # Si no, usar el saldo del balance actual
-                                saldo = balance_actual
-                                
-                                # Si estamos seguros de que ésta es la última transacción,
-                                # actualizar su saldo en la base de datos
-                                try:
-                                    if partida_item.get('id'):
-                                        update_url = f"{session.api_url}/partidas/{partida_item.get('id')}"
-                                        headers_update = session.get_headers()
-                                        headers_update["Content-Type"] = "application/json"
-                                        update_data = {"saldo": saldo}
-                                        
-                                        requests.put(update_url, headers=headers_update, json=update_data)
-                                        print(f"Saldo actualizado para partida {partida_item.get('id')}: {saldo}")
-                                except Exception as e:
-                                    print(f"Error al actualizar saldo: {str(e)}")
+                            saldo = balance_actual 
+                            
+                            # Actualizar este saldo en la base de datos para la partida más reciente
+                            try:
+                                if partida_item.get('id'):
+                                    update_url = f"{session.api_url}/partidas/{partida_item.get('id')}"
+                                    headers_update = session.get_headers()
+                                    headers_update["Content-Type"] = "application/json"
+                                    update_data = {"saldo": saldo}
+                                    
+                                    requests.put(update_url, headers=headers_update, json=update_data)
+                                    print(f"Saldo actualizado para partida {partida_item.get('id')}: {saldo}")
+                            except Exception as e:
+                                print(f"Error al actualizar saldo: {str(e)}")
                         else:
-                            # Para el resto de filas, calcular en base a la fila anterior
                             try:
                                 # Obtener saldo de la fila anterior
                                 anterior_saldo_text = self.partidas_table.item(row-1, 7).text()
+                                # Corregir el problema de reemplazo en el cálculo del saldo
                                 anterior_saldo = float(anterior_saldo_text.replace('$', '').replace(',', ''))
                                 
                                 # El saldo de esta fila depende de si es un ingreso o egreso
                                 if tipo_movimiento == "INGRESO":
                                     # Para filas anteriores a la primera, restar el ingreso
                                     # (ya que estamos retrocediendo en el tiempo)
-                                    saldo = anterior_saldo - ingreso
+                                    saldo = anterior_saldo + ingreso
                                 elif tipo_movimiento == "EGRESO":
                                     # Para egresos, sumar el egreso (restamos en sentido inverso)
-                                    saldo = anterior_saldo + egreso
+                                    saldo = anterior_saldo - egreso
                                 else:
-                                    # Para ajustes, no modificar
+                                    # Para ajustes y anulaciones, no modificar el saldo
                                     saldo = anterior_saldo
                                     
                                 # Si hay discrepancia con el saldo almacenado, actualizar BD
@@ -550,11 +623,9 @@ class DashboardView(QWidget):
                     self.partidas_table.resizeColumnsToContents()
                     
         except Exception as e:
+            self.partidas_label.setText("Movimientos")
             print(f"Error al cargar partidas: {str(e)}")
-                        
- 
-        
-    # Método para ser llamado cuando se vuelve al dashboard
-    def on_show(self):
-        """Método que se llama cuando el dashboard se muestra después de navegar"""
-        self.refresh_data()
+# Método para ser llamado cuando se vuelve al dashboard
+def on_show(self):
+    """Método que se llama cuando el dashboard se muestra después de navegar"""
+    self.refresh_data()

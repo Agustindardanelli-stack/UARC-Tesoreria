@@ -7,10 +7,11 @@ import json
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, 
-    QTableWidgetItem, QFrame, QTabWidget, QSpacerItem, QSizePolicy,
-    QFormLayout, QLineEdit, QDateEdit, QComboBox, QMessageBox, QDoubleSpinBox
+    QTableWidgetItem, QFrame, QTabWidget, QSpacerItem, QSizePolicy,QDialog,
+    QFormLayout, QLineEdit, QDateEdit, QComboBox, QMessageBox, QDoubleSpinBox,
+    QApplication
 )
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QColor, QPalette, QIcon, QPixmap
 from PySide6.QtCore import Qt, Signal, QDate
 
 from views.dashboard import SidebarWidget
@@ -51,10 +52,36 @@ class CobranzasView(QWidget):
         title_font.setPointSize(20)
         title_font.setBold(True)
         title_label.setFont(title_font)
+        title_label.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
         self.content_layout.addWidget(title_label)
         
         # Tabs para las diferentes secciones
         self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 10px;
+                background-color: #fff;
+            }
+            QTabBar::tab {
+                background-color: #f8f9fa;
+                border: 1px solid #ddd;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                padding: 8px 12px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background-color: #fff;
+                border-bottom: 1px solid #fff;
+                font-weight: bold;
+            }
+            QTabBar::tab:hover {
+                background-color: #e9ecef;
+            }
+        """)
         
         # Tab 1: Registrar Cobranza
         self.tab_registrar = QWidget()
@@ -82,64 +109,162 @@ class CobranzasView(QWidget):
         
         # Formulario para registrar cobranza
         form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+        form_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Estilos para etiquetas
+        label_style = "font-weight: bold; color: #2c3e50;"
+        
+        # Estilos para widgets de entrada
+        input_style = """
+            QLineEdit, QDateEdit, QComboBox, QDoubleSpinBox {
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background-color: #f8f9fa;
+            }
+            QLineEdit:focus, QDateEdit:focus, QComboBox:focus, QDoubleSpinBox:focus {
+                border: 1px solid #4e73df;
+                background-color: #fff;
+            }
+        """
         
         # Selección de árbitro
-        self.arbitro_combo = QComboBox()
-        self.arbitro_combo.setPlaceholderText("Seleccione un árbitro")
-        form_layout.addRow("Pagador/Cobrador:", self.arbitro_combo)
+        arbitro_label = QLabel("Pagador/Cobrador:")
+        arbitro_label.setStyleSheet(label_style)
+        self.arbitro_combo_registrar = QComboBox()
+        self.arbitro_combo_registrar.setPlaceholderText("Seleccione un árbitro")
+        self.arbitro_combo_registrar.setStyleSheet(input_style)
+        form_layout.addRow(arbitro_label, self.arbitro_combo_registrar)
         
         # Fecha
+        fecha_label = QLabel("Fecha:")
+        fecha_label.setStyleSheet(label_style)
         self.fecha_edit = QDateEdit()
         self.fecha_edit.setDate(QDate.currentDate())
         self.fecha_edit.setCalendarPopup(True)
-        form_layout.addRow("Fecha:", self.fecha_edit)
+        self.fecha_edit.setStyleSheet(input_style)
+        form_layout.addRow(fecha_label, self.fecha_edit)
         
         # Tipo de Retención
+        retencion_label = QLabel("Tipo de Retención:")
+        retencion_label.setStyleSheet(label_style)
         self.retencion_combo = QComboBox()
         self.retencion_combo.setPlaceholderText("Seleccione una retención")
         self.retencion_combo.currentIndexChanged.connect(self.on_retencion_changed)
-        form_layout.addRow("Tipo de Retención:", self.retencion_combo)
+        self.retencion_combo.setStyleSheet(input_style)
+        form_layout.addRow(retencion_label, self.retencion_combo)
         
         # Monto
+        monto_label = QLabel("Monto:")
+        monto_label.setStyleSheet(label_style)
         self.monto_spin = QDoubleSpinBox()
         self.monto_spin.setRange(0, 999999.99)
         self.monto_spin.setSingleStep(100)
         self.monto_spin.setPrefix("$ ")
         self.monto_spin.setDecimals(2)
-        form_layout.addRow("Monto:", self.monto_spin)
+        self.monto_spin.setStyleSheet(input_style)
+        form_layout.addRow(monto_label, self.monto_spin)
         
         # Descripción/Notas
+        notas_label = QLabel("Descripción/Notas:")
+        notas_label.setStyleSheet(label_style)
         self.notas_edit = QLineEdit()
         self.notas_edit.setPlaceholderText("Ingrese detalles adicionales...")
-        form_layout.addRow("Descripción/Notas:", self.notas_edit)
+        self.notas_edit.setStyleSheet(input_style)
+        form_layout.addRow(notas_label, self.notas_edit)
         
         # Botón de registro
         self.registrar_btn = QPushButton("Registrar Cobranza")
         self.registrar_btn.clicked.connect(self.on_registrar_cobranza)
+        self.registrar_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4e73df;
+                color: white;
+                font-weight: bold;
+                border: none;
+                border-radius: 4px;
+                padding: 10px 20px;
+                min-width: 150px;
+            }
+            QPushButton:hover {
+                background-color: #2e59d9;
+            }
+            QPushButton:pressed {
+                background-color: #1c45bc;
+            }
+        """)
         
         layout.addLayout(form_layout)
-        layout.addWidget(self.registrar_btn)
+        
+        # Centrar botón
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(self.registrar_btn)
+        button_layout.addStretch()
+        
+        layout.addLayout(button_layout)
+        layout.addStretch()
+
     def setup_tab_listar(self):
         layout = QVBoxLayout(self.tab_listar)
         
         # Filtros
         filtros_layout = QHBoxLayout()
+        filtros_layout.setContentsMargins(10, 10, 10, 10)
+        filtros_layout.setSpacing(10)
+        
+        # Estilos para los widgets
+        label_style = "font-weight: bold; color: #2c3e50;"
+        input_style = """
+            QDateEdit {
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background-color: #f8f9fa;
+            }
+            QDateEdit:focus {
+                border: 1px solid #4e73df;
+                background-color: #fff;
+            }
+        """
+        button_style = """
+            QPushButton {
+                background-color: #4e73df;
+                color: white;
+                font-weight: bold;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 15px;
+            }
+            QPushButton:hover {
+                background-color: #2e59d9;
+            }
+            QPushButton:pressed {
+                background-color: #1c45bc;
+            }
+        """
         
         # Desde
         desde_label = QLabel("Desde:")
+        desde_label.setStyleSheet(label_style)
         self.desde_date = QDateEdit()
         self.desde_date.setDate(QDate.currentDate().addDays(-30))  # Último mes por defecto
         self.desde_date.setCalendarPopup(True)
+        self.desde_date.setStyleSheet(input_style)
         
         # Hasta
         hasta_label = QLabel("Hasta:")
+        hasta_label.setStyleSheet(label_style)
         self.hasta_date = QDateEdit()
         self.hasta_date.setDate(QDate.currentDate())
         self.hasta_date.setCalendarPopup(True)
+        self.hasta_date.setStyleSheet(input_style)
         
         # Botón de búsqueda
         self.buscar_btn = QPushButton("Buscar")
         self.buscar_btn.clicked.connect(self.on_buscar_cobranzas)
+        self.buscar_btn.setStyleSheet(button_style)
         
         filtros_layout.addWidget(desde_label)
         filtros_layout.addWidget(self.desde_date)
@@ -151,19 +276,256 @@ class CobranzasView(QWidget):
         
         # Tabla de cobranzas
         self.cobranzas_table = QTableWidget()
-        self.cobranzas_table.setColumnCount(6)  # 6 columnas
-        self.cobranzas_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Retención", "Monto", "Descripción"])
+        self.cobranzas_table.setColumnCount(7)  # 7 columnas
+        self.cobranzas_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Retención", "Tipo de Retención", "Monto", "Descripción"])
         self.cobranzas_table.horizontalHeader().setStretchLastSection(True)
         self.cobranzas_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.cobranzas_table.setAlternatingRowColors(True)
+        self.cobranzas_table.setStyleSheet("""
+            QTableWidget {
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background-color: #fff;
+                gridline-color: #ddd;
+            }
+            QHeaderView::section {
+                background-color: #4e73df;
+                color: white;
+                font-weight: bold;
+                padding: 6px;
+                border: none;
+            }
+            QTableWidget::item {
+                padding: 4px;
+            }
+            QTableWidget::item:selected {
+                background-color: #bdd7fa;
+                color: #000;
+            }
+        """)
+        
+        # Configurar scroll
+        self.cobranzas_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.cobranzas_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         
         layout.addWidget(self.cobranzas_table)
         
         # Label para total
         self.total_label = QLabel("Total de cobranzas: $0.00")
+        self.total_label.setStyleSheet("font-weight: bold; color: #2c3e50; font-size: 14px; padding: 10px;")
+        self.total_label.setAlignment(Qt.AlignRight)
         layout.addWidget(self.total_label)
     
-    
+    def setup_tab_buscar(self):
+        layout = QVBoxLayout(self.tab_buscar)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Estilos
+        label_style = "font-weight: bold; color: black;"
+        input_style = """
+            QComboBox {
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background-color: ;
+                min-width: 250px;
+            }
+            QComboBox:focus {
+                border: 1px solid #4e73df;
+                background-color: #fff;
+            }
+            /* Estilos para eliminar el hover */
+            QComboBox QAbstractItemView {
+                border: 1px solid #ddd;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: transparent;
+                color: black;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #4e73df;
+                color: black;
+            }
+        """
+
+        button_style = """
+            QPushButton {
+                padding: 8px 15px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+        """
+
+        search_button_style = button_style + """
+            background-color: #4e73df;
+            color: black;
+        """
+
+        edit_button_style = button_style + """
+            background-color: #f6c23e;
+            color: white;
+        """
+
+        delete_button_style = button_style + """
+            background-color: #e74a3b;
+            color: white;
+        """
+        
+        # Campo de búsqueda
+        busqueda_layout = QHBoxLayout()
+        busqueda_layout.setContentsMargins(0, 0, 0, 0)
+        busqueda_layout.setSpacing(10)
+        
+        # Etiqueta de búsqueda
+        busqueda_label = QLabel("Seleccionar árbitro:")
+        busqueda_label.setStyleSheet(label_style)
+        
+        # Combo para seleccionar árbitro
+        self.arbitro_combo_buscar = QComboBox()
+        self.arbitro_combo_buscar.setStyleSheet(input_style)
+        self.arbitro_combo_buscar.setPlaceholderText("Seleccione un árbitro")
+        
+        # Botón de búsqueda
+        self.search_btn = QPushButton("Buscar")
+        self.search_btn.setIcon(QIcon.fromTheme("search"))
+        self.search_btn.clicked.connect(self.on_buscar_cobranza)
+        self.search_btn.setStyleSheet(search_button_style)
+        
+        # Botones de Editar y Eliminar
+        self.edit_btn = QPushButton("Editar")
+        self.edit_btn.clicked.connect(self.on_editar_cobranza)
+        self.edit_btn.setEnabled(False)
+        self.edit_btn.setStyleSheet(edit_button_style)
+        
+        self.delete_btn = QPushButton("Eliminar")
+        self.delete_btn.clicked.connect(self.on_eliminar_cobranza)
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setStyleSheet(delete_button_style)
+        
+        # Agregar widgets al layout
+        busqueda_layout.addWidget(busqueda_label)
+        busqueda_layout.addWidget(self.arbitro_combo_buscar)
+        busqueda_layout.addWidget(self.search_btn)
+        busqueda_layout.addWidget(self.edit_btn)
+        busqueda_layout.addWidget(self.delete_btn)
+        
+        layout.addLayout(busqueda_layout)
+        
+        # Añadir tabla para mostrar todas las cobranzas del usuario
+        self.cobranzas_usuario_table = QTableWidget()
+        self.cobranzas_usuario_table.setColumnCount(6)
+        self.cobranzas_usuario_table.setHorizontalHeaderLabels(["ID", "Fecha", "Retención", "Monto", "Descripción", "Acciones"])
+        self.cobranzas_usuario_table.horizontalHeader().setStretchLastSection(True)
+        self.cobranzas_usuario_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.cobranzas_usuario_table.setAlternatingRowColors(True)
+        self.cobranzas_usuario_table.setStyleSheet("""
+            QTableWidget {
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background-color: #fff;
+                gridline-color: #ddd;
+            }
+            QHeaderView::section {
+                background-color: #4e73df;
+                color: white;
+                font-weight: bold;
+                padding: 6px;
+                border: none;
+            }
+            QTableWidget::item {
+                padding: 4px;
+            }
+            QTableWidget::item:selected {
+                background-color: #bdd7fa;
+                color: #000;
+            }
+        """)
+        self.cobranzas_usuario_table.itemClicked.connect(self.on_cobranza_selected)
+        
+        layout.addWidget(self.cobranzas_usuario_table)
+        
+        # Título de resultados
+        self.resultado_title = QLabel("Detalles de la Cobranza")
+        resultado_font = QFont()
+        resultado_font.setPointSize(16)
+        resultado_font.setBold(True)
+        self.resultado_title.setFont(resultado_font)
+        self.resultado_title.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
+        self.resultado_title.setVisible(False)
+        layout.addWidget(self.resultado_title)
+        
+        # Contenedor para resultados
+        self.resultado_container = QWidget()
+        self.resultado_container.setStyleSheet("""
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        """)
+        self.resultado_layout = QVBoxLayout(self.resultado_container)
+        self.resultado_layout.setContentsMargins(15, 15, 15, 15)
+        self.resultado_layout.setSpacing(10)
+        
+        # Línea separadora
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet("background-color: #dee2e6;")
+        self.resultado_layout.addWidget(separator)
+        
+        # Detalles en dos columnas
+        detalles_layout = QHBoxLayout()
+        detalles_layout.setContentsMargins(0, 10, 0, 0)
+        detalles_layout.setSpacing(30)
+        
+        # Columna 1
+        col1_layout = QVBoxLayout()
+        col1_layout.setSpacing(15)
+        self.id_label = QLabel()
+        self.fecha_label = QLabel()
+        self.monto_label = QLabel()
+        
+        # Aplicar estilos a los labels
+        detail_style = "font-size: 14px; margin-bottom: 5px;"
+        self.id_label.setStyleSheet(detail_style)
+        self.fecha_label.setStyleSheet(detail_style)
+        self.monto_label.setStyleSheet(detail_style)
+        
+        col1_layout.addWidget(self.id_label)
+        col1_layout.addWidget(self.fecha_label)
+        col1_layout.addWidget(self.monto_label)
+        col1_layout.addStretch()
+        
+        # Columna 2
+        col2_layout = QVBoxLayout()
+        col2_layout.setSpacing(15)
+        self.arbitro_label = QLabel()
+        self.retencion_label = QLabel()
+        self.descripcion_label = QLabel()
+        
+        # Aplicar estilos
+        self.arbitro_label.setStyleSheet(detail_style)
+        self.retencion_label.setStyleSheet(detail_style)
+        self.descripcion_label.setStyleSheet(detail_style)
+        self.descripcion_label.setWordWrap(True)
+        
+        col2_layout.addWidget(self.arbitro_label)
+        col2_layout.addWidget(self.retencion_label)
+        col2_layout.addWidget(self.descripcion_label)
+        col2_layout.addStretch()
+        
+        detalles_layout.addLayout(col1_layout)
+        detalles_layout.addLayout(col2_layout)
+        
+        self.resultado_layout.addLayout(detalles_layout)
+        
+        layout.addWidget(self.resultado_container)
+        self.resultado_container.setVisible(False)
+        
+        # Agregar un espaciador para empujar todo hacia arriba
+        layout.addStretch()
     
     def connect_signals(self):
         self.sidebar.navigation_requested.connect(self.navigation_requested)
@@ -176,7 +538,7 @@ class CobranzasView(QWidget):
             self.on_buscar_cobranzas()
         except Exception as e:
             print(f"Error en refresh_data: {str(e)}")
-    
+
     def cargar_usuarios(self):
         """Carga la lista de usuarios desde la API"""
         try:
@@ -190,17 +552,26 @@ class CobranzasView(QWidget):
                 self.usuarios = response.json()
                 print(f"Usuarios cargados: {len(self.usuarios)}")
                 
-                # Actualizar combo box
-                self.arbitro_combo.clear()
+                # Actualizar AMBOS combo box de árbitros
+                # 1. Combo de la pestaña "Registrar Cobranza"
+                self.arbitro_combo_registrar.clear()
+                # 2. Combo de la pestaña "Buscar Cobranza"
+                self.arbitro_combo_buscar.clear()
+                
                 for usuario in self.usuarios:
-                    self.arbitro_combo.addItem(f"{usuario['nombre']}", usuario['id'])
+                    # Agregar al combo de registrar
+                    self.arbitro_combo_registrar.addItem(f"{usuario['nombre']}", usuario['id'])
+                    # Agregar al combo de buscar
+                    self.arbitro_combo_buscar.addItem(f"{usuario['nombre']}", usuario['id'])
+                
+                print("Combos de árbitros actualizados correctamente")
             elif response.status_code == 401:
                 print("Error de autenticación al cargar usuarios")
             else:
                 print(f"Error al cargar usuarios: {response.text}")
         except Exception as e:
             print(f"Excepción al cargar usuarios: {str(e)}")
-    
+        
     def cargar_retenciones(self):
         """Carga la lista de retenciones desde la API"""
         try:
@@ -233,10 +604,11 @@ class CobranzasView(QWidget):
             retencion = next((r for r in self.retenciones if r['id'] == retencion_id), None)
             if retencion:
                 self.monto_spin.setValue(retencion['monto'])
+                
     def on_registrar_cobranza(self):
         """Maneja el evento de clic en Registrar Cobranza"""
         # Validar campos
-        if self.arbitro_combo.currentIndex() < 0:
+        if self.arbitro_combo_registrar.currentIndex() < 0:
             QMessageBox.warning(self, "Error", "Por favor seleccione un árbitro")
             return
         
@@ -245,7 +617,7 @@ class CobranzasView(QWidget):
             return
         
         # Obtener datos
-        usuario_id = self.arbitro_combo.currentData()
+        usuario_id = self.arbitro_combo_registrar.currentData()
         fecha = self.fecha_edit.date().toString("yyyy-MM-dd")
         monto = self.monto_spin.value()
         notas = self.notas_edit.text().strip()
@@ -293,8 +665,8 @@ class CobranzasView(QWidget):
                     )
                 else:
                     # Si no se envió el recibo, dar la opción de enviarlo manualmente
-                    arbitro_id = self.arbitro_combo.currentData()
-                    arbitro_nombre = self.arbitro_combo.currentText()
+                    arbitro_id = self.arbitro_combo_registrar.currentData()
+                    arbitro_nombre = self.arbitro_combo_registrar.currentText()
                     arbitro_email = None
                     
                     # Buscar el email del árbitro
@@ -322,7 +694,7 @@ class CobranzasView(QWidget):
                         )
                 
                 # Limpiar formulario
-                self.arbitro_combo.setCurrentIndex(-1)
+                self.arbitro_combo_registrar.setCurrentIndex(-1)
                 self.fecha_edit.setDate(QDate.currentDate())
                 self.retencion_combo.setCurrentIndex(-1)
                 self.monto_spin.setValue(0)
@@ -342,7 +714,6 @@ class CobranzasView(QWidget):
                 print(f"Error al registrar cobranza: {response.text}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al registrar cobranza: {str(e)}")
-
     def enviar_recibo_manualmente(self, cobranza_id, email):
         """Envía un recibo manualmente usando la API"""
         try:
@@ -371,6 +742,7 @@ class CobranzasView(QWidget):
                 QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al enviar recibo: {str(e)}")
+    
     def on_buscar_cobranzas(self):
         """Busca cobranzas según los filtros seleccionados"""
         try:
@@ -420,7 +792,7 @@ class CobranzasView(QWidget):
 
                 # Limpiar tabla
                 self.cobranzas_table.setColumnCount(7)
-                self.cobranzas_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Retención", "Tipo de Retención", "Monto", "Descripción"])
+                self.cobranzas_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Retención","Monto", "Descripción"])
 
                 # Llenar tabla con datos
                 total_cobranzas = 0
@@ -428,11 +800,15 @@ class CobranzasView(QWidget):
                     self.cobranzas_table.insertRow(row)
 
                     # ID
-                    self.cobranzas_table.setItem(row, 0, QTableWidgetItem(str(cobranza.get("id", ""))))
+                    id_item = QTableWidgetItem(str(cobranza.get("id", "")))
+                    id_item.setTextAlignment(Qt.AlignCenter)
+                    self.cobranzas_table.setItem(row, 0, id_item)
 
                     # Fecha
                     fecha = datetime.strptime(cobranza.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if cobranza.get('fecha') else ''
-                    self.cobranzas_table.setItem(row, 1, QTableWidgetItem(fecha))
+                    fecha_item = QTableWidgetItem(fecha)
+                    fecha_item.setTextAlignment(Qt.AlignCenter)
+                    self.cobranzas_table.setItem(row, 1, fecha_item)
 
                     # Árbitro - Intentar diferentes estructuras de datos
                     arbitro = ""
@@ -491,273 +867,342 @@ class CobranzasView(QWidget):
             print(f"Excepción al buscar cobranzas: {str(e)}")
     
     def on_buscar_cobranza(self):
-        """Busca una cobranza por su ID"""
-        cobranza_id = self.id_search.text().strip()
-        
-        if not cobranza_id.isdigit():
-            QMessageBox.warning(self, "Error", "Por favor ingrese un ID válido")
+        """Busca todas las cobranzas para el usuario seleccionado y las muestra en una tabla"""
+        # Verificar si se ha seleccionado un árbitro
+        if self.arbitro_combo_buscar.currentIndex() < 0:
+            QMessageBox.warning(self, "Error", "Por favor seleccione un árbitro")
             return
         
         try:
+            # Mostrar indicador de carga
+            self.resultado_title.setText("Buscando...")
+            self.resultado_title.setVisible(True)
+            QApplication.processEvents()  # Actualizar la interfaz
+            
+            # Obtener ID del usuario seleccionado
+            usuario_id = self.arbitro_combo_buscar.currentData()
+            usuario_nombre = self.arbitro_combo_buscar.currentText()
+            
+            print(f"Buscando cobranzas para: {usuario_nombre} (ID: {usuario_id})")
+            
+            headers = session.get_headers()
+            
+            # Buscar todas las cobranzas
+            all_url = f"{session.api_url}/cobranzas"
+            all_response = requests.get(all_url, headers=headers)
+            
+            if all_response.status_code == 200:
+                todas_cobranzas = all_response.json()
+                
+                # Filtrar cobranzas para este usuario
+                cobranzas_usuario = []
+                
+                if isinstance(todas_cobranzas, list):
+                    for cobranza in todas_cobranzas:
+                        # Verificar diferentes formas de identificar al usuario
+                        if cobranza.get("usuario_id") == usuario_id:
+                            cobranzas_usuario.append(cobranza)
+                        elif isinstance(cobranza.get("usuario"), dict) and cobranza.get("usuario", {}).get("id") == usuario_id:
+                            cobranzas_usuario.append(cobranza)
+                        # También verificar por nombre (menos preciso pero útil como respaldo)
+                        elif isinstance(cobranza.get("usuario"), dict) and usuario_nombre.lower() in cobranza.get("usuario", {}).get("nombre", "").lower():
+                            cobranzas_usuario.append(cobranza)
+                
+                if not cobranzas_usuario:
+                    # Intento alternativo: buscar directamente por usuario_id
+                    url = f"{session.api_url}/cobranzas"
+                    params = {"usuario_id": usuario_id}
+                    
+                    response = requests.get(url, headers=headers, params=params)
+                    print(f"URL: {url}, Parámetros: {params}, Código de respuesta: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        cobranzas = response.json()
+                        
+                        # Si nos devuelve una lista, usar todos los elementos
+                        if isinstance(cobranzas, list) and len(cobranzas) > 0:
+                            cobranzas_usuario = cobranzas
+                
+                if not cobranzas_usuario:
+                    QMessageBox.information(self, "No encontrado", 
+                        f"No se encontraron cobranzas para el árbitro: {usuario_nombre}")
+                    self.resultado_title.setVisible(False)
+                    self.resultado_container.setVisible(False)
+                    self.cobranzas_usuario_table.setRowCount(0)
+                    self.edit_btn.setEnabled(False)
+                    self.delete_btn.setEnabled(False)
+                    return
+                
+                # Limpiar la tabla existente
+                self.cobranzas_usuario_table.setRowCount(0)
+                
+                # Llenar la tabla con los resultados
+                for row, cobranza in enumerate(cobranzas_usuario):
+                    self.cobranzas_usuario_table.insertRow(row)
+                    
+                    # ID
+                    id_item = QTableWidgetItem(str(cobranza.get("id", "")))
+                    id_item.setTextAlignment(Qt.AlignCenter)
+                    self.cobranzas_usuario_table.setItem(row, 0, id_item)
+                    
+                    # Fecha
+                    fecha_str = cobranza.get('fecha', '')
+                    fecha = datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y') if fecha_str else 'No disponible'
+                    fecha_item = QTableWidgetItem(fecha)
+                    fecha_item.setTextAlignment(Qt.AlignCenter)
+                    self.cobranzas_usuario_table.setItem(row, 1, fecha_item)
+                    
+                    # Retención
+                    retencion = "No disponible"
+                    if isinstance(cobranza.get('retencion'), dict):
+                        retencion = cobranza.get('retencion', {}).get('nombre', 'No disponible')
+                    self.cobranzas_usuario_table.setItem(row, 2, QTableWidgetItem(retencion))
+                    
+                    # Monto
+                    monto = cobranza.get("monto", 0)
+                    monto_item = QTableWidgetItem(f"${monto:,.2f}")
+                    monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.cobranzas_usuario_table.setItem(row, 3, monto_item)
+                    
+                    # Descripción
+                    descripcion = cobranza.get("descripcion", "")
+                    if not descripcion:
+                        descripcion = "Sin descripción"
+                    self.cobranzas_usuario_table.setItem(row, 4, QTableWidgetItem(descripcion))
+                    
+                    # Botón de detalles en la última columna
+                    ver_btn = QPushButton("Ver")
+                    ver_btn.setStyleSheet("""
+                        background-color: #4e73df;
+                        color: white;
+                        border: none;
+                        border-radius: 3px;
+                        padding: 5px 10px;
+                    """)
+                    # Conectar el botón con la función que muestra los detalles
+                    cobranza_id = cobranza.get("id")
+                    ver_btn.clicked.connect(lambda checked=False, c_id=cobranza_id: self.cargar_detalles_cobranza(c_id))
+                    self.cobranzas_usuario_table.setCellWidget(row, 5, ver_btn)
+                    
+                # Ajustar el tamaño de las columnas
+                self.cobranzas_usuario_table.resizeColumnsToContents()
+                
+                # Mostrar un mensaje de éxito con la cantidad de cobranzas encontradas
+                self.resultado_title.setText(f"Cobranzas para: {usuario_nombre} ({len(cobranzas_usuario)})")
+                self.resultado_title.setStyleSheet("color: #2c3e50; font-weight: bold;")
+                self.resultado_title.setVisible(True)
+                
+                # Ocultar el panel de detalles hasta que se seleccione una cobranza
+                self.resultado_container.setVisible(False)
+                self.edit_btn.setEnabled(False)
+                self.delete_btn.setEnabled(False)
+            else:
+                QMessageBox.warning(self, "Error", f"No se pudieron cargar las cobranzas. Código: {all_response.status_code}")
+        except Exception as e:
+            # Mostrar error y ocultar elementos
+            print(f"Error en la búsqueda: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al buscar: {str(e)}")
+            self.resultado_title.setVisible(False)
+            self.resultado_container.setVisible(False)
+            self.edit_btn.setEnabled(False)
+            self.delete_btn.setEnabled(False)
 
-            # Obtener cobranza por ID
+
+    def on_cobranza_selected(self, item):
+        """Maneja el evento de clic en una fila de la tabla"""
+        # Obtener la fila seleccionada
+        row = item.row()
+        
+        # Obtener el ID de la cobranza en la primera columna
+        cobranza_id = self.cobranzas_usuario_table.item(row, 0).text()
+        
+        # Cargar los detalles de esta cobranza
+        self.cargar_detalles_cobranza(cobranza_id)
+
+    def cargar_detalles_cobranza(self, cobranza_id):
+        """Carga los detalles de una cobranza específica por su ID"""
+        try:
+            # Obtener los detalles de la cobranza seleccionada
             headers = session.get_headers()
             url = f"{session.api_url}/cobranzas/{cobranza_id}"
-            print(f"Realizando petición GET a: {url}")
             
             response = requests.get(url, headers=headers)
             
             if response.status_code == 200:
-                cobranza = response.json()
-                print(f"Cobranza cargada (estructura completa): {cobranza}")
+                self.cobranza_actual = response.json()
                 
-                # Mostrar detalles
+                # Mostrar los detalles de la cobranza
+                self.mostrar_detalles_cobranza()
+                
+                # Aplicar estilos muy destacados a los botones
+                self.edit_btn.setStyleSheet("""
+                    background-color: #FF9500;
+                    color: white;
+                    font-weight: bold;
+                    border: 2px solid #E68200;
+                    border-radius: 5px;
+                    padding: 10px 20px;
+                    font-size: 14px;
+                    min-width: 100px;
+                    min-height: 40px;
+                """)
+                
+                self.delete_btn.setStyleSheet("""
+                    background-color: #FF3B30;
+                    color: white;
+                    font-weight: bold;
+                    border: 2px solid #D81E06;
+                    border-radius: 5px;
+                    padding: 10px 20px;
+                    font-size: 14px;
+                    min-width: 100px;
+                    min-height: 40px;
+                """)
+                
+                # IMPORTANTE: Asegurarse que los botones sean visibles y habilitados
+                self.edit_btn.setVisible(True)
+                self.edit_btn.setEnabled(True)
+                self.delete_btn.setVisible(True)
+                self.delete_btn.setEnabled(True)
+                
+                # Asegurarse de que los botones están en el layout principal y visibles
+                # Si los botones están en el busqueda_layout, asegurarse de que están visibles
+                for i in range(self.tab_buscar.layout().count()):
+                    item = self.tab_buscar.layout().itemAt(i)
+                    if item and item.widget() == self.edit_btn.parentWidget():
+                        item.widget().setVisible(True)
+                
+                # Forzar actualización de la interfaz
+                QApplication.processEvents()
+                
+                print("Botones habilitados y visibles con colores llamativos")
+            else:
+                QMessageBox.warning(self, "Error", f"No se pudieron cargar los detalles. Código: {response.status_code}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al cargar detalles: {str(e)}")
+
+
+    def mostrar_detalles_cobranza(self):
+                """Muestra los detalles de la cobranza actual en el panel de detalles"""
+                # Verificar que tenemos una cobranza seleccionada
+                if not hasattr(self, 'cobranza_actual'):
+                    return
+                
+                # Actualizar el título
+                self.resultado_title.setText("Detalles de la Cobranza")
+                self.resultado_title.setStyleSheet("color: #2c3e50; font-weight: bold;")
                 self.resultado_title.setVisible(True)
                 self.resultado_container.setVisible(True)
                 
                 # Formatear fecha
-                fecha = datetime.strptime(cobranza.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if cobranza.get('fecha') else ''
+                fecha_str = self.cobranza_actual.get('fecha', '')
+                fecha = datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y') if fecha_str else 'No disponible'
                 
-                # Asignar valores a los labels
-                self.id_label.setText(f"<b>ID de la Cobranza:</b> {cobranza.get('id')}")
-                self.fecha_label.setText(f"<b>Fecha:</b> {fecha}")
+                # Obtener información del árbitro
+                arbitro_nombre = "No disponible"
+                if isinstance(self.cobranza_actual.get('usuario'), dict):
+                    usuario_obj = self.cobranza_actual.get('usuario', {})
+                    if 'nombre' in usuario_obj:
+                        arbitro_nombre = usuario_obj.get('nombre', 'No disponible')
                 
-                # Determinar nombre del árbitro (intentar varias estructuras)
-                arbitro = ""
-                # Método 1: usuario es un objeto con propiedad nombre
-                if isinstance(cobranza.get("usuario"), dict) and "nombre" in cobranza.get("usuario", {}):
-                    arbitro = cobranza.get("usuario", {}).get("nombre", "")
-                    print(f"Árbitro encontrado por método 1: {arbitro}")
-                # Método 2: usuario_nombre como campo directo
-                elif "usuario_nombre" in cobranza:
-                    arbitro = cobranza.get("usuario_nombre", "")
-                    print(f"Árbitro encontrado por método 2: {arbitro}")
-                # Método 3: nombre_usuario como campo directo
-                elif "nombre_usuario" in cobranza:
-                    arbitro = cobranza.get("nombre_usuario", "")
-                    print(f"Árbitro encontrado por método 3: {arbitro}")
-                # Método 4: tenemos usuario_id pero necesitamos buscar el nombre
-                elif "usuario_id" in cobranza and self.usuarios:
-                    usuario_id = cobranza.get("usuario_id")
-                    for usuario in self.usuarios:
-                        if usuario.get("id") == usuario_id:
-                            arbitro = usuario.get("nombre", "")
-                            print(f"Árbitro encontrado por método 4: {arbitro}")
-                            break
+                # Obtener información de retención
+                retencion_nombre = "No disponible"
+                retencion = self.cobranza_actual.get('retencion', {})
+                if isinstance(retencion, dict):
+                    retencion_nombre = retencion.get('nombre', 'No disponible')
                 
-                # Si no encontramos nombre, mostrar ID o mensaje
-                if not arbitro:
-                    usuario_id = None
-                    if isinstance(cobranza.get('usuario'), dict) and 'id' in cobranza.get('usuario', {}):
-                        usuario_id = cobranza.get('usuario', {}).get('id')
-                    elif 'usuario_id' in cobranza:
-                        usuario_id = cobranza.get('usuario_id')
-                    
-                    if usuario_id is not None:
-                        self.arbitro_label.setText(f"<b>Árbitro:</b> ID {usuario_id}")
-                        print(f"Solo se encontró ID de usuario: {usuario_id}")
-                    else:
-                        self.arbitro_label.setText("<b>Árbitro:</b> No disponible")
-                        print("No se encontró información del árbitro")
-                else:
-                    self.arbitro_label.setText(f"<b>Árbitro:</b> {arbitro}")
-                
-                # Obtener nombre de retención
-                retencion = cobranza.get("retencion", {})
-                retencion_nombre = retencion.get("nombre", "")
-                self.retencion_label.setText(f"<b>Retención:</b> {retencion_nombre}")
+                # Obtener monto
+                monto = self.cobranza_actual.get('monto', 0)
                 
                 # Obtener descripción
-                descripcion = cobranza.get("descripcion", "")
-                self.descripcion_label.setText(f"<b>Descripción:</b> {descripcion}")
+                descripcion = self.cobranza_actual.get('descripcion', '')
+                if not descripcion:
+                    descripcion = "Sin descripción"
                 
-                self.monto_label.setText(f"<b>Monto:</b> ${cobranza.get('monto', 0):,.2f}")
-            elif response.status_code == 401:
-                self.resultado_container.setVisible(False)
-                QMessageBox.warning(self, "Error de autenticación", "Su sesión ha expirado o no tiene permisos suficientes")
-            elif response.status_code == 404:
-                self.resultado_container.setVisible(False)
-                QMessageBox.warning(self, "No encontrado", f"No se encontró ninguna cobranza con ID {cobranza_id}")
-            else:
-                self.resultado_container.setVisible(False)
-                QMessageBox.warning(self, "Error", f"No se pudo obtener la cobranza. Status code: {response.status_code}")
-                print(f"Error al buscar cobranza por ID: {response.text}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al buscar cobranza: {str(e)}")
-
-
-    def setup_tab_buscar(self):
-        layout = QVBoxLayout(self.tab_buscar)
-        
-        # Campo de búsqueda
-        busqueda_layout = QHBoxLayout()
-        
-        # Etiqueta de búsqueda
-        busqueda_label = QLabel("Buscar:")
-        
-        # Combo para seleccionar tipo de búsqueda
-        self.tipo_busqueda_combo = QComboBox()
-        self.tipo_busqueda_combo.addItems(["Por ID", "Por Árbitro", "Por Descripción"])
-        
-        # Campo de búsqueda
-        self.busqueda_input = QLineEdit()
-        self.busqueda_input.setPlaceholderText("Ingrese término de búsqueda...")
-        
-        # Botón de búsqueda
-        self.search_btn = QPushButton("Buscar")
-        self.search_btn.clicked.connect(self.on_buscar_cobranza)
-        
-        # Botones de Editar y Eliminar
-        self.edit_btn = QPushButton("Editar")
-        self.edit_btn.clicked.connect(self.on_editar_cobranza)
-        self.edit_btn.setEnabled(False)
-        
-        self.delete_btn = QPushButton("Eliminar")
-        self.delete_btn.clicked.connect(self.on_eliminar_cobranza)
-        self.delete_btn.setEnabled(False)
-        
-        # Agregar widgets al layout
-        busqueda_layout.addWidget(busqueda_label)
-        busqueda_layout.addWidget(self.tipo_busqueda_combo)
-        busqueda_layout.addWidget(self.busqueda_input)
-        busqueda_layout.addWidget(self.search_btn)
-        busqueda_layout.addWidget(self.edit_btn)
-        busqueda_layout.addWidget(self.delete_btn)
-        
-        layout.addLayout(busqueda_layout)
-        
-        # Contenedor para resultados
-        self.resultado_container = QWidget()
-        self.resultado_layout = QVBoxLayout(self.resultado_container)
-        
-        # Título de resultados
-        self.resultado_title = QLabel("Detalles de la Cobranza")
-        resultado_font = QFont()
-        resultado_font.setPointSize(16)
-        self.resultado_title.setFont(resultado_font)
-        self.resultado_title.setVisible(False)
-        self.resultado_layout.addWidget(self.resultado_title)
-        
-        # Detalles en dos columnas
-        detalles_layout = QHBoxLayout()
-        
-        # Columna 1
-        col1_layout = QVBoxLayout()
-        self.id_label = QLabel()
-        self.fecha_label = QLabel()
-        self.monto_label = QLabel()
-        col1_layout.addWidget(self.id_label)
-        col1_layout.addWidget(self.fecha_label)
-        col1_layout.addWidget(self.monto_label)
-        
-        # Columna 2
-        col2_layout = QVBoxLayout()
-        self.arbitro_label = QLabel()
-        self.retencion_label = QLabel()
-        self.descripcion_label = QLabel()
-        col2_layout.addWidget(self.arbitro_label)
-        col2_layout.addWidget(self.retencion_label)
-        col2_layout.addWidget(self.descripcion_label)
-        
-        detalles_layout.addLayout(col1_layout)
-        detalles_layout.addLayout(col2_layout)
-        
-        self.resultado_layout.addLayout(detalles_layout)
-        
-        layout.addWidget(self.resultado_container)
-        self.resultado_container.setVisible(False)
-
-    def on_buscar_cobranza(self):
-        """Busca una cobranza por diferentes criterios"""
-        tipo_busqueda = self.tipo_busqueda_combo.currentText()
-        termino_busqueda = self.busqueda_input.text().strip()
-        
-        if not termino_busqueda:
-            QMessageBox.warning(self, "Error", "Ingrese un término de búsqueda")
-            return
-        
-        try:
-            headers = session.get_headers()
-            
-            # Construir parámetros de búsqueda según el tipo
-            if tipo_busqueda == "Por ID":
-                url = f"{session.api_url}/cobranzas/{termino_busqueda}"
-                response = requests.get(url, headers=headers)
-            elif tipo_busqueda == "Por Árbitro":
-                url = f"{session.api_url}/cobranzas"
-                params = {"usuario_nombre": termino_busqueda}
-                response = requests.get(url, headers=headers, params=params)
-            elif tipo_busqueda == "Por Descripción":
-                url = f"{session.api_url}/cobranzas"
-                params = {"descripcion": termino_busqueda}
-                response = requests.get(url, headers=headers, params=params)
-            
-            if response.status_code == 200:
-                datos = response.json()
-                if datos:
-                    # Tomar el primer resultado si es una lista
-                    self.cobranza_actual = datos[0] if isinstance(datos, list) else datos
-                    
-                    # Mostrar detalles
-                    self.resultado_title.setVisible(True)
-                    self.resultado_container.setVisible(True)
-                    
-                    # Formatear fecha
-                    fecha = datetime.strptime(self.cobranza_actual.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if self.cobranza_actual.get('fecha') else ''
-                    
-                    # Asignar valores a los labels
-                    self.id_label.setText(f"<b>ID de la Cobranza:</b> {self.cobranza_actual.get('id')}")
-                    self.fecha_label.setText(f"<b>Fecha:</b> {fecha}")
-                    self.monto_label.setText(f"<b>Monto:</b> ${self.cobranza_actual.get('monto', 0):,.2f}")
-                    
-                    # Obtener nombre del árbitro
-                    usuario = self.cobranza_actual.get("usuario", {})
-                    arbitro_nombre = usuario.get("nombre", "")
-                    self.arbitro_label.setText(f"<b>Árbitro:</b> {arbitro_nombre}")
-                    
-                    # Obtener nombre de retención
-                    retencion = self.cobranza_actual.get("retencion", {})
-                    retencion_nombre = retencion.get("nombre", "")
-                    self.retencion_label.setText(f"<b>Retención:</b> {retencion_nombre}")
-                    
-                    # Obtener descripción
-                    descripcion = self.cobranza_actual.get("descripcion", "")
-                    self.descripcion_label.setText(f"<b>Descripción:</b> {descripcion}")
-                    
-                    # Habilitar botones de editar y eliminar
-                    self.edit_btn.setEnabled(True)
-                    self.delete_btn.setEnabled(True)
-                else:
-                    QMessageBox.information(self, "Búsqueda", "No se encontraron resultados")
-                    self.edit_btn.setEnabled(False)
-                    self.delete_btn.setEnabled(False)
-            else:
-                QMessageBox.warning(self, "Error", f"Error en la búsqueda. Código: {response.status_code}")
-                self.edit_btn.setEnabled(False)
-                self.delete_btn.setEnabled(False)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error en la búsqueda: {str(e)}")
-            self.edit_btn.setEnabled(False)
-            self.delete_btn.setEnabled(False)
-
+                # Aplicar estilos
+                estilo_titulo = "font-weight: bold; color: #2c3e50;"
+                estilo_valor = "color: #3498db;"
+                
+                # Mostrar la información con estilos
+                self.id_label.setText(f"<span style='{estilo_titulo}'>ID de la Cobranza:</span> <span style='{estilo_valor}'>{self.cobranza_actual.get('id')}</span>")
+                self.fecha_label.setText(f"<span style='{estilo_titulo}'>Fecha:</span> <span style='{estilo_valor}'>{fecha}</span>")
+                self.arbitro_label.setText(f"<span style='{estilo_titulo}'>Árbitro:</span> <span style='{estilo_valor}'>{arbitro_nombre}</span>")
+                self.retencion_label.setText(f"<span style='{estilo_titulo}'>Retención:</span> <span style='{estilo_valor}'>{retencion_nombre}</span>")
+                self.monto_label.setText(f"<span style='{estilo_titulo}'>Monto:</span> <span style='{estilo_valor}'>${monto:,.2f}</span>")
+                self.descripcion_label.setText(f"<span style='{estilo_titulo}'>Descripción:</span> <span style='{estilo_valor}'>{descripcion}</span>")
     def on_editar_cobranza(self):
         """Abre un diálogo para editar la cobranza seleccionada"""
         if not hasattr(self, 'cobranza_actual'):
-            QMessageBox.warning(self, "Error", "Primero realice una búsqueda")
+            QMessageBox.warning(self, "Error", "Primero seleccione una cobranza")
             return
         
+        try:
+            # Obtener datos actualizados directamente de la API
+            headers = session.get_headers()
+            url = f"{session.api_url}/cobranzas/{self.cobranza_actual['id']}"
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                # Actualizar con datos frescos
+                self.cobranza_actual = response.json()
+        except Exception as e:
+            print(f"Error al obtener datos actualizados: {str(e)}")
+            
         # Abrir diálogo de edición con los datos actuales
         dialog = QDialog(self)
         dialog.setWindowTitle("Editar Cobranza")
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #f8f9fa;
+            }
+            QLabel {
+                font-weight: bold;
+                color: #2c3e50;
+            }
+            QDateEdit, QDoubleSpinBox, QLineEdit {
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background-color: white;
+            }
+            QPushButton {
+                padding: 8px 15px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton#save {
+                background-color: #4e73df;
+                color: white;
+            }
+            QPushButton#save:hover {
+                background-color: #2e59d9;
+            }
+            QPushButton#cancel {
+                background-color: #f8f9fa;
+                border: 1px solid #ddd;
+                color: #2c3e50;
+            }
+            QPushButton#cancel:hover {
+                background-color: #e9ecef;
+            }
+        """)
         layout = QFormLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
         
         # Campos editables
         fecha_edit = QDateEdit()
         fecha_edit.setDate(QDate.fromString(self.cobranza_actual['fecha'], "yyyy-MM-dd"))
+        fecha_edit.setCalendarPopup(True)
+        
+        # Asegurarse de que el monto sea un número flotante
+        monto = float(self.cobranza_actual.get('monto', 0))
+        print(f"Monto obtenido de la API: {monto}")
         
         monto_spin = QDoubleSpinBox()
-        monto_spin.setValue(self.cobranza_actual['monto'])
+        monto_spin.setValue(monto)
         monto_spin.setRange(0, 999999.99)
+        monto_spin.setSingleStep(100)
         monto_spin.setPrefix("$ ")
         monto_spin.setDecimals(2)
         
@@ -771,10 +1216,14 @@ class CobranzasView(QWidget):
         # Botones
         btn_layout = QHBoxLayout()
         guardar_btn = QPushButton("Guardar")
+        guardar_btn.setObjectName("save")
         cancelar_btn = QPushButton("Cancelar")
-        btn_layout.addWidget(guardar_btn)
+        cancelar_btn.setObjectName("cancel")
+        
         btn_layout.addWidget(cancelar_btn)
-        layout.addRow(btn_layout)
+        btn_layout.addWidget(guardar_btn)
+        
+        layout.addRow("", btn_layout)
         
         guardar_btn.clicked.connect(lambda: self.guardar_edicion_cobranza(
             dialog, 
@@ -785,7 +1234,9 @@ class CobranzasView(QWidget):
         ))
         cancelar_btn.clicked.connect(dialog.reject)
         
+        dialog.setMinimumWidth(400)
         dialog.exec()
+
 
     def guardar_edicion_cobranza(self, dialog, cobranza_id, fecha, monto, descripcion):
         """Guarda los cambios de la cobranza editada"""
@@ -801,28 +1252,58 @@ class CobranzasView(QWidget):
                 "descripcion": descripcion
             }
             
+            # Obtener monto anterior para saber si hubo cambio
+            monto_anterior = 0
+            if hasattr(self, 'cobranza_actual') and 'monto' in self.cobranza_actual:
+                monto_anterior = float(self.cobranza_actual.get('monto', 0))
+            
             response = requests.put(url, headers=headers, json=datos_actualizacion)
             
             if response.status_code == 200:
+                cobranza_actualizada = response.json()
                 QMessageBox.information(self, "Éxito", "Cobranza actualizada correctamente")
                 dialog.accept()
-                # Actualizar la vista de detalles
-                self.on_buscar_cobranza()
+                
+                # Verificar si cambió el monto para actualizar saldos
+                if abs(monto - monto_anterior) > 0.01:
+                    # Solicitar recálculo de saldos
+                    recalcular_url = f"{session.api_url}/transacciones/recalcular-saldos"
+                    recalcular_response = requests.post(recalcular_url, headers=headers)
+                    
+                    if recalcular_response.status_code == 200:
+                        print("Saldos recalculados correctamente")
+                    else:
+                        print(f"Error al recalcular saldos: {recalcular_response.status_code}")
+                
+                # Actualizar la tabla de cobranzas y los detalles
+                # Volvemos a buscar cobranzas para actualizar la tabla
+                usuario_id = self.arbitro_combo_buscar.currentData()
+                if usuario_id:
+                    self.on_buscar_cobranza()
+                    
+                    # Después de actualizar la tabla, cargar los detalles de la cobranza editada
+                    self.cargar_detalles_cobranza(cobranza_id)
+                
+                # Emitir señal para que el dashboard se actualice si está visible
+                from PySide6.QtCore import QEvent, QCoreApplication
+                event = QEvent(QEvent.Type(QEvent.User + 1))  # Evento personalizado
+                QCoreApplication.postEvent(self.parent(), event)
             else:
                 QMessageBox.warning(self, "Error", f"No se pudo actualizar. Código: {response.status_code}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al actualizar: {str(e)}")
 
+
     def on_eliminar_cobranza(self):
         """Elimina la cobranza seleccionada"""
         if not hasattr(self, 'cobranza_actual'):
-            QMessageBox.warning(self, "Error", "Primero realice una búsqueda")
+            QMessageBox.warning(self, "Error", "Primero seleccione una cobranza")
             return
         
         respuesta = QMessageBox.question(
             self, 
             "Confirmar Eliminación", 
-            "¿Está seguro de eliminar esta cobranza?",
+            f"¿Está seguro de eliminar la cobranza #{self.cobranza_actual['id']}?",
             QMessageBox.Yes | QMessageBox.No
         )
         
@@ -831,21 +1312,56 @@ class CobranzasView(QWidget):
                 headers = session.get_headers()
                 url = f"{session.api_url}/cobranzas/{self.cobranza_actual['id']}"
                 
+                # Guardar el ID del usuario y de cobranza antes de eliminarla
+                usuario_id = self.arbitro_combo_buscar.currentData()
+                cobranza_id = self.cobranza_actual['id']
+                
+                # Guardar el monto actual para saber cuánto se está eliminando
+                monto_eliminado = float(self.cobranza_actual.get('monto', 0))
+                
                 response = requests.delete(url, headers=headers)
                 
                 if response.status_code == 200:
                     QMessageBox.information(self, "Éxito", "Cobranza eliminada correctamente")
-                    # Limpiar campos
-                    self.busqueda_input.clear()
+                    
+                    # Primero solicitar recálculo de saldos
+                    recalcular_url = f"{session.api_url}/transacciones/recalcular-saldos"
+                    recalcular_response = requests.post(recalcular_url, headers=headers)
+                    
+                    if recalcular_response.status_code == 200:
+                        print("Saldos recalculados correctamente después de eliminar")
+                    else:
+                        print(f"Error al recalcular saldos: {recalcular_response.status_code}")
+                    
+                    # Ocultar el panel de detalles
                     self.resultado_container.setVisible(False)
-                    self.resultado_title.setVisible(False)
                     
                     # Deshabilitar botones
                     self.edit_btn.setEnabled(False)
                     self.delete_btn.setEnabled(False)
                     
-                    # Actualizar lista de cobranzas
-                    self.on_buscar_cobranzas()
+                    # Actualizar la tabla de cobranzas para mostrar los cambios
+                    if usuario_id:
+                        self.on_buscar_cobranza()
+                    
+                    # Importar aquí para evitar problemas de importación circular
+                    from PySide6.QtCore import QTimer, QEvent, QCoreApplication
+                    
+                    # Función para actualizar después del retraso
+                    def actualizar_dashboard_despues_delay():
+                        # Emitir señal para que el dashboard se actualice si está visible
+                        event = QEvent(QEvent.Type(QEvent.User + 1))  # Evento personalizado
+                        QCoreApplication.postEvent(self.parent(), event)
+                    
+                    # Crear un temporizador de un solo disparo
+                    timer = QTimer(self)  # Hacerlo hijo de self para evitar que se elimine
+                    timer.setSingleShot(True)
+                    timer.timeout.connect(actualizar_dashboard_despues_delay)
+                    timer.start(500)  # Esperar 500ms antes de actualizar
+                    
+                    # Guardar una referencia al timer para evitar que sea eliminado por el GC
+                    self._update_timer = timer
+                    
                 else:
                     QMessageBox.warning(
                         self, 
@@ -854,8 +1370,7 @@ class CobranzasView(QWidget):
                     )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error al eliminar: {str(e)}")
-
     # Método adicional para inicializar después del login (si lo prefieres usar en lugar de showEvent)
     def initialize_after_login(self):
         """Método para inicializar datos después del login (alternativa a showEvent)"""
-        self.refresh_data()                    
+        self.refresh_data()
