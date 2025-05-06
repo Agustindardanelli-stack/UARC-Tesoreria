@@ -298,14 +298,14 @@ def reenviar_orden_pago(db: Session, pago_id: int, email: str = None, current_us
         return {"success": False, "message": message}
 
 @audit_trail("pagos")
-def get_pagos(db: Session, skip: int = 0, limit: int = 100):
+def get_pagos(db: Session, skip: int = 0, limit: int = 100,):
     
     pagos = db.query(models.Pago).order_by(desc(models.Pago.fecha)).offset(skip).limit(limit).all()
     
     return pagos
 
 @audit_trail("pagos")
-def get_pago(db: Session, pago_id: int):
+def get_pago(db: Session, pago_id: int ,current_user_id: int):
     
     pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     
@@ -811,6 +811,7 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
         raise HTTPException(status_code=404, detail="Cuota no encontrada")
     
     if db_cuota.pagado:
+
         raise HTTPException(status_code=400, detail="La cuota ya ha sido pagada")
     
     # Actualizar cuota
