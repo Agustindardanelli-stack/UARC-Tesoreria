@@ -313,7 +313,7 @@ def get_pago(db: Session, pago_id: int):
 
 
 @audit_trail("pagos")
-def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate):
+def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate, current_user_id: int = None):
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not db_pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
@@ -335,7 +335,7 @@ def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate):
         usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
         
-        partida.detalle = f"Pago {nombre_usuario}"  # Eliminé "a" y el guión
+        partida.detalle = f"Pago {nombre_usuario}"
         partida.monto = db_pago.monto
         partida.egreso = db_pago.monto
         partida.usuario_id = db_pago.usuario_id
@@ -343,7 +343,7 @@ def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate):
     
     return db_pago
 @audit_trail("pagos")
-def delete_pago(db: Session, pago_id: int):
+def delete_pago(db: Session, pago_id: int, current_user_id: int = None):
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not db_pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
@@ -356,7 +356,6 @@ def delete_pago(db: Session, pago_id: int):
     db.delete(db_pago)
     db.commit()
     return {"message": "Pago eliminado exitosamente"}
-
 
 
 # Añadir función para reenviar recibos
@@ -488,7 +487,7 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
     return db_cobranza
 
 @audit_trail("cobranza")
-def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.CobranzaUpdate):
+def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.CobranzaUpdate, current_user_id: int = None):
     db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
     if not db_cobranza:
         raise HTTPException(status_code=404, detail="Cobranza no encontrada")
@@ -517,16 +516,15 @@ def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.Cobr
         db.commit()
     
     return db_cobranza
-
-
 def get_cobranza(db: Session, cobranza_id: int):
     return db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
 
 def get_cobranzas(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Cobranza).order_by(desc(models.Cobranza.fecha)).offset(skip).limit(limit).all()
 
+
 @audit_trail("cobranza")
-def delete_cobranza(db: Session, cobranza_id: int):
+def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
     db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
     if not db_cobranza:
         raise HTTPException(status_code=404, detail="Cobranza no encontrada")
@@ -539,7 +537,6 @@ def delete_cobranza(db: Session, cobranza_id: int):
     db.delete(db_cobranza)
     db.commit()
     return {"message": "Cobranza eliminada exitosamente"}
-
 # Funciones CRUD para Cuotas
 @audit_trail("cuota")
 def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, no_generar_movimiento: bool = False):
