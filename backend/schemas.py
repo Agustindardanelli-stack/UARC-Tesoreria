@@ -236,7 +236,7 @@ class PartidaUpdate(BaseModel):
     cobranza_id: Optional[int] = None
     pago_id: Optional[int] = None
     monto: Optional[float] = None
-    tipo: Optional[str] = Field(None, regex='^(ingreso|egreso)$')
+    tipo: str = Field(..., regex="^(ingreso|egreso|anulacion)$")
 
 class Partida(PartidaBase):
     id: int
