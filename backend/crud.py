@@ -305,10 +305,8 @@ def get_pagos(db: Session, skip: int = 0, limit: int = 100,):
     return pagos
 
 @audit_trail("pagos")
-def get_pago(db: Session, pago_id: int ,current_user_id: int):
-    
+def get_pago(db: Session, pago_id: int, current_user_id: int = None):
     pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
-    
     return pago
 
 
