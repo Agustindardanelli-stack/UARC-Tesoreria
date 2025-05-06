@@ -318,6 +318,9 @@ def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate, curr
     if not db_pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
     
+    # Guardar monto anterior para comparar
+    monto_anterior = db_pago.monto
+    
     update_data = pago_update.dict(exclude_unset=True)
     
     for key, value in update_data.items():
@@ -340,6 +343,27 @@ def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate, curr
         partida.egreso = db_pago.monto
         partida.usuario_id = db_pago.usuario_id
         db.commit()
+        
+        # Si el monto cambió, recalcular los saldos de todas las partidas posteriores
+        if abs(monto_anterior - db_pago.monto) > 0.01:
+            partidas_posteriores = db.query(models.Partida).filter(
+                models.Partida.fecha >= partida.fecha,
+                models.Partida.id != partida.id
+            ).order_by(models.Partida.fecha, models.Partida.id).all()
+            
+            # Obtener saldo actualizado para esta partida
+            saldo_actual = partida.saldo
+            
+            # Actualizar saldos para todas las partidas posteriores
+            for p in partidas_posteriores:
+                if p.tipo == "ingreso":
+                    saldo_actual += p.monto
+                else:  # egreso
+                    saldo_actual -= p.monto
+                
+                p.saldo = saldo_actual
+            
+            db.commit()
     
     return db_pago
 @audit_trail("pagos")
@@ -348,15 +372,48 @@ def delete_pago(db: Session, pago_id: int, current_user_id: int = None):
     if not db_pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
     
-    # Eliminar partida asociada
+    # Guardar fecha y monto del pago para recalcular saldos después
+    fecha_pago = db_pago.fecha
+    monto_pago = db_pago.monto
+    
+    # Encontrar la partida asociada
     partida = db.query(models.Partida).filter(models.Partida.pago_id == pago_id).first()
+    
+    # Eliminar partida asociada
     if partida:
         db.delete(partida)
     
+    # Eliminar el pago
     db.delete(db_pago)
     db.commit()
+    
+    # Recalcular saldos de todas las partidas posteriores a la fecha del pago eliminado
+    partidas_posteriores = db.query(models.Partida).filter(
+        models.Partida.fecha >= fecha_pago
+    ).order_by(models.Partida.fecha, models.Partida.id).all()
+    
+    # Si hay partidas posteriores, recalcular saldos
+    if partidas_posteriores:
+        # Obtener el saldo anterior a la partida eliminada
+        partida_anterior = db.query(models.Partida).filter(
+            models.Partida.fecha < fecha_pago
+        ).order_by(models.Partida.fecha.desc(), models.Partida.id.desc()).first()
+        
+        saldo_inicial = partida_anterior.saldo if partida_anterior else 0
+        
+        # Recalcular saldos para todas las partidas posteriores
+        saldo_actual = saldo_inicial
+        for p in partidas_posteriores:
+            if p.tipo == "ingreso":
+                saldo_actual += p.monto
+            else:  # egreso
+                saldo_actual -= p.monto
+            
+            p.saldo = saldo_actual
+        
+        db.commit()
+    
     return {"message": "Pago eliminado exitosamente"}
-
 
 # Añadir función para reenviar recibos
 def reenviar_recibo(db: Session, cobranza_id: int, email: str = None , current_user_id: int = None):
@@ -492,6 +549,9 @@ def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.Cobr
     if not db_cobranza:
         raise HTTPException(status_code=404, detail="Cobranza no encontrada")
     
+    # Guardar monto anterior para comparar
+    monto_anterior = db_cobranza.monto
+    
     update_data = cobranza_update.dict(exclude_unset=True)
     
     for key, value in update_data.items():
@@ -509,11 +569,32 @@ def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.Cobr
         usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
         
-        partida.detalle = f"Cobranza {nombre_usuario}"  # Eliminé "de"
+        partida.detalle = f"Cobranza {nombre_usuario}"
         partida.monto = db_cobranza.monto
         partida.ingreso = db_cobranza.monto
         partida.usuario_id = db_cobranza.usuario_id
         db.commit()
+        
+        # Si el monto cambió, recalcular los saldos de todas las partidas posteriores
+        if abs(monto_anterior - db_cobranza.monto) > 0.01:
+            partidas_posteriores = db.query(models.Partida).filter(
+                models.Partida.fecha >= partida.fecha,
+                models.Partida.id != partida.id
+            ).order_by(models.Partida.fecha, models.Partida.id).all()
+            
+            # Obtener saldo actualizado para esta partida
+            saldo_actual = partida.saldo
+            
+            # Actualizar saldos para todas las partidas posteriores
+            for p in partidas_posteriores:
+                if p.tipo == "ingreso":
+                    saldo_actual += p.monto
+                else:  # egreso
+                    saldo_actual -= p.monto
+                
+                p.saldo = saldo_actual
+            
+            db.commit()
     
     return db_cobranza
 def get_cobranza(db: Session, cobranza_id: int):
@@ -529,13 +610,47 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
     if not db_cobranza:
         raise HTTPException(status_code=404, detail="Cobranza no encontrada")
     
-    # Eliminar partida asociada
+    # Guardar fecha y monto de la cobranza para recalcular saldos después
+    fecha_cobranza = db_cobranza.fecha
+    monto_cobranza = db_cobranza.monto
+    
+    # Encontrar la partida asociada
     partida = db.query(models.Partida).filter(models.Partida.cobranza_id == cobranza_id).first()
+    
+    # Eliminar partida asociada
     if partida:
         db.delete(partida)
     
+    # Eliminar la cobranza
     db.delete(db_cobranza)
     db.commit()
+    
+    # Recalcular saldos de todas las partidas posteriores a la fecha de la cobranza eliminada
+    partidas_posteriores = db.query(models.Partida).filter(
+        models.Partida.fecha >= fecha_cobranza
+    ).order_by(models.Partida.fecha, models.Partida.id).all()
+    
+    # Si hay partidas posteriores, recalcular saldos
+    if partidas_posteriores:
+        # Obtener el saldo anterior a la partida eliminada
+        partida_anterior = db.query(models.Partida).filter(
+            models.Partida.fecha < fecha_cobranza
+        ).order_by(models.Partida.fecha.desc(), models.Partida.id.desc()).first()
+        
+        saldo_inicial = partida_anterior.saldo if partida_anterior else 0
+        
+        # Recalcular saldos para todas las partidas posteriores
+        saldo_actual = saldo_inicial
+        for p in partidas_posteriores:
+            if p.tipo == "ingreso":
+                saldo_actual += p.monto
+            else:  # egreso
+                saldo_actual -= p.monto
+            
+            p.saldo = saldo_actual
+        
+        db.commit()
+    
     return {"message": "Cobranza eliminada exitosamente"}
 # Funciones CRUD para Cuotas
 @audit_trail("cuota")
