@@ -610,9 +610,14 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
     if not db_cobranza:
         raise HTTPException(status_code=404, detail="Cobranza no encontrada")
     
-    # Guardar fecha y monto de la cobranza para recalcular saldos después
+    # Guardar información relevante antes de eliminar
     fecha_cobranza = db_cobranza.fecha
     monto_cobranza = db_cobranza.monto
+    usuario_id = db_cobranza.usuario_id
+    
+    # Obtener información del usuario para registro
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
+    nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
     
     # Encontrar la partida asociada
     partida = db.query(models.Partida).filter(models.Partida.cobranza_id == cobranza_id).first()
@@ -625,31 +630,24 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
     db.delete(db_cobranza)
     db.commit()
     
-    # Recalcular saldos de todas las partidas posteriores a la fecha de la cobranza eliminada
-    partidas_posteriores = db.query(models.Partida).filter(
-        models.Partida.fecha >= fecha_cobranza
-    ).order_by(models.Partida.fecha, models.Partida.id).all()
+    # Crear partida/movimiento que registre la eliminación
+    partida_eliminacion = models.Partida(
+        fecha=func.now(),
+        detalle=f"ELIMINACIÓN Cobranza - {nombre_usuario} (ID: {cobranza_id})",
+        monto=monto_cobranza,
+        tipo="anulacion",  # Nuevo tipo para identificar eliminaciones
+        cuenta="CAJA",
+        usuario_id=current_user_id,  # Usuario que realizó la eliminación
+        ingreso=0,
+        egreso=0,  # No afecta el balance nuevamente
+        saldo=0  # Se calculará después
+    )
+    db.add(partida_eliminacion)
+    db.commit()
+    db.refresh(partida_eliminacion)
     
-    # Si hay partidas posteriores, recalcular saldos
-    if partidas_posteriores:
-        # Obtener el saldo anterior a la partida eliminada
-        partida_anterior = db.query(models.Partida).filter(
-            models.Partida.fecha < fecha_cobranza
-        ).order_by(models.Partida.fecha.desc(), models.Partida.id.desc()).first()
-        
-        saldo_inicial = partida_anterior.saldo if partida_anterior else 0
-        
-        # Recalcular saldos para todas las partidas posteriores
-        saldo_actual = saldo_inicial
-        for p in partidas_posteriores:
-            if p.tipo == "ingreso":
-                saldo_actual += p.monto
-            else:  # egreso
-                saldo_actual -= p.monto
-            
-            p.saldo = saldo_actual
-        
-        db.commit()
+    # Recalcular saldos
+    recalcular_saldos_transacciones(db)
     
     return {"message": "Cobranza eliminada exitosamente"}
 # Funciones CRUD para Cuotas
