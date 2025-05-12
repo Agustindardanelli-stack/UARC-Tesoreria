@@ -1365,37 +1365,38 @@ def delete_transaccion(db: Session, transaccion_id: int, current_user_id: Option
 
 def recalcular_saldos_transacciones(db: Session):
     """
-    Recalcula los saldos de todas las transacciones en orden cronológico
+    Recalcula los saldos de todas las partidas en orden cronológico
     """
-    # Obtener todas las transacciones ordenadas por fecha y luego por ID
-    transacciones = db.query(models.Transaccion).order_by(
-        models.Transaccion.fecha,
-        models.Transaccion.id
+    # Obtener todas las partidas ordenadas por fecha y luego por ID
+    partidas = db.query(models.Partida).order_by(
+        models.Partida.fecha,
+        models.Partida.id
     ).all()
     
-    if not transacciones:
-        return {"message": "No hay transacciones para recalcular", "transacciones_actualizadas": 0}
+    if not partidas:
+        return {"message": "No hay partidas para recalcular", "transacciones_actualizadas": 0}
     
     saldo_actual = 0
-    transacciones_actualizadas = 0
+    partidas_actualizadas = 0
     
-    # Recalcular saldos para cada transacción
-    for transaccion in transacciones:
-        if transaccion.tipo == "ingreso":
-            saldo_actual += float(transaccion.monto)
-        else:  # egreso
-            saldo_actual -= float(transaccion.monto)
+    # Recalcular saldos para cada partida
+    for partida in partidas:
+        if partida.tipo == "ingreso":
+            saldo_actual += partida.ingreso
+        elif partida.tipo == "egreso":
+            saldo_actual -= partida.egreso
+        # Si es anulación u otro tipo, podría tener lógica específica aquí
         
         # Actualizar el saldo
-        transaccion.saldo = saldo_actual
-        transacciones_actualizadas += 1
+        partida.saldo = saldo_actual
+        partidas_actualizadas += 1
     
     # Guardar cambios
     db.commit()
     
     return {
         "message": "Saldos recalculados correctamente", 
-        "transacciones_actualizadas": transacciones_actualizadas
+        "transacciones_actualizadas": partidas_actualizadas
     }
 
 # Funciones para Auditoría
