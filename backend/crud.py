@@ -809,7 +809,6 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
         raise HTTPException(status_code=404, detail="Cuota no encontrada")
     
     if db_cuota.pagado:
-
         raise HTTPException(status_code=400, detail="La cuota ya ha sido pagada")
     
     # Actualizar cuota
@@ -817,33 +816,45 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
     db_cuota.fecha_pago = func.now()
     db_cuota.pagado = True
     
-    # Crear cobranza y partida solo si generar_movimiento es True
+    # Crear partida directamente sin crear cobranza
     if generar_movimiento:
-        # Crear cobranza asociada
-        cobranza = models.Cobranza(
-            fecha=func.now(),
-            monto=monto_pagado,
-            usuario_id=db_cuota.usuario_id
-        )
-        db.add(cobranza)
-        db.commit()
-        db.refresh(cobranza)
-        
-        # Crear partida asociada a la cobranza
+        # Crear partida asociada directamente a la cuota
         partida = models.Partida(
             fecha=func.now(),
-            detalle=f"Pago de cuota del {db_cuota.fecha.strftime('%d/%m/%Y')}",
+            detalle=f"Pago de cuota societaria del {db_cuota.fecha.strftime('%d/%m/%Y')}",
             monto=monto_pagado,
             tipo="ingreso",
             cuenta="CAJA",
             usuario_id=db_cuota.usuario_id,
-            cobranza_id=cobranza.id,
-            saldo=0,
+            # No asignar cobranza_id
+            saldo=0,  # Se calculará correctamente después
             ingreso=monto_pagado,
             egreso=0
         )
         db.add(partida)
         db.commit()
+        
+        # Recalcular saldo
+        try:
+            # Obtener todas las partidas en orden cronológico
+            partidas = db.query(models.Partida).order_by(
+                models.Partida.fecha,
+                models.Partida.id
+            ).all()
+            
+            # Recalcular saldos
+            saldo_actual = 0
+            for p in partidas:
+                if p.tipo == "ingreso":
+                    saldo_actual += p.monto
+                else:  # egreso o anulacion
+                    saldo_actual -= p.monto
+                
+                p.saldo = saldo_actual
+            
+            db.commit()
+        except Exception as e:
+            print(f"Error al recalcular saldos: {str(e)}")
     
     try:
         # Obtener usuario para su email
