@@ -210,6 +210,23 @@ class DashboardView(QWidget):
         refresh_btn.clicked.connect(self.refresh_data)
         datetime_layout.addWidget(refresh_btn)
         
+        # Botón de recalcular saldos
+        recalcular_saldos_btn = QPushButton("Recalcular todos los saldos")
+        recalcular_saldos_btn.clicked.connect(self.recalcular_todos_saldos)
+        recalcular_saldos_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1976D2;
+                color: white;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #1565C0;
+            }
+        """)
+        datetime_layout.addWidget(recalcular_saldos_btn)
+        
         # Indicadores
         indicators_layout = QHBoxLayout()
         self.balance_indicator = IndicatorWidget("Balance Actual", "$0.00")
@@ -245,13 +262,10 @@ class DashboardView(QWidget):
         self.partidas_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         
         # Establecer una altura fija para mostrar un número limitado de filas
-        # Ajusta este valor para mostrar más o menos filas según necesites
         self.partidas_table.setMinimumHeight(400)
         
         # Agregar la tabla al layout principal
         self.content_layout.addWidget(self.partidas_table)
-        
-        # NO agregamos el botón para ver todos los movimientos
         
         # Agregar al layout principal
         self.main_layout.addWidget(self.sidebar)
@@ -273,11 +287,7 @@ class DashboardView(QWidget):
          
          # Restaurar el estado del botón "Ver todos los movimientos"
          self.partidas_label.setText("Últimos movimientos")
-         
-         # Reconectar el botón para cargar todos
-        
-
-
+    
     def on_show(self):
         """Se llama cuando el dashboard se muestra después del login"""
         self.update_time()
@@ -290,7 +300,6 @@ class DashboardView(QWidget):
 
         # Ejecutar en segundo plano
         self.executor.submit(self.refresh_data)
-
         
     def load_balance_data(self):
         """Carga los datos del balance"""
@@ -379,28 +388,9 @@ class DashboardView(QWidget):
             
             # Cargar todas las partidas sin límite
             partidas_response = requests.get(
-                f"{session.api_url}/partidas",  # Sin parámetro limit para cargar todas
+                f"{session.api_url}/partidas",
                 headers=headers
             )
-            
-            # Luego obtenemos las transacciones para tener los saldos
-            transacciones_response = requests.get(
-                f"{session.api_url}/transacciones",  # Sin parámetro limit
-                headers=headers
-            )
-            
-            # Crear un diccionario de fechas y saldos de transacciones
-            saldos_por_fecha = {}
-            if transacciones_response.status_code == 200:
-                transacciones_data = transacciones_response.json()
-                # Ordenar transacciones por fecha y por ID
-                transacciones_data.sort(key=lambda x: (x.get('fecha', ''), x.get('id', 0)))
-                
-                for transaccion in transacciones_data:
-                    fecha = transaccion.get('fecha', '')
-                    saldo = transaccion.get('saldo', 0)
-                    # Guardamos el último saldo para cada fecha
-                    saldos_por_fecha[fecha] = saldo
             
             # Procesar las partidas
             if partidas_response.status_code == 200:
@@ -420,22 +410,6 @@ class DashboardView(QWidget):
                     # Ordenar partidas por fecha (descendente) y luego por ID (descendente)
                     partidas_data.sort(key=lambda x: (x.get('fecha', ''), x.get('id', 0)), reverse=True)
                     
-                    # Obtener saldo actual del balance para usarlo como base
-                    balance_actual = 0
-                    try:
-                        balance_response = requests.get(
-                            f"{session.api_url}/reportes/balance",
-                            headers=headers
-                        )
-                        if balance_response.status_code == 200:
-                            balance_data = balance_response.json()
-                            balance_actual = balance_data.get('saldo', 0)
-                    except Exception as e:
-                        print(f"Error al obtener balance: {str(e)}")
-                    
-                    # Contador para cuotas societarias
-                    cuota_counter = 0
-                    
                     # Identificar todas las partidas que son cuotas societarias
                     cuotas_societarias = []
                     for item in partidas_data:
@@ -444,7 +418,10 @@ class DashboardView(QWidget):
                         if 'cuota' in detalle and ingreso > 0:
                             cuotas_societarias.append(item.get('id'))
                     
-                    # Llenar tabla con datos
+                    # No calculamos los saldos manualmente, usamos los saldos del servidor
+                    # que han sido calculados correctamente cuando se hizo el recálculo
+                    
+                    # Llenar la tabla con los datos
                     for row, partida_item in enumerate(partidas_data):
                         self.partidas_table.insertRow(row)
                         
@@ -457,7 +434,7 @@ class DashboardView(QWidget):
                         ingreso = partida_item.get('ingreso', 0)
                         egreso = partida_item.get('egreso', 0)
                         
-                        # CAMBIO AQUÍ: Verificar primero si es anulación
+                        # Verificar primero si es anulación
                         if partida_item.get('tipo', '') == "anulacion":
                             tipo_movimiento = "ANULACIÓN"
                             color_fondo = QColor(255, 240, 230)  # Naranja claro para anulaciones
@@ -500,7 +477,7 @@ class DashboardView(QWidget):
                         usuario_accion = usuario_obj.get('nombre', 'Sin registro') if usuario_obj else 'Sin registro'
                         self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
                         
-                        # Número de comprobante - CÓDIGO MODIFICADO
+                        # Número de comprobante
                         num_comprobante = ""
                         
                         # Verificar si es un pago de cuota societaria basándose en el detalle
@@ -556,65 +533,10 @@ class DashboardView(QWidget):
                             egreso_item.setFont(QFont("Arial", 9, QFont.Bold))
                         self.partidas_table.setItem(row, 6, egreso_item)
                         
-                        # Saldo - CÓDIGO CORREGIDO
-                        saldo = 0
-                        
-                        if row == 0:
-                            
-                            saldo = balance_actual 
-                            
-                            # Actualizar este saldo en la base de datos para la partida más reciente
-                            try:
-                                if partida_item.get('id'):
-                                    update_url = f"{session.api_url}/partidas/{partida_item.get('id')}"
-                                    headers_update = session.get_headers()
-                                    headers_update["Content-Type"] = "application/json"
-                                    update_data = {"saldo": saldo}
-                                    
-                                    requests.put(update_url, headers=headers_update, json=update_data)
-                                    print(f"Saldo actualizado para partida {partida_item.get('id')}: {saldo}")
-                            except Exception as e:
-                                print(f"Error al actualizar saldo: {str(e)}")
-                        else:
-                            try:
-                                # Obtener saldo de la fila anterior
-                                anterior_saldo_text = self.partidas_table.item(row-1, 7).text()
-                                # Corregir el problema de reemplazo en el cálculo del saldo
-                                anterior_saldo = float(anterior_saldo_text.replace('$', '').replace(',', ''))
-                                
-                                # El saldo de esta fila depende de si es un ingreso o egreso
-                                if tipo_movimiento == "INGRESO":
-                                    # Para filas anteriores a la primera, restar el ingreso
-                                    # (ya que estamos retrocediendo en el tiempo)
-                                    saldo = anterior_saldo + ingreso
-                                elif tipo_movimiento == "EGRESO":
-                                    # Para egresos, sumar el egreso (restamos en sentido inverso)
-                                    saldo = anterior_saldo - egreso
-                                else:
-                                    # Para ajustes y anulaciones, no modificar el saldo
-                                    saldo = anterior_saldo
-                                    
-                                # Si hay discrepancia con el saldo almacenado, actualizar BD
-                                saldo_bd = partida_item.get('saldo', 0)
-                                if abs(saldo - saldo_bd) > 0.01 and partida_item.get('id'):
-                                    try:
-                                        update_url = f"{session.api_url}/partidas/{partida_item.get('id')}"
-                                        headers_update = session.get_headers()
-                                        headers_update["Content-Type"] = "application/json"
-                                        update_data = {"saldo": saldo}
-                                        
-                                        requests.put(update_url, headers=headers_update, json=update_data)
-                                        print(f"Saldo corregido para partida {partida_item.get('id')}: {saldo}")
-                                    except Exception as e:
-                                        print(f"Error al actualizar saldo: {str(e)}")
-                            except Exception as e:
-                                # Si hay error al calcular, intentar usar saldo de BD
-                                saldo = partida_item.get('saldo', 0)
-                                print(f"Error al calcular saldo para fila {row}: {str(e)}")
-                        
+                        # Saldo - Usamos el saldo precalculado del servidor
+                        saldo = partida_item.get('saldo', 0)
                         saldo_item = QTableWidgetItem(f"${saldo:,.2f}")
                         saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                        # Agregar un color distintivo al saldo
                         saldo_item.setForeground(QBrush(QColor("#1565C0")))  # Azul oscuro
                         saldo_item.setFont(QFont("Arial", 9, QFont.Bold))
                         self.partidas_table.setItem(row, 7, saldo_item)
@@ -622,9 +544,81 @@ class DashboardView(QWidget):
                     # Ajustar columnas
                     self.partidas_table.resizeColumnsToContents()
                     
+                    # Asegurarse de que la columna de saldo tenga un ancho mínimo
+                    min_width = 150
+                    if self.partidas_table.columnWidth(7) < min_width:
+                        self.partidas_table.setColumnWidth(7, min_width)
+                    
         except Exception as e:
-            self.partidas_label.setText("Movimientos")
+            self.partidas_label.setText("Error en movimientos")
             print(f"Error al cargar partidas: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def recalcular_todos_saldos(self):
+        """Llama al endpoint de recálculo de saldos y recarga los datos"""
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            
+            # Mensaje de confirmación
+            respuesta = QMessageBox.question(
+                self,
+                "Confirmar recálculo",
+                "¿Está seguro que desea recalcular todos los saldos? Este proceso puede tardar unos segundos.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if respuesta == QMessageBox.Yes:
+                # Mostrar cursor de espera
+                from PySide6.QtCore import Qt
+                from PySide6.QtGui import QCursor
+                self.setCursor(QCursor(Qt.WaitCursor))
+                
+                # Realizar la llamada a la API
+                headers = session.get_headers()
+                url = f"{session.api_url}/transacciones/recalcular-saldos"
+                
+                response = requests.post(url, headers=headers)
+                
+                # Restaurar cursor normal
+                self.setCursor(QCursor(Qt.ArrowCursor))
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    
+                    # Mostrar mensaje de éxito
+                    QMessageBox.information(
+                        self,
+                        "Saldos recalculados",
+                        f"Se han recalculado correctamente {result.get('transacciones_actualizadas', 0)} saldos.",
+                        QMessageBox.Ok
+                    )
+                    
+                    # Actualizar datos
+                    self.refresh_data()
+                else:
+                    # Mostrar mensaje de error
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        f"No se pudieron recalcular los saldos. Código: {response.status_code}",
+                        QMessageBox.Ok
+                    )
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error al recalcular saldos: {str(e)}",
+                QMessageBox.Ok
+            )
+            
+            # Restaurar cursor normal en caso de error
+            from PySide6.QtCore import Qt
+            from PySide6.QtGui import QCursor
+            self.setCursor(QCursor(Qt.ArrowCursor))        
+
 # Método para ser llamado cuando se vuelve al dashboard
 def on_show(self):
     """Método que se llama cuando el dashboard se muestra después de navegar"""
