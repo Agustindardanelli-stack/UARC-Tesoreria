@@ -489,8 +489,6 @@ def reenviar_recibo(db: Session, cobranza_id: int, email: str = None , current_u
     else:
         return {"success": False, "message": message}
 
-# Funciones CRUD para Cobranzas
-# Funciones CRUD para Cobranzas
 @audit_trail("cobranza")
 def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_id: int):
     # Validar retencion_id si se proporciona
@@ -498,7 +496,10 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
         retencion = db.query(models.Retencion).filter(models.Retencion.id == cobranza.retencion_id).first()
         if not retencion:
             raise HTTPException(status_code=404, detail="Retención no encontrada")
-
+    
+    # Imprimir para depuración
+    print(f"Tipo de documento recibido: {cobranza.tipo_documento}")
+    
     db_cobranza = models.Cobranza(**cobranza.dict())
     db.add(db_cobranza)
     db.commit()
@@ -508,6 +509,28 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
     ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
     saldo_anterior = ultima_partida.saldo if ultima_partida else 0
     nuevo_saldo = saldo_anterior + db_cobranza.monto
+    
+    # NUEVA LÓGICA: Generar número de recibo/factura según tipo de documento
+    if db_cobranza.tipo_documento == "factura":
+        # Para facturas, usar el formato FAC-X
+        recibo_factura = f"FAC-{db_cobranza.numero_factura}"
+    else:
+        # Para recibos de cobranza, buscar el último y generar el siguiente número
+        ultimo_recibo = db.query(models.Partida).filter(
+            models.Partida.recibo_factura.like("REC-%")
+        ).order_by(models.Partida.id.desc()).first()
+        
+        if ultimo_recibo and ultimo_recibo.recibo_factura:
+            # Extraer el número del último recibo
+            try:
+                ultimo_num = int(ultimo_recibo.recibo_factura.split('-')[1])
+                nuevo_num = ultimo_num + 1
+            except (ValueError, IndexError):
+                nuevo_num = 1
+        else:
+            nuevo_num = 1
+        
+        recibo_factura = f"REC-{nuevo_num}"
     
     partida = models.Partida(
         fecha=db_cobranza.fecha,
@@ -519,7 +542,8 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
         cobranza_id=db_cobranza.id,
         saldo=nuevo_saldo,
         ingreso=db_cobranza.monto,
-        egreso=0
+        egreso=0,
+        recibo_factura=recibo_factura  # IMPORTANTE: Asignar el número de comprobante generado
     )
     db.add(partida)
     db.commit()
