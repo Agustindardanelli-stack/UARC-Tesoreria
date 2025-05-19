@@ -196,7 +196,7 @@ def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
     
     # NUEVA LÓGICA: Generar número de recibo/factura según tipo de documento
     if db_pago.tipo_documento == "factura":
-        # Para facturas, usar el formato FAC-X
+        # Para facturas, usar el formato FAC-
         recibo_factura = f"FAC/REC.A-{db_pago.numero_factura}"
     else:
         # Para órdenes de pago, buscar la última y generar el siguiente número
