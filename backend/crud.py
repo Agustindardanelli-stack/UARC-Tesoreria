@@ -197,7 +197,7 @@ def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
     # NUEVA LÓGICA: Generar número de recibo/factura según tipo de documento
     if db_pago.tipo_documento == "factura":
         # Para facturas, usar el formato FAC-X
-        recibo_factura = f"FAC-{db_pago.numero_factura}"
+        recibo_factura = f"FAC/REC.A-{db_pago.numero_factura}"
     else:
         # Para órdenes de pago, buscar la última y generar el siguiente número
         ultima_orden_pago = db.query(models.Partida).filter(
@@ -513,7 +513,7 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
     # NUEVA LÓGICA: Generar número de recibo/factura según tipo de documento
     if db_cobranza.tipo_documento == "factura":
         # Para facturas, usar el formato FAC-X
-        recibo_factura = f"FAC-{db_cobranza.numero_factura}"
+        recibo_factura = f"FAC/REC.A-{db_cobranza.numero_factura}"
     else:
         # Para recibos de cobranza, buscar el último y generar el siguiente número
         ultimo_recibo = db.query(models.Partida).filter(
