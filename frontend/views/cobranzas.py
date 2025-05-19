@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, 
     QTableWidgetItem, QFrame, QTabWidget, QSpacerItem, QSizePolicy,QDialog,
     QFormLayout, QLineEdit, QDateEdit, QComboBox, QMessageBox, QDoubleSpinBox,
-    QApplication
+    QApplication ,QRadioButton, QButtonGroup
 )
 from PySide6.QtGui import QFont, QColor, QPalette, QIcon, QPixmap
 from PySide6.QtCore import Qt, Signal, QDate
@@ -105,107 +105,205 @@ class CobranzasView(QWidget):
         self.main_layout.addWidget(self.content_widget)
     
     def setup_tab_registrar(self):
-        layout = QVBoxLayout(self.tab_registrar)
-        
-        # Formulario para registrar cobranza
-        form_layout = QFormLayout()
-        form_layout.setSpacing(10)
-        form_layout.setContentsMargins(20, 20, 20, 20)
-        
-        # Estilos para etiquetas
-        label_style = "font-weight: bold; color: #2c3e50;"
-        
-        # Estilos para widgets de entrada
-        input_style = """
-            QLineEdit, QDateEdit, QComboBox, QDoubleSpinBox {
-                padding: 8px;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                background-color: #f8f9fa;
-            }
-            QLineEdit:focus, QDateEdit:focus, QComboBox:focus, QDoubleSpinBox:focus {
-                border: 1px solid #4e73df;
-                background-color: #fff;
-            }
-        """
-        
-        # Selección de árbitro
-        arbitro_label = QLabel("Pagador/Cobrador:")
-        arbitro_label.setStyleSheet(label_style)
-        self.arbitro_combo_registrar = QComboBox()
-        self.arbitro_combo_registrar.setPlaceholderText("Seleccione un árbitro")
-        self.arbitro_combo_registrar.setStyleSheet(input_style)
-        form_layout.addRow(arbitro_label, self.arbitro_combo_registrar)
-        
-        # Fecha
-        fecha_label = QLabel("Fecha:")
-        fecha_label.setStyleSheet(label_style)
-        self.fecha_edit = QDateEdit()
-        self.fecha_edit.setDate(QDate.currentDate())
-        self.fecha_edit.setCalendarPopup(True)
-        self.fecha_edit.setStyleSheet(input_style)
-        form_layout.addRow(fecha_label, self.fecha_edit)
-        
-        # Tipo de Retención
-        retencion_label = QLabel("Tipo de Retención:")
-        retencion_label.setStyleSheet(label_style)
-        self.retencion_combo = QComboBox()
-        self.retencion_combo.setPlaceholderText("Seleccione una retención")
-        self.retencion_combo.currentIndexChanged.connect(self.on_retencion_changed)
-        self.retencion_combo.setStyleSheet(input_style)
-        form_layout.addRow(retencion_label, self.retencion_combo)
-        
-        # Monto
-        monto_label = QLabel("Monto:")
-        monto_label.setStyleSheet(label_style)
-        self.monto_spin = QDoubleSpinBox()
-        self.monto_spin.setRange(0, 999999.99)
-        self.monto_spin.setSingleStep(100)
-        self.monto_spin.setPrefix("$ ")
-        self.monto_spin.setDecimals(2)
-        self.monto_spin.setStyleSheet(input_style)
-        form_layout.addRow(monto_label, self.monto_spin)
-        
-        # Descripción/Notas
-        notas_label = QLabel("Descripción/Notas:")
-        notas_label.setStyleSheet(label_style)
-        self.notas_edit = QLineEdit()
-        self.notas_edit.setPlaceholderText("Ingrese detalles adicionales...")
-        self.notas_edit.setStyleSheet(input_style)
-        form_layout.addRow(notas_label, self.notas_edit)
-        
-        # Botón de registro
-        self.registrar_btn = QPushButton("Registrar Cobranza")
-        self.registrar_btn.clicked.connect(self.on_registrar_cobranza)
-        self.registrar_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4e73df;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 4px;
-                padding: 10px 20px;
-                min-width: 150px;
-            }
-            QPushButton:hover {
-                background-color: #2e59d9;
-            }
-            QPushButton:pressed {
-                background-color: #1c45bc;
-            }
-        """)
-        
-        layout.addLayout(form_layout)
-        
-        # Centrar botón
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        button_layout.addWidget(self.registrar_btn)
-        button_layout.addStretch()
-        
-        layout.addLayout(button_layout)
-        layout.addStretch()
-
+            layout = QVBoxLayout(self.tab_registrar)
+            
+            # Formulario para registrar cobranza
+            form_layout = QFormLayout()
+            form_layout.setSpacing(15)  # Aumentado el espaciado para mejor legibilidad
+            form_layout.setContentsMargins(25, 25, 25, 25)  # Aumentado los márgenes
+            
+            # Estilos mejorados para etiquetas
+            label_style = """
+                font-weight: 600; 
+                color: #2c3e50;
+                font-size: 14px;
+                padding: 4px 0;
+                font-family: 'Segoe UI', Arial, sans-serif;
+            """
+            
+            # Estilos mejorados para widgets de entrada (sin box-shadow)
+            input_style = """
+                QLineEdit, QDateEdit, QComboBox, QDoubleSpinBox {
+                    padding: 10px;
+                    border: 1px solid #bdc3c7;
+                    border-radius: 5px;
+                    background-color: #f9f9f9;
+                    font-size: 13px;
+                    min-height: 24px;
+                }
+                QLineEdit:focus, QDateEdit:focus, QComboBox:focus, QDoubleSpinBox:focus {
+                    border: 1px solid #3498db;
+                    background-color: #fff;
+                }
+            """
+            
+            # Selector de tipo de documento
+            tipo_documento_label = QLabel("Tipo de Documento:")
+            tipo_documento_label.setStyleSheet(label_style)
+            
+            # Contenedor para los radio buttons
+            tipo_doc_container = QWidget()
+            tipo_doc_layout = QHBoxLayout(tipo_doc_container)
+            tipo_doc_layout.setContentsMargins(0, 0, 0, 0)
+            tipo_doc_layout.setSpacing(25)  # Más espacio entre botones
+            
+            # Radio buttons para tipo de documento
+            self.rb_recibo = QRadioButton("Recibo")
+            self.rb_factura = QRadioButton("Factura/Recibo")
+            self.rb_recibo.setChecked(True)  # Por defecto, recibo
+            
+            # Agrupar los radio buttons
+            self.tipo_doc_group = QButtonGroup()
+            self.tipo_doc_group.addButton(self.rb_recibo, 1)
+            self.tipo_doc_group.addButton(self.rb_factura, 2)
+            
+            # Conectar el evento de cambio a la función existente
+            # Primero definimos la función que actualiza el texto del botón
+            def on_tipo_documento_changed(button):
+                # Mostrar u ocultar campos según la selección
+                is_factura = button == self.rb_factura
+                
+                self.factura_label.setVisible(is_factura)
+                self.factura_edit.setVisible(is_factura)
+                self.razon_social_label.setVisible(is_factura)
+                self.razon_social_edit.setVisible(is_factura)
+                
+                # Cambiar el texto del botón según el tipo seleccionado
+                if is_factura:
+                    self.registrar_btn.setText("Registrar Factura")
+                else:
+                    self.registrar_btn.setText("Registrar Cobranza")
+            
+            # Definimos on_tipo_documento_changed como un método de esta clase
+            self.on_tipo_documento_changed = on_tipo_documento_changed
+            
+            # Conectamos el botón al método que acabamos de definir
+            self.tipo_doc_group.buttonClicked.connect(self.on_tipo_documento_changed)
+            
+            # Estilo mejorado para los radio buttons (sin propiedades no soportadas)
+            radio_style = """
+                QRadioButton {
+                    font-size: 14px;
+                    color: #2c3e50;
+                    font-weight: 500;
+                    padding: 5px;
+                }
+                QRadioButton::indicator {
+                    width: 20px;
+                    height: 20px;
+                }
+            """
+            self.rb_recibo.setStyleSheet(radio_style)
+            self.rb_factura.setStyleSheet(radio_style)
+            
+            tipo_doc_layout.addWidget(self.rb_recibo)
+            tipo_doc_layout.addWidget(self.rb_factura)
+            tipo_doc_layout.addStretch()
+            
+            form_layout.addRow(tipo_documento_label, tipo_doc_container)
+            
+            # Selección de árbitro
+            arbitro_label = QLabel("Pagador/Cobrador:")
+            arbitro_label.setStyleSheet(label_style)
+            self.arbitro_combo_registrar = QComboBox()
+            self.arbitro_combo_registrar.setPlaceholderText("Seleccione un árbitro")
+            self.arbitro_combo_registrar.setStyleSheet(input_style)
+            form_layout.addRow(arbitro_label, self.arbitro_combo_registrar)
+            
+            # Fecha
+            fecha_label = QLabel("Fecha:")
+            fecha_label.setStyleSheet(label_style)
+            self.fecha_edit = QDateEdit()
+            self.fecha_edit.setDate(QDate.currentDate())
+            self.fecha_edit.setCalendarPopup(True)
+            self.fecha_edit.setStyleSheet(input_style)
+            form_layout.addRow(fecha_label, self.fecha_edit)
+            
+            # Número de Factura/Recibo (oculto por defecto)
+            self.factura_label = QLabel("Número de Factura/Recibo:")
+            self.factura_label.setStyleSheet(label_style)
+            self.factura_edit = QLineEdit()
+            self.factura_edit.setPlaceholderText("Ingrese número de factura...")
+            self.factura_edit.setStyleSheet(input_style)
+            form_layout.addRow(self.factura_label, self.factura_edit)
+            
+            # Razón Social (oculto por defecto)
+            self.razon_social_label = QLabel("Razón Social:")
+            self.razon_social_label.setStyleSheet(label_style)
+            self.razon_social_edit = QLineEdit()
+            self.razon_social_edit.setPlaceholderText("Ingrese razón social...")
+            self.razon_social_edit.setStyleSheet(input_style)
+            form_layout.addRow(self.razon_social_label, self.razon_social_edit)
+            
+            # Tipo de Retención
+            retencion_label = QLabel("Tipo de Retención:")
+            retencion_label.setStyleSheet(label_style)
+            self.retencion_combo = QComboBox()
+            self.retencion_combo.setPlaceholderText("Seleccione una retención")
+            self.retencion_combo.currentIndexChanged.connect(self.on_retencion_changed)
+            self.retencion_combo.setStyleSheet(input_style)
+            form_layout.addRow(retencion_label, self.retencion_combo)
+            
+            # Monto
+            monto_label = QLabel("Monto:")
+            monto_label.setStyleSheet(label_style)
+            self.monto_spin = QDoubleSpinBox()
+            self.monto_spin.setRange(0, 999999.99)
+            self.monto_spin.setSingleStep(100)
+            self.monto_spin.setPrefix("$ ")
+            self.monto_spin.setDecimals(2)
+            self.monto_spin.setStyleSheet(input_style)
+            form_layout.addRow(monto_label, self.monto_spin)
+            
+            # Descripción/Notas
+            notas_label = QLabel("Descripción/Notas:")
+            notas_label.setStyleSheet(label_style)
+            self.notas_edit = QLineEdit()
+            self.notas_edit.setPlaceholderText("Ingrese detalles adicionales...")
+            self.notas_edit.setStyleSheet(input_style)
+            form_layout.addRow(notas_label, self.notas_edit)
+            
+            # Botón de registro mejorado
+            self.registrar_btn = QPushButton("Registrar Cobranza")
+            self.registrar_btn.clicked.connect(self.on_registrar_cobranza)
+            button_style = """
+                QPushButton {
+                    background-color: #3498db;
+                    color: white;
+                    font-weight: bold;
+                    border: none;
+                    border-radius: 5px;
+                    padding: 12px 25px;
+                    min-width: 180px;
+                    font-size: 14px;
+                }
+                QPushButton:hover {
+                    background-color: #2980b9;
+                }
+                QPushButton:pressed {
+                    background-color: #1c6ea4;
+                }
+            """
+            self.registrar_btn.setStyleSheet(button_style)
+            
+            layout.addLayout(form_layout)
+            
+            # Centrar botón y espacio adicional
+            button_layout = QHBoxLayout()
+            button_layout.addStretch()
+            button_layout.addWidget(self.registrar_btn)
+            button_layout.addStretch()
+            
+            layout.addSpacing(15)  # Espacio antes del botón
+            layout.addLayout(button_layout)
+            layout.addStretch()
+            
+            # Inicializar estado de campos de factura (ocultos al inicio)
+            self.factura_label.setVisible(False)
+            self.factura_edit.setVisible(False)
+            self.razon_social_label.setVisible(False)
+            self.razon_social_edit.setVisible(False)
+            
     def setup_tab_listar(self):
         layout = QVBoxLayout(self.tab_listar)
         
@@ -540,7 +638,7 @@ class CobranzasView(QWidget):
             print(f"Error en refresh_data: {str(e)}")
 
     def cargar_usuarios(self):
-        """Carga la lista de usuarios desde la API"""
+        """Carga la lista de usuarios desde la API y los ordena alfabéticamente"""
         try:
             headers = session.get_headers()
             url = f"{session.api_url}/usuarios"
@@ -549,8 +647,12 @@ class CobranzasView(QWidget):
             response = requests.get(url, headers=headers)
             
             if response.status_code == 200:
+                # Obtener usuarios de la API
                 self.usuarios = response.json()
                 print(f"Usuarios cargados: {len(self.usuarios)}")
+                
+                # Ordenar usuarios alfabéticamente por nombre
+                self.usuarios.sort(key=lambda x: x['nombre'].lower())
                 
                 # Actualizar AMBOS combo box de árbitros
                 # 1. Combo de la pestaña "Registrar Cobranza"
@@ -564,7 +666,7 @@ class CobranzasView(QWidget):
                     # Agregar al combo de buscar
                     self.arbitro_combo_buscar.addItem(f"{usuario['nombre']}", usuario['id'])
                 
-                print("Combos de árbitros actualizados correctamente")
+                print("Combos de árbitros actualizados correctamente (ordenados alfabéticamente)")
             elif response.status_code == 401:
                 print("Error de autenticación al cargar usuarios")
             else:
@@ -616,9 +718,23 @@ class CobranzasView(QWidget):
             QMessageBox.warning(self, "Error", "El monto debe ser mayor a cero")
             return
         
+        # Determinar tipo de documento seleccionado
+        tipo_documento = "recibo"
+        if self.rb_factura.isChecked():
+            tipo_documento = "factura"
+            # Validar campos adicionales para facturas
+            if not self.factura_edit.text().strip():
+                QMessageBox.warning(self, "Error", "Por favor ingrese el número de factura")
+                return
+            if not self.razon_social_edit.text().strip():
+                QMessageBox.warning(self, "Error", "Por favor ingrese la razón social")
+                return
+        
         # Obtener datos
         usuario_id = self.arbitro_combo_registrar.currentData()
         fecha = self.fecha_edit.date().toString("yyyy-MM-dd")
+        numero_factura = self.factura_edit.text().strip() if self.rb_factura.isChecked() else ""
+        razon_social = self.razon_social_edit.text().strip() if self.rb_factura.isChecked() else ""
         monto = self.monto_spin.value()
         notas = self.notas_edit.text().strip()
         
@@ -626,8 +742,14 @@ class CobranzasView(QWidget):
         cobranza_data = {
             "usuario_id": usuario_id,
             "fecha": fecha,
-            "monto": monto
+            "monto": monto,
+            "tipo_documento": tipo_documento
         }
+        
+        # Agregar campos adicionales para facturas
+        if tipo_documento == "factura":
+            cobranza_data["numero_factura"] = numero_factura
+            cobranza_data["razon_social"] = razon_social
         
         # Solo agregar retencion_id si se ha seleccionado una retención
         if self.retencion_combo.currentIndex() >= 0:
@@ -696,6 +818,13 @@ class CobranzasView(QWidget):
                 # Limpiar formulario
                 self.arbitro_combo_registrar.setCurrentIndex(-1)
                 self.fecha_edit.setDate(QDate.currentDate())
+                self.rb_recibo.setChecked(True)  # Restablecer a recibo
+                self.factura_edit.clear()
+                self.razon_social_edit.clear()
+                self.factura_label.setVisible(False)
+                self.factura_edit.setVisible(False)
+                self.razon_social_label.setVisible(False)
+                self.razon_social_edit.setVisible(False)
                 self.retencion_combo.setCurrentIndex(-1)
                 self.monto_spin.setValue(0)
                 self.notas_edit.clear()
@@ -791,8 +920,7 @@ class CobranzasView(QWidget):
                 ]
 
                 # Limpiar tabla
-                self.cobranzas_table.setColumnCount(7)
-                self.cobranzas_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Retención","Monto", "Descripción"])
+                self.cobranzas_table.setRowCount(0)
 
                 # Llenar tabla con datos
                 total_cobranzas = 0
@@ -831,24 +959,38 @@ class CobranzasView(QWidget):
                     
                     self.cobranzas_table.setItem(row, 2, QTableWidgetItem(arbitro))
                     
+                    # Tipo de documento
+                    tipo_doc = "Recibo"
+                    if cobranza.get("tipo_documento") == "factura":
+                        tipo_doc = "Factura/Recibo"
+                    self.cobranzas_table.setItem(row, 3, QTableWidgetItem(tipo_doc))
+                    
+                    # Número de Factura
+                    numero_factura = cobranza.get("numero_factura", "")
+                    self.cobranzas_table.setItem(row, 4, QTableWidgetItem(numero_factura))
+                    
+                    # Razón Social
+                    razon_social = cobranza.get("razon_social", "")
+                    self.cobranzas_table.setItem(row, 5, QTableWidgetItem(razon_social))
+                    
                     # Retención
                     retencion_data = cobranza.get("retencion") or {}
                     retencion = retencion_data.get("nombre", "")
-                    self.cobranzas_table.setItem(row, 3, QTableWidgetItem(retencion))
+                    self.cobranzas_table.setItem(row, 6, QTableWidgetItem(retencion))
                     
                     # Tipo de Retención
                     tipo_retencion = retencion_data.get("tipo", "")  # Obtener el tipo de retención
-                    self.cobranzas_table.setItem(row, 4, QTableWidgetItem(tipo_retencion))
+                    self.cobranzas_table.setItem(row, 7, QTableWidgetItem(tipo_retencion))
                     
                     # Monto
                     monto = cobranza.get("monto", 0)
                     monto_item = QTableWidgetItem(f"${monto:,.2f}")
                     monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    self.cobranzas_table.setItem(row, 5, monto_item)
+                    self.cobranzas_table.setItem(row, 8, monto_item)
                     
                     # Descripción
                     descripcion = cobranza.get("descripcion", "")
-                    self.cobranzas_table.setItem(row, 6, QTableWidgetItem(descripcion))
+                    self.cobranzas_table.setItem(row, 9, QTableWidgetItem(descripcion))
                     
                     # Acumular total
                     total_cobranzas += monto
@@ -1083,162 +1225,179 @@ class CobranzasView(QWidget):
 
 
     def mostrar_detalles_cobranza(self):
-                """Muestra los detalles de la cobranza actual en el panel de detalles"""
-                # Verificar que tenemos una cobranza seleccionada
-                if not hasattr(self, 'cobranza_actual'):
-                    return
-                
-                # Actualizar el título
-                self.resultado_title.setText("Detalles de la Cobranza")
-                self.resultado_title.setStyleSheet("color: #2c3e50; font-weight: bold;")
-                self.resultado_title.setVisible(True)
-                self.resultado_container.setVisible(True)
-                
-                # Formatear fecha
-                fecha_str = self.cobranza_actual.get('fecha', '')
-                fecha = datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y') if fecha_str else 'No disponible'
-                
-                # Obtener información del árbitro
-                arbitro_nombre = "No disponible"
-                if isinstance(self.cobranza_actual.get('usuario'), dict):
-                    usuario_obj = self.cobranza_actual.get('usuario', {})
-                    if 'nombre' in usuario_obj:
-                        arbitro_nombre = usuario_obj.get('nombre', 'No disponible')
-                
-                # Obtener información de retención
-                retencion_nombre = "No disponible"
-                retencion = self.cobranza_actual.get('retencion', {})
-                if isinstance(retencion, dict):
-                    retencion_nombre = retencion.get('nombre', 'No disponible')
-                
-                # Obtener monto
-                monto = self.cobranza_actual.get('monto', 0)
-                
-                # Obtener descripción
-                descripcion = self.cobranza_actual.get('descripcion', '')
-                if not descripcion:
-                    descripcion = "Sin descripción"
-                
-                # Aplicar estilos
-                estilo_titulo = "font-weight: bold; color: #2c3e50;"
-                estilo_valor = "color: #3498db;"
-                
-                # Mostrar la información con estilos
-                self.id_label.setText(f"<span style='{estilo_titulo}'>ID de la Cobranza:</span> <span style='{estilo_valor}'>{self.cobranza_actual.get('id')}</span>")
-                self.fecha_label.setText(f"<span style='{estilo_titulo}'>Fecha:</span> <span style='{estilo_valor}'>{fecha}</span>")
-                self.arbitro_label.setText(f"<span style='{estilo_titulo}'>Árbitro:</span> <span style='{estilo_valor}'>{arbitro_nombre}</span>")
-                self.retencion_label.setText(f"<span style='{estilo_titulo}'>Retención:</span> <span style='{estilo_valor}'>{retencion_nombre}</span>")
-                self.monto_label.setText(f"<span style='{estilo_titulo}'>Monto:</span> <span style='{estilo_valor}'>${monto:,.2f}</span>")
-                self.descripcion_label.setText(f"<span style='{estilo_titulo}'>Descripción:</span> <span style='{estilo_valor}'>{descripcion}</span>")
-    def on_editar_cobranza(self):
-        """Abre un diálogo para editar la cobranza seleccionada"""
+        """Muestra los detalles de la cobranza actual en el panel de detalles"""
+        # Verificar que tenemos una cobranza seleccionada
         if not hasattr(self, 'cobranza_actual'):
-            QMessageBox.warning(self, "Error", "Primero seleccione una cobranza")
             return
         
-        try:
-            # Obtener datos actualizados directamente de la API
-            headers = session.get_headers()
-            url = f"{session.api_url}/cobranzas/{self.cobranza_actual['id']}"
-            response = requests.get(url, headers=headers)
+        # Actualizar el título
+        self.resultado_title.setText("Detalles de la Cobranza")
+        self.resultado_title.setStyleSheet("color: #2c3e50; font-weight: bold;")
+        self.resultado_title.setVisible(True)
+        self.resultado_container.setVisible(True)
+        
+        # Formatear fecha
+        fecha_str = self.cobranza_actual.get('fecha', '')
+        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y') if fecha_str else 'No disponible'
+        
+        # Obtener información del árbitro
+        arbitro_nombre = "No disponible"
+        if isinstance(self.cobranza_actual.get('usuario'), dict):
+            usuario_obj = self.cobranza_actual.get('usuario', {})
+            if 'nombre' in usuario_obj:
+                arbitro_nombre = usuario_obj.get('nombre', 'No disponible')
+        
+        # Obtener información de retención
+        retencion_nombre = "No disponible"
+        retencion = self.cobranza_actual.get('retencion', {})
+        if isinstance(retencion, dict):
+            retencion_nombre = retencion.get('nombre', 'No disponible')
+        
+        # Obtener tipo de documento, número de factura y razón social
+        tipo_doc = "Recibo"
+        if self.cobranza_actual.get('tipo_documento') == 'factura':
+            tipo_doc = "Factura/Recibo"
+        
+        numero_factura = self.cobranza_actual.get('numero_factura', 'No disponible')
+        razon_social = self.cobranza_actual.get('razon_social', 'No disponible')
+        
+        # Obtener monto
+        monto = self.cobranza_actual.get('monto', 0)
+        
+        # Obtener descripción
+        descripcion = self.cobranza_actual.get('descripcion', '')
+        if not descripcion:
+            descripcion = "Sin descripción"
+        
+        # Aplicar estilos
+        estilo_titulo = "font-weight: bold; color: #2c3e50;"
+        estilo_valor = "color: #3498db;"
+        
+        # Mostrar la información con estilos
+        self.id_label.setText(f"<span style='{estilo_titulo}'>ID de la Cobranza:</span> <span style='{estilo_valor}'>{self.cobranza_actual.get('id')}</span>")
+        self.fecha_label.setText(f"<span style='{estilo_titulo}'>Fecha:</span> <span style='{estilo_valor}'>{fecha}</span>")
+        self.factura_label.setText(f"<span style='{estilo_titulo}'>Número de Factura:</span> <span style='{estilo_valor}'>{numero_factura}</span>")
+        self.monto_label.setText(f"<span style='{estilo_titulo}'>Monto:</span> <span style='{estilo_valor}'>${monto:,.2f}</span>")
+        self.arbitro_label.setText(f"<span style='{estilo_titulo}'>Árbitro:</span> <span style='{estilo_valor}'>{arbitro_nombre}</span>")
+        self.razon_social_label.setText(f"<span style='{estilo_titulo}'>Razón Social:</span> <span style='{estilo_valor}'>{razon_social}</span>")
+        self.retencion_label.setText(f"<span style='{estilo_titulo}'>Retención:</span> <span style='{estilo_valor}'>{retencion_nombre}</span>")
+        self.descripcion_label.setText(f"<span style='{estilo_titulo}'>Descripción:</span> <span style='{estilo_valor}'>{descripcion}</span>")
+        
+        # Ajustar visibilidad de campos según tipo de documento
+        is_factura = self.cobranza_actual.get('tipo_documento') == 'factura'
+        self.factura_label.setVisible(is_factura)
+        self.razon_social_label.setVisible(is_factura)
+
+    def on_editar_cobranza(self):
+            """Abre un diálogo para editar la cobranza seleccionada"""
+            if not hasattr(self, 'cobranza_actual'):
+                QMessageBox.warning(self, "Error", "Primero seleccione una cobranza")
+                return
             
-            if response.status_code == 200:
-                # Actualizar con datos frescos
-                self.cobranza_actual = response.json()
-        except Exception as e:
-            print(f"Error al obtener datos actualizados: {str(e)}")
+            try:
+                # Obtener datos actualizados directamente de la API
+                headers = session.get_headers()
+                url = f"{session.api_url}/cobranzas/{self.cobranza_actual['id']}"
+                response = requests.get(url, headers=headers)
+                
+                if response.status_code == 200:
+                    # Actualizar con datos frescos
+                    self.cobranza_actual = response.json()
+            except Exception as e:
+                print(f"Error al obtener datos actualizados: {str(e)}")
+                
+            # Abrir diálogo de edición con los datos actuales
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Editar Cobranza")
+            dialog.setStyleSheet("""
+                QDialog {
+                    background-color: #f8f9fa;
+                }
+                QLabel {
+                    font-weight: bold;
+                    color: #2c3e50;
+                }
+                QDateEdit, QDoubleSpinBox, QLineEdit, QRadioButton {
+                    padding: 8px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    background-color: white;
+                }
+                QPushButton {
+                    padding: 8px 15px;
+                    border-radius: 4px;
+                    font-weight: bold;
+                }
+                QPushButton#save {
+                    background-color: #4e73df;
+                    color: white;
+                }
+                QPushButton#save:hover {
+                    background-color: #2e59d9;
+                }
+                QPushButton#cancel {
+                    background-color: #f8f9fa;
+                    border: 1px solid #ddd;
+                    color: #2c3e50;
+                }
+                QPushButton#cancel:hover {
+                    background-color: #e9ecef;
+                }
+            """)
+            layout = QFormLayout(dialog)
+            layout.setSpacing(15)
+            layout.setContentsMargins(20, 20, 20, 20)
             
-        # Abrir diálogo de edición con los datos actuales
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Editar Cobranza")
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #f8f9fa;
-            }
-            QLabel {
-                font-weight: bold;
-                color: #2c3e50;
-            }
-            QDateEdit, QDoubleSpinBox, QLineEdit {
-                padding: 8px;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                background-color: white;
-            }
-            QPushButton {
-                padding: 8px 15px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton#save {
-                background-color: #4e73df;
-                color: white;
-            }
-            QPushButton#save:hover {
-                background-color: #2e59d9;
-            }
-            QPushButton#cancel {
-                background-color: #f8f9fa;
-                border: 1px solid #ddd;
-                color: #2c3e50;
-            }
-            QPushButton#cancel:hover {
-                background-color: #e9ecef;
-            }
-        """)
-        layout = QFormLayout(dialog)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
-        
-        # Campos editables
-        fecha_edit = QDateEdit()
-        fecha_edit.setDate(QDate.fromString(self.cobranza_actual['fecha'], "yyyy-MM-dd"))
-        fecha_edit.setCalendarPopup(True)
-        
-        # Asegurarse de que el monto sea un número flotante
-        monto = float(self.cobranza_actual.get('monto', 0))
-        print(f"Monto obtenido de la API: {monto}")
-        
-        monto_spin = QDoubleSpinBox()
-        monto_spin.setValue(monto)
-        monto_spin.setRange(0, 999999.99)
-        monto_spin.setSingleStep(100)
-        monto_spin.setPrefix("$ ")
-        monto_spin.setDecimals(2)
-        
-        descripcion_edit = QLineEdit()
-        descripcion_edit.setText(self.cobranza_actual.get('descripcion', ''))
-        
-        layout.addRow("Fecha:", fecha_edit)
-        layout.addRow("Monto:", monto_spin)
-        layout.addRow("Descripción:", descripcion_edit)
-        
-        # Botones
-        btn_layout = QHBoxLayout()
-        guardar_btn = QPushButton("Guardar")
-        guardar_btn.setObjectName("save")
-        cancelar_btn = QPushButton("Cancelar")
-        cancelar_btn.setObjectName("cancel")
-        
-        btn_layout.addWidget(cancelar_btn)
-        btn_layout.addWidget(guardar_btn)
-        
-        layout.addRow("", btn_layout)
-        
-        guardar_btn.clicked.connect(lambda: self.guardar_edicion_cobranza(
-            dialog, 
-            self.cobranza_actual['id'], 
-            fecha_edit.date().toString("yyyy-MM-dd"),
-            monto_spin.value(),
-            descripcion_edit.text()
-        ))
-        cancelar_btn.clicked.connect(dialog.reject)
-        
-        dialog.setMinimumWidth(400)
-        dialog.exec()
+            # Tipo de documento
+            tipo_doc_label = QLabel("Tipo de Documento:")
+            tipo_doc_container = QWidget()
+            tipo_doc_layout = QHBoxLayout(tipo_doc_container)
+            tipo_doc_layout.setContentsMargins(0, 0, 0, 0)
+            
+            rb_recibo = QRadioButton("Recibo")
+            rb_factura = QRadioButton("Factura/Recibo")
+            
+            # Establecer selección según el valor actual
+            es_factura = self.cobranza_actual.get('tipo_documento') == 'factura'
+            rb_factura.setChecked(es_factura)
+            rb_recibo.setChecked(not es_factura)
+            
+            tipo_doc_group = QButtonGroup()
+            tipo_doc_group.addButton(rb_recibo)
+            tipo_doc_group.addButton(rb_factura)
+            
+            tipo_doc_layout.addWidget(rb_recibo)
+            tipo_doc_layout.addWidget(rb_factura)
+            tipo_doc_layout.addStretch()
+            
+            layout.addRow(tipo_doc_label, tipo_doc_container)
+            
+            # Campos editables
+            fecha_edit = QDateEdit()
+            fecha_edit.setDate(QDate.fromString(self.cobranza_actual['fecha'], "yyyy-MM-dd"))
+            fecha_edit.setCalendarPopup(True)
+            
+            # Campos para número de factura y razón social
+            factura_edit = QLineEdit()
+            factura_edit.setText(self.cobranza_actual.get('numero_factura', ''))
+            
+            razon_social_edit = QLineEdit()
+            razon_social_edit.setText(self.cobranza_actual.get('razon_social', ''))
+            
+            # Mostrar/ocultar campos según tipo de documento
+            factura_label = QLabel("Número de Factura:")
+            razon_social_label = QLabel("Razón Social:")
+            
+            factura_label.setVisible(es_factura)
+            factura_edit.setVisible(es_factura)
+            razon_social_label.setVisible(es_factura)
+            razon_social_edit.setVisible(es_factura)
+            
+                
+    # Conectar evento
 
 
-    def guardar_edicion_cobranza(self, dialog, cobranza_id, fecha, monto, descripcion):
+    def guardar_edicion_cobranza(self, dialog, cobranza_id, fecha, tipo_documento, numero_factura, razon_social, monto, descripcion):
         """Guarda los cambios de la cobranza editada"""
         try:
             headers = session.get_headers()
@@ -1249,8 +1408,25 @@ class CobranzasView(QWidget):
             datos_actualizacion = {
                 "fecha": fecha,
                 "monto": monto,
-                "descripcion": descripcion
+                "descripcion": descripcion,
+                "tipo_documento": tipo_documento
             }
+            
+            # Agregar campos adicionales para facturas
+            if tipo_documento == "factura":
+                if not numero_factura:
+                    QMessageBox.warning(self, "Error", "Por favor ingrese el número de factura")
+                    return False
+                if not razon_social:
+                    QMessageBox.warning(self, "Error", "Por favor ingrese la razón social")
+                    return False
+                    
+                datos_actualizacion["numero_factura"] = numero_factura
+                datos_actualizacion["razon_social"] = razon_social
+            
+            # Mantener el ID de retención actual
+            if hasattr(self, 'cobranza_actual') and 'retencion_id' in self.cobranza_actual and self.cobranza_actual['retencion_id'] is not None:
+                datos_actualizacion["retencion_id"] = self.cobranza_actual['retencion_id']
             
             # Obtener monto anterior para saber si hubo cambio
             monto_anterior = 0
@@ -1288,10 +1464,14 @@ class CobranzasView(QWidget):
                 from PySide6.QtCore import QEvent, QCoreApplication
                 event = QEvent(QEvent.Type(QEvent.User + 1))  # Evento personalizado
                 QCoreApplication.postEvent(self.parent(), event)
+                
+                return True
             else:
                 QMessageBox.warning(self, "Error", f"No se pudo actualizar. Código: {response.status_code}")
+                return False
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al actualizar: {str(e)}")
+            return False
 
 
     def on_eliminar_cobranza(self):

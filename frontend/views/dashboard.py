@@ -477,41 +477,50 @@ class DashboardView(QWidget):
                         usuario_accion = usuario_obj.get('nombre', 'Sin registro') if usuario_obj else 'Sin registro'
                         self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
                         
+                        # MODIFICADO: Usar recibo_factura si está disponible
                         # Número de comprobante
-                        num_comprobante = ""
-                        
-                        # Verificar si es un pago de cuota societaria basándose en el detalle
-                        detalle = partida_item.get('detalle', '').lower()
-                        if tipo_movimiento == "INGRESO" and ('cuota' in detalle):
-                            # Contador para cuotas societarias
-                            # Obtener la posición de esta cuota en la lista de cuotas encontradas
-                            if partida_item.get('id') in cuotas_societarias:
-                                # Encontrar la posición de este ID en la lista ordenada de cuotas
-                                posicion = cuotas_societarias.index(partida_item.get('id')) + 1
-                                # Usar el contador como número (comenzando desde el final para que sea 1, 2, 3...)
-                                num_recibo = str(len(cuotas_societarias) - posicion + 1)
-                                num_comprobante = f"C.S.-{num_recibo}"
-                            else:
-                                # Si por alguna razón no está en la lista, usar una numeración genérica
-                                num_comprobante = f"C.S.-{partida_item.get('id')}"
-                        elif partida_item.get('cobranza_id'):
-                            # Otros ingresos asociados a cobranzas
-                            num_comprobante = f"REC-{partida_item.get('cobranza_id')}"
-                        elif partida_item.get('pago_id'):
-                            # Pagos
-                            num_comprobante = f"O.P-{partida_item.get('pago_id')}"
-                        elif tipo_movimiento == "INGRESO":
-                            # Otros ingresos sin ID de cobranza
-                            num_comprobante = f"REC-{partida_item.get('id', '')}"
-                        elif tipo_movimiento == "EGRESO":
-                            # Egresos sin ID de pago
-                            num_comprobante = f"O.P-{partida_item.get('id', '')}"
-                        elif tipo_movimiento == "ANULACIÓN":
-                            # Anulaciones
-                            num_comprobante = f"ANUL-{partida_item.get('id', '')}"
+                        if partida_item.get('recibo_factura'):
+                            # Si hay un número de comprobante ya asignado, usarlo
+                            num_comprobante = partida_item.get('recibo_factura')
                         else:
-                            # Valor por defecto
-                            num_comprobante = f"O.P-{partida_item.get('id', '')}"
+                            # Si no hay, usar la lógica anterior como respaldo
+                            if tipo_movimiento == "INGRESO" and ('cuota' in partida_item.get('detalle', '').lower()):
+                                # Contador para cuotas societarias
+                                if partida_item.get('id') in cuotas_societarias:
+                                    posicion = cuotas_societarias.index(partida_item.get('id')) + 1
+                                    num_recibo = str(len(cuotas_societarias) - posicion + 1)
+                                    num_comprobante = f"C.S.-{num_recibo}"
+                                else:
+                                    num_comprobante = f"C.S.-{partida_item.get('id')}"
+                            elif partida_item.get('cobranza_id'):
+                                # Verificar si la cobranza está relacionada con una factura
+                                cobranza_id = partida_item.get('cobranza_id')
+                                # Intentar determinar si es una factura basándose en el detalle
+                                detalle = partida_item.get('detalle', '').lower()
+                                if 'factura' in detalle:
+                                    num_comprobante = f"FAC/REC.A -{cobranza_id}"
+                                else:
+                                    num_comprobante = f"REC-{cobranza_id}"
+                            elif partida_item.get('pago_id'):
+                                # Verificar si el pago está relacionado con una factura
+                                pago_id = partida_item.get('pago_id')
+                                if pago_id:
+                                    # Intentar determinar si es una factura basándose en el detalle
+                                    detalle = partida_item.get('detalle', '').lower()
+                                    if 'factura' in detalle:
+                                        num_comprobante = f"FAC/REC.A - {pago_id}"
+                                    else:
+                                        num_comprobante = f"O.P-{pago_id}"
+                                else:
+                                    num_comprobante = f"O.P-{partida_item.get('id')}"
+                            elif tipo_movimiento == "INGRESO":
+                                num_comprobante = f"REC-{partida_item.get('id', '')}"
+                            elif tipo_movimiento == "EGRESO":
+                                num_comprobante = f"O.P-{partida_item.get('id', '')}"
+                            elif tipo_movimiento == "ANULACIÓN":
+                                num_comprobante = f"ANUL-{partida_item.get('id', '')}"
+                            else:
+                                num_comprobante = f"O.P-{partida_item.get('id', '')}"
                         
                         comprobante_item = QTableWidgetItem(num_comprobante)
                         comprobante_item.setTextAlignment(Qt.AlignCenter)

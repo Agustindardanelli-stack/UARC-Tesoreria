@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget, 
     QTableWidgetItem, QSplitter, QFrame, QTabWidget, QSpacerItem, QSizePolicy,
     QFormLayout, QLineEdit, QDateEdit, QComboBox, QMessageBox, QSpinBox, QDoubleSpinBox,
-    QApplication , QDialog
+    QApplication , QDialog , QRadioButton, QButtonGroup
 )
 from PySide6.QtGui import QFont, QColor, QPalette, QIcon, QPixmap
 from PySide6.QtCore import Qt, Signal, QDate, QEvent, QCoreApplication
@@ -107,25 +107,81 @@ class PagosView(QWidget):
         
         # Formulario para registrar pago
         form_layout = QFormLayout()
-        form_layout.setSpacing(10)
-        form_layout.setContentsMargins(20, 20, 20, 20)
+        form_layout.setSpacing(15)  # Aumentado el espaciado para mejor legibilidad
+        form_layout.setContentsMargins(25, 25, 25, 25)  # Aumentado los márgenes
         
-        # Estilos para etiquetas
-        label_style = "font-weight: bold; color: #2c3e50;"
+        # Estilos mejorados para etiquetas
+        label_style = """
+            font-weight: 600; 
+            color: #2c3e50;
+            font-size: 14px;
+            padding: 4px 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        """
         
-        # Estilos para widgets de entrada
+        # Estilos mejorados para widgets de entrada
         input_style = """
             QLineEdit, QDateEdit, QComboBox, QDoubleSpinBox {
-                padding: 8px;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                background-color: #f8f9fa;
+                padding: 10px;
+                border: 1px solid #bdc3c7;
+                border-radius: 5px;
+                background-color: #f9f9f9;
+                font-size: 13px;
+                min-height: 24px;
             }
             QLineEdit:focus, QDateEdit:focus, QComboBox:focus, QDoubleSpinBox:focus {
-                border: 1px solid #4e73df;
+                border: 1px solid #3498db;
                 background-color: #fff;
             }
         """
+        
+        # Selector de tipo de documento
+        tipo_documento_label = QLabel("Tipo de Documento:")
+        tipo_documento_label.setStyleSheet(label_style)
+        
+        # Contenedor para los radio buttons
+        tipo_doc_container = QWidget()
+        tipo_doc_layout = QHBoxLayout(tipo_doc_container)
+        tipo_doc_layout.setContentsMargins(0, 0, 0, 0)
+        tipo_doc_layout.setSpacing(25)  # Más espacio entre botones
+        
+        # Radio buttons para tipo de documento
+        self.rb_orden_pago = QRadioButton("Orden de Pago")
+        self.rb_factura = QRadioButton("Factura/Recibo")
+        self.rb_orden_pago.setChecked(True)  # Por defecto, orden de pago
+        
+        # Agrupar los radio buttons
+        self.tipo_doc_group = QButtonGroup()
+        self.tipo_doc_group.addButton(self.rb_orden_pago, 1)
+        self.tipo_doc_group.addButton(self.rb_factura, 2)
+        
+        # Función para manejar el cambio de tipo de documento
+        # 
+        
+        # Conectar al evento
+        self.tipo_doc_group.buttonClicked.connect(self.on_tipo_documento_changed)
+        
+        # Estilo mejorado para los radio buttons
+        radio_style = """
+            QRadioButton {
+                font-size: 14px;
+                color: #2c3e50;
+                font-weight: 500;
+                padding: 5px;
+            }
+            QRadioButton::indicator {
+                width: 20px;
+                height: 20px;
+            }
+        """
+        self.rb_orden_pago.setStyleSheet(radio_style)
+        self.rb_factura.setStyleSheet(radio_style)
+        
+        tipo_doc_layout.addWidget(self.rb_orden_pago)
+        tipo_doc_layout.addWidget(self.rb_factura)
+        tipo_doc_layout.addStretch()
+        
+        form_layout.addRow(tipo_documento_label, tipo_doc_container)
         
         # Selección de árbitro
         arbitro_label = QLabel("Pagador/Cobrador:")
@@ -143,6 +199,22 @@ class PagosView(QWidget):
         self.fecha_edit.setCalendarPopup(True)
         self.fecha_edit.setStyleSheet(input_style)
         form_layout.addRow(fecha_label, self.fecha_edit)
+        
+        # Número de Factura/Recibo (oculto por defecto)
+        self.factura_label = QLabel("Número de Factura/Recibo:")
+        self.factura_label.setStyleSheet(label_style)
+        self.factura_edit = QLineEdit()
+        self.factura_edit.setPlaceholderText("Ingrese número de factura...")
+        self.factura_edit.setStyleSheet(input_style)
+        form_layout.addRow(self.factura_label, self.factura_edit)
+        
+        # Razón Social (oculto por defecto)
+        self.razon_social_label = QLabel("Razón Social:")
+        self.razon_social_label.setStyleSheet(label_style)
+        self.razon_social_edit = QLineEdit()
+        self.razon_social_edit.setPlaceholderText("Ingrese razón social...")
+        self.razon_social_edit.setStyleSheet(input_style)
+        form_layout.addRow(self.razon_social_label, self.razon_social_edit)
         
         # Monto
         monto_label = QLabel("Monto:")
@@ -168,19 +240,20 @@ class PagosView(QWidget):
         self.registrar_btn.clicked.connect(self.on_registrar_pago)
         self.registrar_btn.setStyleSheet("""
             QPushButton {
-                background-color: #4e73df;
+                background-color: #3498db;
                 color: white;
                 font-weight: bold;
                 border: none;
-                border-radius: 4px;
-                padding: 10px 20px;
-                min-width: 150px;
+                border-radius: 5px;
+                padding: 12px 25px;
+                min-width: 180px;
+                font-size: 14px;
             }
             QPushButton:hover {
-                background-color: #2e59d9;
+                background-color: #2980b9;
             }
             QPushButton:pressed {
-                background-color: #1c45bc;
+                background-color: #1c6ea4;
             }
         """)
         
@@ -192,8 +265,15 @@ class PagosView(QWidget):
         button_layout.addWidget(self.registrar_btn)
         button_layout.addStretch()
         
+        layout.addSpacing(15)  # Espacio antes del botón
         layout.addLayout(button_layout)
         layout.addStretch()
+        
+        # Inicializar estado de campos de factura (ocultos al inicio)
+        self.factura_label.setVisible(False)
+        self.factura_edit.setVisible(False)
+        self.razon_social_label.setVisible(False)
+        self.razon_social_edit.setVisible(False)
 
     def setup_tab_listar(self):
         layout = QVBoxLayout(self.tab_listar)
@@ -307,6 +387,21 @@ class PagosView(QWidget):
 
 
 
+    def on_tipo_documento_changed(self, button):
+        """Maneja el cambio en el tipo de documento seleccionado"""
+        # Definir is_factura dentro de la función
+        is_factura = button == self.rb_factura
+        
+        self.factura_label.setVisible(is_factura)
+        self.factura_edit.setVisible(is_factura)
+        self.razon_social_label.setVisible(is_factura)
+        self.razon_social_edit.setVisible(is_factura)
+        
+        # Cambiar el texto del botón según el tipo seleccionado
+        if is_factura:
+            self.registrar_btn.setText("Registrar Factura")
+        else:
+            self.registrar_btn.setText("Registrar Pago")
 
     def on_buscar_pagos_usuario(self):
         """Busca todos los pagos para el usuario seleccionado y los muestra en una tabla"""
@@ -643,16 +738,22 @@ class PagosView(QWidget):
         col1_layout.setSpacing(15)
         self.id_label = QLabel()
         self.fecha_label = QLabel()
+        self.tipo_doc_label = QLabel()  # Nuevo campo
+        self.factura_num_label = QLabel()  # Nuevo campo
         self.monto_label = QLabel()
         
         # Aplicar estilos a los labels
         detail_style = "font-size: 14px; margin-bottom: 5px;"
         self.id_label.setStyleSheet(detail_style)
         self.fecha_label.setStyleSheet(detail_style)
+        self.tipo_doc_label.setStyleSheet(detail_style)  # Estilo para nuevo campo
+        self.factura_num_label.setStyleSheet(detail_style)  # Estilo para nuevo campo
         self.monto_label.setStyleSheet(detail_style)
         
         col1_layout.addWidget(self.id_label)
         col1_layout.addWidget(self.fecha_label)
+        col1_layout.addWidget(self.tipo_doc_label)  # Agregar al layout
+        col1_layout.addWidget(self.factura_num_label)  # Agregar al layout
         col1_layout.addWidget(self.monto_label)
         col1_layout.addStretch()
         
@@ -660,14 +761,17 @@ class PagosView(QWidget):
         col2_layout = QVBoxLayout()
         col2_layout.setSpacing(15)
         self.arbitro_label = QLabel()
+        self.razon_social_label_display = QLabel()  # Nuevo campo
         self.descripcion_label = QLabel()
         
         # Aplicar estilos
         self.arbitro_label.setStyleSheet(detail_style)
+        self.razon_social_label_display.setStyleSheet(detail_style)  # Estilo para nuevo campo
         self.descripcion_label.setStyleSheet(detail_style)
         self.descripcion_label.setWordWrap(True)
         
         col2_layout.addWidget(self.arbitro_label)
+        col2_layout.addWidget(self.razon_social_label_display)  # Agregar al layout
         col2_layout.addWidget(self.descripcion_label)
         col2_layout.addStretch()
         
@@ -746,8 +850,6 @@ class PagosView(QWidget):
         self.resultado_title.setStyleSheet("color: #2c3e50; font-weight: bold;")
         self.resultado_title.setVisible(True)
         self.resultado_container.setVisible(True)
-        print(f"fecha_str: {self.pago_actual.get('fecha', '')}")
-        print(f"monto: {self.pago_actual.get('monto', 0)}")
         
         # Formatear fecha
         fecha_str = self.pago_actual.get('fecha', '')
@@ -759,6 +861,14 @@ class PagosView(QWidget):
             usuario_obj = self.pago_actual.get('usuario', {})
             if 'nombre' in usuario_obj:
                 arbitro_nombre = usuario_obj.get('nombre', 'No disponible')
+        
+        # Obtener tipo de documento y número de factura
+        tipo_doc = "Orden de Pago"
+        if self.pago_actual.get('tipo_documento') == 'factura':
+            tipo_doc = "Factura/Recibo"
+        
+        numero_factura = self.pago_actual.get('numero_factura', 'No disponible')
+        razon_social = self.pago_actual.get('razon_social', 'No disponible')
         
         # Obtener monto
         monto = self.pago_actual.get('monto', 0)
@@ -775,12 +885,20 @@ class PagosView(QWidget):
         # Mostrar la información con estilos
         self.id_label.setText(f"<span style='{estilo_titulo}'>ID del Pago:</span> <span style='{estilo_valor}'>{self.pago_actual.get('id')}</span>")
         self.fecha_label.setText(f"<span style='{estilo_titulo}'>Fecha:</span> <span style='{estilo_valor}'>{fecha}</span>")
-        self.arbitro_label.setText(f"<span style='{estilo_titulo}'>Árbitro:</span> <span style='{estilo_valor}'>{arbitro_nombre}</span>")
+        self.tipo_doc_label.setText(f"<span style='{estilo_titulo}'>Tipo de Documento:</span> <span style='{estilo_valor}'>{tipo_doc}</span>")
+        self.factura_num_label.setText(f"<span style='{estilo_titulo}'>Número de Factura:</span> <span style='{estilo_valor}'>{numero_factura}</span>")
         self.monto_label.setText(f"<span style='{estilo_titulo}'>Monto:</span> <span style='{estilo_valor}'>${monto:,.2f}</span>")
-        self.descripcion_label.setText(f"<span style='{estilo_titulo}'>Descripción:</span> <span style='{estilo_valor}'>{descripcion}</span>")   
+        self.arbitro_label.setText(f"<span style='{estilo_titulo}'>Árbitro:</span> <span style='{estilo_valor}'>{arbitro_nombre}</span>")
+        self.razon_social_label_display.setText(f"<span style='{estilo_titulo}'>Razón Social:</span> <span style='{estilo_valor}'>{razon_social}</span>")
+        self.descripcion_label.setText(f"<span style='{estilo_titulo}'>Descripción:</span> <span style='{estilo_valor}'>{descripcion}</span>")
+        
+        # Ajustar visibilidad de campos según tipo de documento
+        is_factura = self.pago_actual.get('tipo_documento') == 'factura'
+        self.factura_num_label.setVisible(is_factura)
+        self.razon_social_label_display.setVisible(is_factura)
 
     def cargar_usuarios(self):
-        """Carga la lista de usuarios desde la API"""
+        """Carga la lista de usuarios desde la API y los ordena alfabéticamente"""
         try:
             headers = session.get_headers()
             url = f"{session.api_url}/usuarios"  # Sin barra al final
@@ -792,6 +910,9 @@ class PagosView(QWidget):
                 self.usuarios = response.json()
                 print(f"Usuarios cargados: {len(self.usuarios)}")
                 
+                # Ordenar usuarios alfabéticamente por nombre
+                self.usuarios.sort(key=lambda x: x['nombre'].lower())
+                
                 # Actualizar combo box de registrar pagos
                 self.arbitro_combo.clear()
                 for usuario in self.usuarios:
@@ -801,6 +922,8 @@ class PagosView(QWidget):
                 self.arbitro_combo_buscar.clear()
                 for usuario in self.usuarios:
                     self.arbitro_combo_buscar.addItem(f"{usuario['nombre']}", usuario['id'])
+                    
+                print("Combos de árbitros actualizados correctamente (ordenados alfabéticamente)")
             else:
                 print(f"Error al cargar usuarios: {response.text}")
         except Exception as e:
@@ -817,22 +940,44 @@ class PagosView(QWidget):
             QMessageBox.warning(self, "Error", "El monto debe ser mayor a cero")
             return
         
+        # Determinar tipo de documento seleccionado - CORREGIDO
+        es_factura = self.rb_factura.isChecked()
+        tipo_documento = "factura" if es_factura else "orden_pago"
+        
+        # Validar campos adicionales para facturas
+        if es_factura:
+            if not self.factura_edit.text().strip():
+                QMessageBox.warning(self, "Error", "Por favor ingrese el número de factura")
+                return
+            if not self.razon_social_edit.text().strip():
+                QMessageBox.warning(self, "Error", "Por favor ingrese la razón social")
+                return
+        
         # Obtener datos
         usuario_id = self.arbitro_combo.currentData()
         fecha = self.fecha_edit.date().toString("yyyy-MM-dd")
+        numero_factura = self.factura_edit.text().strip() if es_factura else ""
+        razon_social = self.razon_social_edit.text().strip() if es_factura else ""
         monto = self.monto_spin.value()
         notas = self.notas_edit.text().strip()
         
-        # Crear objeto de pago
+        # Crear objeto de pago - CORREGIDO
         pago_data = {
             "usuario_id": usuario_id,
             "fecha": fecha,
-            "monto": monto
+            "monto": monto,
+            "tipo_documento": tipo_documento,
+            "numero_factura": numero_factura if es_factura else None,
+            "razon_social": razon_social if es_factura else None
         }
         
         # Agregar notas si no está vacío
         if notas:
             pago_data["descripcion"] = notas
+        
+        # Depuración para verificar que se está enviando correctamente
+        print(f"Tipo documento: {tipo_documento}")
+        print(f"Datos a enviar: {json.dumps(pago_data)}")
         
         try:
             # Enviar solicitud para crear pago
@@ -841,13 +986,16 @@ class PagosView(QWidget):
             
             url = f"{session.api_url}/pagos"
             print(f"Realizando petición POST a: {url}")
-            print(f"Datos: {json.dumps(pago_data)}")
             
+            # IMPORTANTE: Usar json= en lugar de data=json.dumps()
             response = requests.post(
                 url,
                 headers=headers,
-                data=json.dumps(pago_data)
+                json=pago_data
             )
+            
+            print(f"Código de respuesta: {response.status_code}")
+            print(f"Respuesta: {response.text}")
             
             if response.status_code == 200 or response.status_code == 201:
                 pago_respuesta = response.json()
@@ -892,6 +1040,13 @@ class PagosView(QWidget):
                 # Limpiar formulario
                 self.arbitro_combo.setCurrentIndex(-1)
                 self.fecha_edit.setDate(QDate.currentDate())
+                self.rb_orden_pago.setChecked(True)  # Restablecer a orden de pago
+                self.factura_edit.clear()
+                self.razon_social_edit.clear()
+                self.factura_label.setVisible(False)
+                self.factura_edit.setVisible(False)
+                self.razon_social_label.setVisible(False)
+                self.razon_social_edit.setVisible(False)
                 self.monto_spin.setValue(0)
                 self.notas_edit.clear()
                 
@@ -913,7 +1068,6 @@ class PagosView(QWidget):
                 print(f"Error al registrar pago: {response.text}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al registrar pago: {str(e)}")
-
     def enviar_recibo_manualmente(self, pago_id, email):
         """Envía un recibo manualmente usando la API"""
         try:
@@ -1214,7 +1368,7 @@ class PagosView(QWidget):
                 font-weight: bold;
                 color: #2c3e50;
             }
-            QDateEdit, QDoubleSpinBox, QLineEdit {
+            QDateEdit, QDoubleSpinBox, QLineEdit, QRadioButton {
                 padding: 8px;
                 border: 1px solid #ddd;
                 border-radius: 4px;
@@ -1245,14 +1399,65 @@ class PagosView(QWidget):
         layout.setSpacing(15)
         layout.setContentsMargins(20, 20, 20, 20)
         
+        # Tipo de documento
+        tipo_doc_label = QLabel("Tipo de Documento:")
+        tipo_doc_container = QWidget()
+        tipo_doc_layout = QHBoxLayout(tipo_doc_container)
+        tipo_doc_layout.setContentsMargins(0, 0, 0, 0)
+        
+        rb_orden_pago = QRadioButton("Orden de Pago")
+        rb_factura = QRadioButton("Factura/Recibo")
+        
+        # Establecer selección según el valor actual
+        es_factura = self.pago_actual.get('tipo_documento') == 'factura'
+        rb_factura.setChecked(es_factura)
+        rb_orden_pago.setChecked(not es_factura)
+        
+        tipo_doc_group = QButtonGroup()
+        tipo_doc_group.addButton(rb_orden_pago)
+        tipo_doc_group.addButton(rb_factura)
+        
+        tipo_doc_layout.addWidget(rb_orden_pago)
+        tipo_doc_layout.addWidget(rb_factura)
+        tipo_doc_layout.addStretch()
+        
+        layout.addRow(tipo_doc_label, tipo_doc_container)
+        
         # Campos editables
         fecha_edit = QDateEdit()
         fecha_edit.setDate(QDate.fromString(self.pago_actual['fecha'], "yyyy-MM-dd"))
         fecha_edit.setCalendarPopup(True)
         
+        # Campos para número de factura y razón social
+        factura_edit = QLineEdit()
+        factura_edit.setText(self.pago_actual.get('numero_factura', ''))
+        
+        razon_social_edit = QLineEdit()
+        razon_social_edit.setText(self.pago_actual.get('razon_social', ''))
+        
+        # Mostrar/ocultar campos según tipo de documento
+        factura_label = QLabel("Número de Factura:")
+        razon_social_label = QLabel("Razón Social:")
+        
+        factura_label.setVisible(es_factura)
+        factura_edit.setVisible(es_factura)
+        razon_social_label.setVisible(es_factura)
+        razon_social_edit.setVisible(es_factura)
+        
+        # Función para mostrar/ocultar campos al cambiar tipo de documento
+        def on_tipo_cambio():
+            es_factura_nueva = rb_factura.isChecked()
+            factura_label.setVisible(es_factura_nueva)
+            factura_edit.setVisible(es_factura_nueva)
+            razon_social_label.setVisible(es_factura_nueva)
+            razon_social_edit.setVisible(es_factura_nueva)
+        
+        # Conectar evento
+        rb_orden_pago.toggled.connect(on_tipo_cambio)
+        rb_factura.toggled.connect(on_tipo_cambio)
+        
         # Asegurarse de que el monto sea un número flotante
         monto = float(self.pago_actual.get('monto', 0))
-        print(f"Monto obtenido de la API: {monto}")
         
         monto_spin = QDoubleSpinBox()
         monto_spin.setValue(monto)
@@ -1265,6 +1470,8 @@ class PagosView(QWidget):
         descripcion_edit.setText(self.pago_actual.get('descripcion', ''))
         
         layout.addRow("Fecha:", fecha_edit)
+        layout.addRow(factura_label, factura_edit)
+        layout.addRow(razon_social_label, razon_social_edit)
         layout.addRow("Monto:", monto_spin)
         layout.addRow("Descripción:", descripcion_edit)
         
@@ -1280,10 +1487,19 @@ class PagosView(QWidget):
         
         layout.addRow("", btn_layout)
         
+        # Determinar tipo de documento para guardarlo
+        def tipo_documento_seleccionado():
+            if rb_factura.isChecked():
+                return "factura"
+            return "orden_pago"
+        
         guardar_btn.clicked.connect(lambda: self.guardar_edicion_pago(
             dialog, 
             self.pago_actual['id'], 
             fecha_edit.date().toString("yyyy-MM-dd"),
+            tipo_documento_seleccionado(),
+            factura_edit.text() if rb_factura.isChecked() else "",
+            razon_social_edit.text() if rb_factura.isChecked() else "",
             monto_spin.value(),
             descripcion_edit.text()
         ))
@@ -1292,7 +1508,7 @@ class PagosView(QWidget):
         dialog.setMinimumWidth(400)
         dialog.exec()
 
-    def guardar_edicion_pago(self, dialog, pago_id, fecha, monto, descripcion):
+    def guardar_edicion_pago(self, dialog, pago_id, fecha, tipo_documento, numero_factura, razon_social, monto, descripcion):
         """Guarda los cambios del pago editado"""
         try:
             headers = session.get_headers()
@@ -1303,8 +1519,21 @@ class PagosView(QWidget):
             datos_actualizacion = {
                 "fecha": fecha,
                 "monto": monto,
-                "descripcion": descripcion
+                "descripcion": descripcion,
+                "tipo_documento": tipo_documento
             }
+            
+            # Agregar campos adicionales para facturas
+            if tipo_documento == "factura":
+                if not numero_factura:
+                    QMessageBox.warning(self, "Error", "Por favor ingrese el número de factura")
+                    return False
+                if not razon_social:
+                    QMessageBox.warning(self, "Error", "Por favor ingrese la razón social")
+                    return False
+                    
+                datos_actualizacion["numero_factura"] = numero_factura
+                datos_actualizacion["razon_social"] = razon_social
             
             # Obtener monto anterior para saber si hubo cambio
             monto_anterior = 0
@@ -1341,10 +1570,14 @@ class PagosView(QWidget):
                 # Emitir señal para que el dashboard se actualice si está visible
                 event = QEvent(QEvent.Type(QEvent.User + 1))  # Evento personalizado
                 QCoreApplication.postEvent(self.parent(), event)
+                
+                return True
             else:
                 QMessageBox.warning(self, "Error", f"No se pudo actualizar. Código: {response.status_code}")
+                return False
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al actualizar: {str(e)}")
+            return False
     def on_eliminar_pago(self):
         """Elimina el pago seleccionado"""
         if not hasattr(self, 'pago_actual'):

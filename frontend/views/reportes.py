@@ -847,7 +847,8 @@ class ReportesView(QWidget):
                             partida['id_numeric'] = 0
                     
                     # Ordenar por ID numérico (ascendente)
-                    partidas = sorted(partidas, key=lambda x: x.get('id_numeric', 0))
+                    partidas = sorted(partidas, key=lambda x: (x.get('fecha', ''), x.get('id_numeric', 0)), reverse=True)
+
                     print(f"Datos ordenados por ID, total: {len(partidas)} registros")
                 except Exception as e:
                     print(f"Error al ordenar por ID: {str(e)}")
@@ -893,29 +894,63 @@ class ReportesView(QWidget):
                     # Nº Comprobante (MODIFICADO)
                     nro_comprobante = ""
                     
-                    # Verificar si es una cuota societaria
-                    detalle = partida.get('detalle', '').lower()
-                    ingreso = partida.get('ingreso', 0)
-                    egreso = partida.get('egreso', 0)
-                    
-                    if ingreso > 0 and egreso == 0 and 'cuota' in detalle:
-                        # Es una cuota societaria
-                        if partida.get('id') in cuotas_societarias:
-                            # Encontrar la posición de este ID en la lista de cuotas
-                            posicion = cuotas_societarias.index(partida.get('id')) + 1
-                            # Usar posición inversa para numerar desde 1 en adelante
-                            num_recibo = str(len(cuotas_societarias) - posicion + 1)
-                            nro_comprobante = f"C.S.-{num_recibo}"
+                    # CAMBIO: Primero verificar si ya tiene un recibo_factura asignado
+                    if partida.get('recibo_factura'):
+                        # Si tiene recibo_factura, usar ese valor directamente
+                        nro_comprobante = partida.get('recibo_factura')
+                    else:
+                        # Si no, usar la lógica anterior como respaldo
+                        detalle = partida.get('detalle', '').lower()
+                        ingreso = partida.get('ingreso', 0)
+                        egreso = partida.get('egreso', 0)
+                        
+                        if ingreso > 0 and egreso == 0 and 'cuota' in detalle:
+                            # Es una cuota societaria
+                            if partida.get('id') in cuotas_societarias:
+                                posicion = cuotas_societarias.index(partida.get('id')) + 1
+                                num_recibo = str(len(cuotas_societarias) - posicion + 1)
+                                nro_comprobante = f"C.S.-{num_recibo}"
+                            else:
+                                nro_comprobante = f"C.S.-{partida.get('id')}"
+                        elif partida.get('cobranza_id'):
+                            # Verificar si la cobranza es una factura o un recibo
+                            cobranza_id = partida.get('cobranza_id')
+                            if 'factura' in detalle:
+                                nro_comprobante = f"FAC/REC.A-{cobranza_id}"
+                            else:
+                                nro_comprobante = f"REC-{cobranza_id}"
+                        elif partida.get('pago_id'):
+                            # Verificar si este pago está relacionado con una factura
+                            pago_id = partida.get('pago_id')
+                            # Obtener datos del pago para verificar el tipo_documento
+                            try:
+                                pago_response = requests.get(
+                                    f"{session.api_url}/pagos/{pago_id}",
+                                    headers=headers
+                                )
+                                if pago_response.status_code == 200:
+                                    pago_data = pago_response.json()
+                                    if pago_data.get('tipo_documento') == 'factura':
+                                        nro_comprobante = f"FAC/REC.A-{pago_data.get('numero_factura', pago_id)}"
+                                    else:
+                                        nro_comprobante = f"O.P-{pago_id}"
+                                else:
+                                    nro_comprobante = f"O.P-{pago_id}"
+                            except:
+                                # Si hay algún error, usar formato estándar
+                                nro_comprobante = f"O.P-{pago_id}"
+                        elif ingreso > 0 and egreso == 0:
+                            # Otros ingresos
+                            nro_comprobante = f"REC-{partida.get('id')}"
+                        elif egreso > 0 and ingreso == 0:
+                            # Egresos
+                            nro_comprobante = f"O.P-{partida.get('id')}"
+                        elif partida.get('tipo') == 'anulacion':
+                            # Anulaciones
+                            nro_comprobante = f"ANUL-{partida.get('id')}"
                         else:
-                            # Por si acaso no está en la lista (no debería ocurrir)
-                            nro_comprobante = f"C.S.-{partida.get('id')}"
-                    elif partida.get('cobranza_id'):
-                        nro_comprobante = f"REC-{partida.get('cobranza_id')}"
-                    elif partida.get('pago_id'):
-                        nro_comprobante = f"O.P-{partida.get('pago_id')}"
-                    elif partida.get('id'):
-                        # Si no tiene referencias pero tiene ID, usar el ID
-                        nro_comprobante = f"O.P-{partida.get('id')}"
+                            # Valor predeterminado
+                            nro_comprobante = f"O.P-{partida.get('id')}"
                     
                     comprobante_item = QTableWidgetItem(nro_comprobante)
                     comprobante_item.setTextAlignment(Qt.AlignCenter)
@@ -971,8 +1006,6 @@ class ReportesView(QWidget):
                 QMessageBox.warning(self, "Error", "No se pudieron obtener las partidas")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al buscar partidas: {str(e)}")
-        
-        # Modificar la función descargar_libro_diario() para ordenar por ID
 
     def descargar_libro_diario(self):
         """Descarga automáticamente el libro diario en Excel"""
