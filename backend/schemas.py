@@ -141,6 +141,9 @@ class PagoBase(BaseModel):
     fecha: date
     monto: float    
     descripcion: Optional[str] = None
+    tipo_documento: str = "orden_pago"
+    numero_factura: Optional[str] = None
+    razon_social: Optional[str] = None
 
 class PagoCreate(PagoBase):
     pass
@@ -150,6 +153,9 @@ class PagoUpdate(BaseModel):
     fecha: Optional[date] = None
     monto: Optional[float] = None
     descripcion: Optional[str] = None
+    tipo_documento: Optional[str] = None  # Agregar este campo
+    numero_factura: Optional[str] = None  # Agregar este campo
+    razon_social: Optional[str] = None    # Agregar este campo
 
 
 
@@ -177,6 +183,9 @@ class CobranzaBase(BaseModel):
     monto: float
     retencion_id: Optional[int] = None
     descripcion: Optional[str] = None  # Añadir este campo
+    tipo_documento: str = "recibo"
+    numero_factura: Optional[str] = None
+    razon_social: Optional[str] = None
 
 class CobranzaCreate(CobranzaBase):
     pass
@@ -187,6 +196,9 @@ class CobranzaUpdate(BaseModel):
     monto: Optional[float] = None
     retencion_id: Optional[int] = None
     descripcion: Optional[str] = None  # Añadir este campo
+    tipo_documento: Optional[str] = None  # Agregar este campo
+    numero_factura: Optional[str] = None  # Agregar este campo
+    razon_social: Optional[str] = None 
 
 class Cobranza(CobranzaBase):
     id: int

@@ -99,8 +99,14 @@ class EmailService:
         p.setFillColorRGB(*accent_color)
         p.setFont("Helvetica-Bold", 16)
         p.drawCentredString(width/2, height - 1.5*inch, "UNIDAD DE ÁRBITROS DE RÍO CUARTO")
-        p.setFont("Helvetica-Bold", 14)
-        p.drawCentredString(width/2, height - 2*inch, "RECIBO DE COBRANZA")
+        
+        # Modificado: Título según tipo de documento
+        if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
+            p.setFont("Helvetica-Bold", 14)
+            p.drawCentredString(width/2, height - 2*inch, "FACTURA/RECIBO")
+        else:
+            p.setFont("Helvetica-Bold", 14)
+            p.drawCentredString(width/2, height - 2*inch, "RECIBO DE COBRANZA")
         
         # Obtener usuario/árbitro
         usuario = db.query(models.Usuario).filter(models.Usuario.id == cobranza.usuario_id).first()
@@ -117,8 +123,12 @@ class EmailService:
         p.setFont("Helvetica", 12)
         p.setFillColorRGB(0, 0, 0)
         
-        # Número de recibo
-        p.drawRightString(width - margin, height - 2.5*inch, f"N° Recibo: {cobranza.id:05d}")
+        # Número de recibo o factura
+        if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
+            num_doc = cobranza.numero_factura if hasattr(cobranza, 'numero_factura') and cobranza.numero_factura else cobranza.id
+            p.drawRightString(width - margin, height - 2.5*inch, f"N° Factura: {num_doc}")
+        else:
+            p.drawRightString(width - margin, height - 2.5*inch, f"N° Recibo: {cobranza.id:05d}")
         
         # Información detallada
         info_y = height - 3.5*inch
@@ -131,11 +141,18 @@ class EmailService:
         # Campos de información principales
         campos = [
             ("Fecha:", cobranza.fecha.strftime('%d/%m/%Y')),
-            ("Pagador:", usuario.nombre if usuario else "No especificado"),
+        ]
+        
+        # Modificado: Agregar razón social si es factura
+        if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura" and hasattr(cobranza, 'razon_social') and cobranza.razon_social:
+            campos.append(("Razón Social:", cobranza.razon_social))
+        else:
+            campos.append(("Pagador:", usuario.nombre if usuario else "No especificado"))
+        
+        campos.extend([
             ("Monto:", f"$ {float(cobranza.monto):,.2f}"),
             ("Retención:", retencion_info)
-            
-        ]
+        ])
         
         for i, (etiqueta, valor) in enumerate(campos):
             p.setFont("Helvetica-Bold", 10)
@@ -198,18 +215,37 @@ class EmailService:
             msg = MIMEMultipart()
             msg['From'] = self.sender
             msg['To'] = recipient_email
-            msg['Subject'] = f"Recibo de Cobranza #{cobranza.id}"
             
-            # Cuerpo del mensaje extremadamente simple sin ningún carácter especial
-            body = """
-            Estimado/a usuario,
+            # Modificado: Asunto según tipo de documento
+            if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
+                msg['Subject'] = f"Factura/Recibo #{cobranza.id}"
+            else:
+                msg['Subject'] = f"Recibo de Cobranza #{cobranza.id}"
             
-            Adjunto encontrara el recibo correspondiente a su pago reciente.
-            
-            Gracias por su preferencia.
-            
-            Unidad de Arbitros de Rio Cuarto
-            """
+            # Modificado: Cuerpo según tipo de documento
+            if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
+                body = f"""
+                Estimado/a usuario,
+                
+                Adjunto encontrará la factura/recibo correspondiente a su pago reciente.
+                
+                {f"Número de Factura: {cobranza.numero_factura}" if hasattr(cobranza, 'numero_factura') and cobranza.numero_factura else ""}
+                {f"Razón Social: {cobranza.razon_social}" if hasattr(cobranza, 'razon_social') and cobranza.razon_social else ""}
+                
+                Gracias por su preferencia.
+                
+                Unidad de Árbitros de Río Cuarto
+                """
+            else:
+                body = """
+                Estimado/a usuario,
+                
+                Adjunto encontrará el recibo correspondiente a su pago reciente.
+                
+                Gracias por su preferencia.
+                
+                Unidad de Árbitros de Río Cuarto
+                """
             
             # Usar utf-8 explícitamente
             text_part = MIMEText(body, 'plain', 'utf-8')
@@ -218,8 +254,14 @@ class EmailService:
             # Generar y adjuntar PDF
             pdf = self.generate_receipt_pdf(db, cobranza)
             attachment = MIMEApplication(pdf, _subtype="pdf")
-            attachment.add_header('Content-Disposition', 'attachment', 
-                                filename=f"Recibo_{cobranza.id}.pdf")
+            
+            # Modificado: Nombre del archivo según tipo de documento
+            if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
+                filename = f"Factura_{cobranza.id}.pdf"
+            else:
+                filename = f"Recibo_{cobranza.id}.pdf"
+                
+            attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(attachment)
             
             # Enviar email
@@ -245,7 +287,6 @@ class EmailService:
             # Fallback simplificado si no tienes la biblioteca num2words
             return f"{numero:,.2f} pesos"
         
-
     def generate_payment_receipt_pdf(self, db: Session, pago):
         """Genera un PDF con el recibo del pago con diseño moderno y profesional"""
         
@@ -273,19 +314,28 @@ class EmailService:
         p.setFillColorRGB(*accent_color)
         p.setFont("Helvetica-Bold", 16)
         p.drawCentredString(width/2, height - 1.5*inch, "UNIDAD DE ÁRBITROS DE RÍO CUARTO")
-        p.setFont("Helvetica-Bold", 14)
-        p.drawCentredString(width/2, height - 2*inch, "ORDEN DE PAGO")
+        
+        # Modificado: Título según tipo de documento
+        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
+            p.setFont("Helvetica-Bold", 14)
+            p.drawCentredString(width/2, height - 2*inch, "FACTURA/RECIBO DE PAGO")
+        else:
+            p.setFont("Helvetica-Bold", 14)
+            p.drawCentredString(width/2, height - 2*inch, "ORDEN DE PAGO")
         
         # Obtener usuario/árbitro
         usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()        
-
         
         # Detalles del pago
         p.setFont("Helvetica", 12)
         p.setFillColorRGB(0, 0, 0)
         
-        # Número de orden de pago
-        p.drawRightString(width - margin, height - 2.5*inch, f"N° Orden: {pago.id:05d}")
+        # Número de orden de pago o factura
+        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
+            num_doc = pago.numero_factura if hasattr(pago, 'numero_factura') and pago.numero_factura else pago.id
+            p.drawRightString(width - margin, height - 2.5*inch, f"N° Factura: {num_doc}")
+        else:
+            p.drawRightString(width - margin, height - 2.5*inch, f"N° Orden: {pago.id:05d}")
         
         # Información detallada
         info_y = height - 3.5*inch
@@ -298,10 +348,19 @@ class EmailService:
         # Campos de información
         campos = [
             ("Fecha:", pago.fecha.strftime('%d/%m/%Y')),
-            ("Beneficiario:", usuario.nombre if usuario else "No especificado"),
-            ("Monto:", f"$ {float(pago.monto):,.2f}"),            
-            ("Descripción:", pago.descripcion if hasattr(pago, 'descripcion') and pago.descripcion else "Sin descripción")
         ]
+        
+        # Modificado: Agregar razón social si es factura
+        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura" and hasattr(pago, 'razon_social') and pago.razon_social:
+            campos.append(("Razón Social:", pago.razon_social))
+        else:
+            campos.append(("Beneficiario:", usuario.nombre if usuario else "No especificado"))
+            
+        campos.append(("Monto:", f"$ {float(pago.monto):,.2f}"))
+        
+        # Descripción
+        descripcion = pago.descripcion if hasattr(pago, 'descripcion') and pago.descripcion else "Sin descripción"
+        campos.append(("Descripción:", descripcion))
         
         for i, (etiqueta, valor) in enumerate(campos):
             p.setFont("Helvetica-Bold", 10)
@@ -331,18 +390,37 @@ class EmailService:
             msg = MIMEMultipart()
             msg['From'] = self.sender
             msg['To'] = recipient_email
-            msg['Subject'] = f"Orden de Pago #{pago.id}"
             
-            # Cuerpo del mensaje
-            body = """
-            Estimado/a usuario,
+            # Modificado: Asunto según tipo de documento
+            if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
+                msg['Subject'] = f"Factura/Recibo de Pago #{pago.id}"
+            else:
+                msg['Subject'] = f"Orden de Pago #{pago.id}"
             
-            Adjunto encontrará la orden de pago correspondiente.
-            
-            Gracias.
-            
-            Unidad de Árbitros de Río Cuarto
-            """
+            # Modificado: Cuerpo según tipo de documento
+            if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
+                body = f"""
+                Estimado/a usuario,
+                
+                Adjunto encontrará la factura/recibo correspondiente a su pago.
+                
+                {f"Número de Factura: {pago.numero_factura}" if hasattr(pago, 'numero_factura') and pago.numero_factura else ""}
+                {f"Razón Social: {pago.razon_social}" if hasattr(pago, 'razon_social') and pago.razon_social else ""}
+                
+                Gracias.
+                
+                Unidad de Árbitros de Río Cuarto
+                """
+            else:
+                body = """
+                Estimado/a usuario,
+                
+                Adjunto encontrará la orden de pago correspondiente.
+                
+                Gracias.
+                
+                Unidad de Árbitros de Río Cuarto
+                """
             
             # Usar utf-8 explícitamente
             text_part = MIMEText(body, 'plain', 'utf-8')
@@ -351,8 +429,14 @@ class EmailService:
             # Generar y adjuntar PDF
             pdf = self.generate_payment_receipt_pdf(db, pago)
             attachment = MIMEApplication(pdf, _subtype="pdf")
-            attachment.add_header('Content-Disposition', 'attachment', 
-                                filename=f"OrdenPago_{pago.id}.pdf")
+            
+            # Modificado: Nombre del archivo según tipo de documento
+            if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
+                filename = f"Factura_{pago.id}.pdf"
+            else:
+                filename = f"OrdenPago_{pago.id}.pdf"
+                
+            attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(attachment)
             
             # Enviar email
@@ -368,8 +452,6 @@ class EmailService:
             print(f"Error detallado: {e}")
             return False, f"Error al enviar email: {str(e)}"    
         
-        
-
     def generate_cuota_receipt_pdf(self, db: Session, cuota):
         """Genera un PDF con el recibo de pago de cuota"""
         
@@ -426,6 +508,7 @@ class EmailService:
         p.save()
         buffer.seek(0)
         return buffer.getvalue()
+        
     def send_cuota_receipt_email(self, db: Session, cuota, recipient_email):
         try:
             # Crear mensaje

@@ -73,6 +73,9 @@ class Pago(Base):
     monto = Column(Numeric(10, 2), nullable=False)    
     transaccion_id = Column(Integer, ForeignKey("transacciones.id"), nullable=True)
     descripcion = Column(Text, nullable=True)  # Nuevo campo para descripción
+    tipo_documento = Column(String(20), nullable=False, default="orden_pago")
+    numero_factura = Column(String(50), nullable=True)
+    razon_social = Column(String(100), nullable=True)
     
     # Eliminar la relación con retencion_id
     
@@ -102,6 +105,9 @@ class Cobranza(Base):
     email_enviado = Column(Boolean, default=False)
     fecha_envio_email = Column(DateTime, nullable=True)
     email_destinatario = Column(String(100), nullable=True)
+    tipo_documento = Column(String(20), nullable=False, default="recibo")
+    numero_factura = Column(String(50), nullable=True)
+    razon_social = Column(String(100), nullable=True)
     
     # Relaciones
     usuario = relationship("Usuario", back_populates="cobranzas")
