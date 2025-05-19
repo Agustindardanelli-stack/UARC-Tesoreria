@@ -176,6 +176,9 @@ def delete_retencion(db: Session, retencion_id: int):
 # Funciones CRUD para Pagos
 @audit_trail("pagos")
 def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
+    # Imprimir para depuración
+    print(f"Tipo de documento recibido: {pago.tipo_documento}")
+    
     # Crear el pago
     db_pago = models.Pago(**pago.dict())
     db.add(db_pago)
@@ -191,6 +194,28 @@ def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
     saldo_anterior = ultima_partida.saldo if ultima_partida else 0
     nuevo_saldo = saldo_anterior - db_pago.monto
     
+    # NUEVA LÓGICA: Generar número de recibo/factura según tipo de documento
+    if db_pago.tipo_documento == "factura":
+        # Para facturas, usar el formato FAC-X
+        recibo_factura = f"FAC-{db_pago.numero_factura}"
+    else:
+        # Para órdenes de pago, buscar la última y generar el siguiente número
+        ultima_orden_pago = db.query(models.Partida).filter(
+            models.Partida.recibo_factura.like("O.P-%")
+        ).order_by(models.Partida.id.desc()).first()
+        
+        if ultima_orden_pago and ultima_orden_pago.recibo_factura:
+            # Extraer el número de la última orden de pago
+            try:
+                ultimo_num = int(ultima_orden_pago.recibo_factura.split('-')[1])
+                nuevo_num = ultimo_num + 1
+            except (ValueError, IndexError):
+                nuevo_num = 1
+        else:
+            nuevo_num = 1
+        
+        recibo_factura = f"O.P-{nuevo_num}"
+    
     # Crear partida asociada al pago (egreso)
     partida = models.Partida(
         fecha=db_pago.fecha,
@@ -202,7 +227,8 @@ def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
         pago_id=db_pago.id,
         saldo=nuevo_saldo,
         ingreso=0,
-        egreso=db_pago.monto
+        egreso=db_pago.monto,
+        recibo_factura=recibo_factura  # IMPORTANTE: Asignar el número de comprobante generado
     )
     db.add(partida)
     db.commit()
