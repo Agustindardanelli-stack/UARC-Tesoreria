@@ -940,7 +940,7 @@ class PagosView(QWidget):
             QMessageBox.warning(self, "Error", "El monto debe ser mayor a cero")
             return
         
-        # Determinar tipo de documento seleccionado - CORREGIDO
+        # Determinar tipo de documento seleccionado
         es_factura = self.rb_factura.isChecked()
         tipo_documento = "factura" if es_factura else "orden_pago"
         
@@ -961,7 +961,7 @@ class PagosView(QWidget):
         monto = self.monto_spin.value()
         notas = self.notas_edit.text().strip()
         
-        # Crear objeto de pago - CORREGIDO
+        # Crear objeto de pago
         pago_data = {
             "usuario_id": usuario_id,
             "fecha": fecha,
@@ -1000,42 +1000,51 @@ class PagosView(QWidget):
             if response.status_code == 200 or response.status_code == 201:
                 pago_respuesta = response.json()
                 
-                # Verificar si se envió el recibo por email
-                if pago_respuesta.get("email_enviado", False):
-                    QMessageBox.information(
-                        self, 
-                        "Éxito", 
-                        f"Pago registrado exitosamente.\nRecibo enviado por email a {pago_respuesta.get('email_destinatario')}"
-                    )
-                else:
-                    # Si no se envió el recibo, dar la opción de enviarlo manualmente
-                    arbitro_id = self.arbitro_combo.currentData()
-                    arbitro_nombre = self.arbitro_combo.currentText()
-                    arbitro_email = None
-                    
-                    # Buscar el email del árbitro
-                    for usuario in self.usuarios:
-                        if usuario.get('id') == arbitro_id:
-                            arbitro_email = usuario.get('email')
-                            break
-                    
-                    if arbitro_email:
-                        respuesta = QMessageBox.question(
-                            self,
-                            "Enviar Recibo",
-                            f"¿Desea enviar el recibo al email de {arbitro_nombre} ({arbitro_email})?",
-                            QMessageBox.Yes | QMessageBox.No,
-                            QMessageBox.Yes
-                        )
-                        
-                        if respuesta == QMessageBox.Yes:
-                            self.enviar_recibo_manualmente(pago_respuesta.get("id"), arbitro_email)
-                    else:
+                # Verificar el tipo de documento
+                if tipo_documento == "orden_pago":
+                    # Para ORDEN DE PAGO: verificar si se envió el recibo por email
+                    if pago_respuesta.get("email_enviado", False):
                         QMessageBox.information(
                             self, 
                             "Éxito", 
-                            "Pago registrado exitosamente.\nNo se pudo enviar el recibo por email porque el árbitro no tiene email registrado."
+                            f"Pago registrado exitosamente.\nOrden de pago enviada por email a {pago_respuesta.get('email_destinatario')}"
                         )
+                    else:
+                        # Si no se envió el recibo, dar la opción de enviarlo manualmente
+                        arbitro_id = self.arbitro_combo.currentData()
+                        arbitro_nombre = self.arbitro_combo.currentText()
+                        arbitro_email = None
+                        
+                        # Buscar el email del árbitro
+                        for usuario in self.usuarios:
+                            if usuario.get('id') == arbitro_id:
+                                arbitro_email = usuario.get('email')
+                                break
+                        
+                        if arbitro_email:
+                            respuesta = QMessageBox.question(
+                                self,
+                                "Enviar Recibo",
+                                f"¿Desea enviar el recibo al email de {arbitro_nombre} ({arbitro_email})?",
+                                QMessageBox.Yes | QMessageBox.No,
+                                QMessageBox.Yes
+                            )
+                            
+                            if respuesta == QMessageBox.Yes:
+                                self.enviar_recibo_manualmente(pago_respuesta.get("id"), arbitro_email)
+                        else:
+                            QMessageBox.information(
+                                self, 
+                                "Éxito", 
+                                "Pago registrado exitosamente.\nNo se pudo enviar el recibo por email porque el árbitro no tiene email registrado."
+                            )
+                else:
+                    # Para FACTURAS: solo informar que se registró, sin mencionar emails
+                    QMessageBox.information(
+                        self, 
+                        "Éxito", 
+                        "Factura registrada exitosamente."
+                    )
                 
                 # Limpiar formulario
                 self.arbitro_combo.setCurrentIndex(-1)

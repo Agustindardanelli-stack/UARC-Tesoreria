@@ -778,42 +778,51 @@ class CobranzasView(QWidget):
             if response.status_code == 200 or response.status_code == 201:
                 cobranza_respuesta = response.json()
                 
-                # Verificar si se envió el recibo por email
-                if cobranza_respuesta.get("email_enviado", False):
-                    QMessageBox.information(
-                        self, 
-                        "Éxito", 
-                        f"Cobranza registrada exitosamente.\nRecibo enviado por email a {cobranza_respuesta.get('email_destinatario')}"
-                    )
-                else:
-                    # Si no se envió el recibo, dar la opción de enviarlo manualmente
-                    arbitro_id = self.arbitro_combo_registrar.currentData()
-                    arbitro_nombre = self.arbitro_combo_registrar.currentText()
-                    arbitro_email = None
-                    
-                    # Buscar el email del árbitro
-                    for usuario in self.usuarios:
-                        if usuario.get('id') == arbitro_id:
-                            arbitro_email = usuario.get('email')
-                            break
-                    
-                    if arbitro_email:
-                        respuesta = QMessageBox.question(
-                            self,
-                            "Enviar Recibo",
-                            f"¿Desea enviar el recibo al email de {arbitro_nombre} ({arbitro_email})?",
-                            QMessageBox.Yes | QMessageBox.No,
-                            QMessageBox.Yes
-                        )
-                        
-                        if respuesta == QMessageBox.Yes:
-                            self.enviar_recibo_manualmente(cobranza_respuesta.get("id"), arbitro_email)
-                    else:
+                # Verificar el tipo de documento
+                if tipo_documento == "recibo":
+                    # Para RECIBOS: verificar si se envió el recibo por email
+                    if cobranza_respuesta.get("email_enviado", False):
                         QMessageBox.information(
                             self, 
                             "Éxito", 
-                            "Cobranza registrada exitosamente.\nNo se pudo enviar el recibo por email porque el árbitro no tiene email registrado."
+                            f"Cobranza registrada exitosamente.\nRecibo enviado por email a {cobranza_respuesta.get('email_destinatario')}"
                         )
+                    else:
+                        # Si no se envió el recibo, dar la opción de enviarlo manualmente
+                        arbitro_id = self.arbitro_combo_registrar.currentData()
+                        arbitro_nombre = self.arbitro_combo_registrar.currentText()
+                        arbitro_email = None
+                        
+                        # Buscar el email del árbitro
+                        for usuario in self.usuarios:
+                            if usuario.get('id') == arbitro_id:
+                                arbitro_email = usuario.get('email')
+                                break
+                        
+                        if arbitro_email:
+                            respuesta = QMessageBox.question(
+                                self,
+                                "Enviar Recibo",
+                                f"¿Desea enviar el recibo al email de {arbitro_nombre} ({arbitro_email})?",
+                                QMessageBox.Yes | QMessageBox.No,
+                                QMessageBox.Yes
+                            )
+                            
+                            if respuesta == QMessageBox.Yes:
+                                self.enviar_recibo_manualmente(cobranza_respuesta.get("id"), arbitro_email)
+                        else:
+                            QMessageBox.information(
+                                self, 
+                                "Éxito", 
+                                "Cobranza registrada exitosamente.\nNo se pudo enviar el recibo por email porque el árbitro no tiene email registrado."
+                            )
+                else:
+                    # Para FACTURAS: solo informar que se registró, sin mencionar emails
+                    QMessageBox.information(
+                        self, 
+                        "Éxito", 
+                        "Factura registrada exitosamente."
+                    )
                 
                 # Limpiar formulario
                 self.arbitro_combo_registrar.setCurrentIndex(-1)
@@ -843,34 +852,6 @@ class CobranzasView(QWidget):
                 print(f"Error al registrar cobranza: {response.text}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al registrar cobranza: {str(e)}")
-    def enviar_recibo_manualmente(self, cobranza_id, email):
-        """Envía un recibo manualmente usando la API"""
-        try:
-            # Enviar solicitud para reenviar recibo
-            headers = session.get_headers()
-            
-            url = f"{session.api_url}/cobranzas/{cobranza_id}/reenviar-recibo"
-            params = {"email": email}
-            
-            response = requests.post(url, headers=headers, params=params)
-            
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("success", False):
-                    QMessageBox.information(self, "Éxito", "Recibo enviado exitosamente")
-                else:
-                    QMessageBox.warning(self, "Advertencia", f"No se pudo enviar el recibo: {result.get('message', '')}")
-            else:
-                error_msg = "Error al enviar el recibo"
-                try:
-                    error_data = response.json()
-                    if "detail" in error_data:
-                        error_msg = error_data["detail"]
-                except:
-                    pass
-                QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al enviar recibo: {str(e)}")
     
     def on_buscar_cobranzas(self):
         """Busca cobranzas según los filtros seleccionados"""
@@ -1289,112 +1270,174 @@ class CobranzasView(QWidget):
         self.razon_social_label.setVisible(is_factura)
 
     def on_editar_cobranza(self):
-            """Abre un diálogo para editar la cobranza seleccionada"""
-            if not hasattr(self, 'cobranza_actual'):
-                QMessageBox.warning(self, "Error", "Primero seleccione una cobranza")
-                return
+        """Abre un diálogo para editar la cobranza seleccionada"""
+        if not hasattr(self, 'cobranza_actual'):
+            QMessageBox.warning(self, "Error", "Primero seleccione una cobranza")
+            return
+        
+        try:
+            # Obtener datos actualizados directamente de la API
+            headers = session.get_headers()
+            url = f"{session.api_url}/cobranzas/{self.cobranza_actual['id']}"
+            response = requests.get(url, headers=headers)
             
-            try:
-                # Obtener datos actualizados directamente de la API
-                headers = session.get_headers()
-                url = f"{session.api_url}/cobranzas/{self.cobranza_actual['id']}"
-                response = requests.get(url, headers=headers)
-                
-                if response.status_code == 200:
-                    # Actualizar con datos frescos
-                    self.cobranza_actual = response.json()
-            except Exception as e:
-                print(f"Error al obtener datos actualizados: {str(e)}")
-                
-            # Abrir diálogo de edición con los datos actuales
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Editar Cobranza")
-            dialog.setStyleSheet("""
-                QDialog {
-                    background-color: #f8f9fa;
-                }
-                QLabel {
-                    font-weight: bold;
-                    color: #2c3e50;
-                }
-                QDateEdit, QDoubleSpinBox, QLineEdit, QRadioButton {
-                    padding: 8px;
-                    border: 1px solid #ddd;
-                    border-radius: 4px;
-                    background-color: white;
-                }
-                QPushButton {
-                    padding: 8px 15px;
-                    border-radius: 4px;
-                    font-weight: bold;
-                }
-                QPushButton#save {
-                    background-color: #4e73df;
-                    color: white;
-                }
-                QPushButton#save:hover {
-                    background-color: #2e59d9;
-                }
-                QPushButton#cancel {
-                    background-color: #f8f9fa;
-                    border: 1px solid #ddd;
-                    color: #2c3e50;
-                }
-                QPushButton#cancel:hover {
-                    background-color: #e9ecef;
-                }
-            """)
-            layout = QFormLayout(dialog)
-            layout.setSpacing(15)
-            layout.setContentsMargins(20, 20, 20, 20)
+            if response.status_code == 200:
+                # Actualizar con datos frescos
+                self.cobranza_actual = response.json()
+        except Exception as e:
+            print(f"Error al obtener datos actualizados: {str(e)}")
             
-            # Tipo de documento
-            tipo_doc_label = QLabel("Tipo de Documento:")
-            tipo_doc_container = QWidget()
-            tipo_doc_layout = QHBoxLayout(tipo_doc_container)
-            tipo_doc_layout.setContentsMargins(0, 0, 0, 0)
-            
-            rb_recibo = QRadioButton("Recibo")
-            rb_factura = QRadioButton("Factura/Recibo")
-            
-            # Establecer selección según el valor actual
-            es_factura = self.cobranza_actual.get('tipo_documento') == 'factura'
-            rb_factura.setChecked(es_factura)
-            rb_recibo.setChecked(not es_factura)
-            
-            tipo_doc_group = QButtonGroup()
-            tipo_doc_group.addButton(rb_recibo)
-            tipo_doc_group.addButton(rb_factura)
-            
-            tipo_doc_layout.addWidget(rb_recibo)
-            tipo_doc_layout.addWidget(rb_factura)
-            tipo_doc_layout.addStretch()
-            
-            layout.addRow(tipo_doc_label, tipo_doc_container)
-            
-            # Campos editables
-            fecha_edit = QDateEdit()
-            fecha_edit.setDate(QDate.fromString(self.cobranza_actual['fecha'], "yyyy-MM-dd"))
-            fecha_edit.setCalendarPopup(True)
-            
-            # Campos para número de factura y razón social
-            factura_edit = QLineEdit()
-            factura_edit.setText(self.cobranza_actual.get('numero_factura', ''))
-            
-            razon_social_edit = QLineEdit()
-            razon_social_edit.setText(self.cobranza_actual.get('razon_social', ''))
-            
-            # Mostrar/ocultar campos según tipo de documento
-            factura_label = QLabel("Número de Factura:")
-            razon_social_label = QLabel("Razón Social:")
-            
-            factura_label.setVisible(es_factura)
-            factura_edit.setVisible(es_factura)
-            razon_social_label.setVisible(es_factura)
-            razon_social_edit.setVisible(es_factura)
-            
-                
-    # Conectar evento
+        # Abrir diálogo de edición con los datos actuales
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Editar Cobranza")
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #f8f9fa;
+            }
+            QLabel {
+                font-weight: bold;
+                color: #2c3e50;
+            }
+            QDateEdit, QDoubleSpinBox, QLineEdit, QRadioButton {
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background-color: white;
+            }
+            QPushButton {
+                padding: 8px 15px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton#save {
+                background-color: #4e73df;
+                color: white;
+            }
+            QPushButton#save:hover {
+                background-color: #2e59d9;
+            }
+            QPushButton#cancel {
+                background-color: #f8f9fa;
+                border: 1px solid #ddd;
+                color: #2c3e50;
+            }
+            QPushButton#cancel:hover {
+                background-color: #e9ecef;
+            }
+        """)
+        layout = QFormLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Tipo de documento
+        tipo_doc_label = QLabel("Tipo de Documento:")
+        tipo_doc_container = QWidget()
+        tipo_doc_layout = QHBoxLayout(tipo_doc_container)
+        tipo_doc_layout.setContentsMargins(0, 0, 0, 0)
+        
+        rb_recibo = QRadioButton("Recibo")
+        rb_factura = QRadioButton("Factura/Recibo")
+        
+        # Establecer selección según el valor actual
+        es_factura = self.cobranza_actual.get('tipo_documento') == 'factura'
+        rb_factura.setChecked(es_factura)
+        rb_recibo.setChecked(not es_factura)
+        
+        tipo_doc_group = QButtonGroup()
+        tipo_doc_group.addButton(rb_recibo)
+        tipo_doc_group.addButton(rb_factura)
+        
+        tipo_doc_layout.addWidget(rb_recibo)
+        tipo_doc_layout.addWidget(rb_factura)
+        tipo_doc_layout.addStretch()
+        
+        layout.addRow(tipo_doc_label, tipo_doc_container)
+        
+        # Campos editables
+        fecha_edit = QDateEdit()
+        fecha_edit.setDate(QDate.fromString(self.cobranza_actual['fecha'], "yyyy-MM-dd"))
+        fecha_edit.setCalendarPopup(True)
+        
+        # Campos para número de factura y razón social
+        factura_edit = QLineEdit()
+        factura_edit.setText(self.cobranza_actual.get('numero_factura', ''))
+        
+        razon_social_edit = QLineEdit()
+        razon_social_edit.setText(self.cobranza_actual.get('razon_social', ''))
+        
+        # Mostrar/ocultar campos según tipo de documento
+        factura_label = QLabel("Número de Factura:")
+        razon_social_label = QLabel("Razón Social:")
+        
+        factura_label.setVisible(es_factura)
+        factura_edit.setVisible(es_factura)
+        razon_social_label.setVisible(es_factura)
+        razon_social_edit.setVisible(es_factura)
+    
+    # Función para mostrar/ocultar campos al cambiar tipo de documento
+        def on_tipo_cambio():
+            es_factura_nueva = rb_factura.isChecked()
+            factura_label.setVisible(es_factura_nueva)
+            factura_edit.setVisible(es_factura_nueva)
+            razon_social_label.setVisible(es_factura_nueva)
+            razon_social_edit.setVisible(es_factura_nueva)
+        
+        # Conectar evento
+        rb_recibo.toggled.connect(on_tipo_cambio)
+        rb_factura.toggled.connect(on_tipo_cambio)
+        
+        # Campos para el resto de información
+        monto_spin = QDoubleSpinBox()
+        monto_spin.setRange(0, 999999.99)
+        monto_spin.setValue(float(self.cobranza_actual.get('monto', 0)))
+        monto_spin.setPrefix("$ ")
+        monto_spin.setDecimals(2)
+        
+        descripcion_edit = QLineEdit()
+        descripcion_edit.setText(self.cobranza_actual.get('descripcion', ''))
+        
+        # Añadir campos al layout
+        layout.addRow("Fecha:", fecha_edit)
+        layout.addRow(factura_label, factura_edit)
+        layout.addRow(razon_social_label, razon_social_edit)
+        layout.addRow("Monto:", monto_spin)
+        layout.addRow("Descripción:", descripcion_edit)
+        
+        # Botones
+        btn_layout = QHBoxLayout()
+        guardar_btn = QPushButton("Guardar")
+        guardar_btn.setObjectName("save")
+        cancelar_btn = QPushButton("Cancelar")
+        cancelar_btn.setObjectName("cancel")
+        
+        btn_layout.addWidget(cancelar_btn)
+        btn_layout.addWidget(guardar_btn)
+        
+        layout.addRow("", btn_layout)
+        
+        # Determinar tipo de documento para guardarlo
+        def tipo_documento_seleccionado():
+            if rb_factura.isChecked():
+                return "factura"
+            return "recibo"
+        
+        # Conectar botones a acciones
+        guardar_btn.clicked.connect(lambda: self.guardar_edicion_cobranza(
+            dialog, 
+            self.cobranza_actual['id'], 
+            fecha_edit.date().toString("yyyy-MM-dd"),
+            tipo_documento_seleccionado(),
+            factura_edit.text() if rb_factura.isChecked() else "",
+            razon_social_edit.text() if rb_factura.isChecked() else "",
+            monto_spin.value(),
+            descripcion_edit.text()
+        ))
+        cancelar_btn.clicked.connect(dialog.reject)
+        
+        # Ajustar tamaño y mostrar diálogo
+        dialog.setMinimumWidth(400)
+        dialog.exec()
+        # Conectar evento
 
 
     def guardar_edicion_cobranza(self, dialog, cobranza_id, fecha, tipo_documento, numero_factura, razon_social, monto, descripcion):
