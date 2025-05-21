@@ -233,43 +233,48 @@ def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
     db.add(partida)
     db.commit()
     
-    try:
-        # Verificar si hay configuración de email activa y el usuario tiene email
-        if usuario and usuario.email:
-            email_config = get_active_email_config(db)
-            
-            if email_config:
-                # Importar aquí para evitar problemas de importación circular
-                from email_service import EmailService
+    # Comprobar si es una orden de pago (no una factura)
+    enviar_email = (db_pago.tipo_documento == "orden_pago")
+    
+    # Enviar email solo si es una orden de pago
+    if enviar_email:
+        try:
+            # Verificar si hay configuración de email activa y el usuario tiene email
+            if usuario and usuario.email:
+                email_config = get_active_email_config(db)
                 
-                # Crear servicio de email
-                email_service = EmailService(
-                    smtp_server=email_config.smtp_server,
-                    smtp_port=email_config.smtp_port,
-                    username=email_config.smtp_username,
-                    password=email_config.smtp_password,
-                    sender_email=email_config.email_from
-                )
-                
-                # Enviar recibo
-                success, message = email_service.send_payment_receipt_email(
-                    db=db,
-                    pago=db_pago, 
-                    recipient_email=usuario.email
-                )
-                
-                # Actualizar estado del envío
-                if success:
-                    db_pago.email_enviado = True
-                    db_pago.fecha_envio_email = datetime.now()
-                    db_pago.email_destinatario = usuario.email
-                    db.commit()
-                    db.refresh(db_pago)
-                    print(f"Orden de pago enviada por email a {usuario.email}")
-                else:
-                    print(f"Error al enviar orden de pago: {message}")
-    except Exception as e:
-        print(f"Error en envío de orden de pago por email: {str(e)}")
+                if email_config:
+                    # Importar aquí para evitar problemas de importación circular
+                    from email_service import EmailService
+                    
+                    # Crear servicio de email
+                    email_service = EmailService(
+                        smtp_server=email_config.smtp_server,
+                        smtp_port=email_config.smtp_port,
+                        username=email_config.smtp_username,
+                        password=email_config.smtp_password,
+                        sender_email=email_config.email_from
+                    )
+                    
+                    # Enviar recibo
+                    success, message = email_service.send_payment_receipt_email(
+                        db=db,
+                        pago=db_pago, 
+                        recipient_email=usuario.email
+                    )
+                    
+                    # Actualizar estado del envío
+                    if success:
+                        db_pago.email_enviado = True
+                        db_pago.fecha_envio_email = datetime.now()
+                        db_pago.email_destinatario = usuario.email
+                        db.commit()
+                        db.refresh(db_pago)
+                        print(f"Orden de pago enviada por email a {usuario.email}")
+                    else:
+                        print(f"Error al enviar orden de pago: {message}")
+        except Exception as e:
+            print(f"Error en envío de orden de pago por email: {str(e)}")
     
     return db_pago
 
@@ -548,46 +553,51 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
     db.add(partida)
     db.commit()
     
-    try:
-        # Obtener usuario para su email
-        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first()
-        
-        # Verificar si hay configuración de email activa y el usuario tiene email
-        if usuario and usuario.email:
-            email_config = get_active_email_config(db)
+    # Comprobar si es un recibo (no una factura)
+    enviar_email = (db_cobranza.tipo_documento == "recibo")
+    
+    # Enviar email solo si es un recibo
+    if enviar_email:
+        try:
+            # Obtener usuario para su email
+            usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first()
             
-            if email_config:
-                # Importar aquí para evitar problemas de importación circular
-                from email_service import EmailService
+            # Verificar si hay configuración de email activa y el usuario tiene email
+            if usuario and usuario.email:
+                email_config = get_active_email_config(db)
                 
-                # Crear servicio de email
-                email_service = EmailService(
-                    smtp_server=email_config.smtp_server,
-                    smtp_port=email_config.smtp_port,
-                    username=email_config.smtp_username,
-                    password=email_config.smtp_password,
-                    sender_email=email_config.email_from
-                )
-                
-                # Enviar recibo
-                success, message = email_service.send_receipt_email(
-                    db=db,
-                    cobranza=db_cobranza, 
-                    recipient_email=usuario.email
-                )
-                
-                # Actualizar estado del envío
-                if success:
-                    db_cobranza.email_enviado = True
-                    db_cobranza.fecha_envio_email = datetime.now()
-                    db_cobranza.email_destinatario = usuario.email
-                    db.commit()
-                    db.refresh(db_cobranza)
-                    print(f"Recibo enviado por email a {usuario.email}")
-                else:
-                    print(f"Error al enviar recibo: {message}")
-    except Exception as e:
-        print(f"Error en envío de recibo por email: {str(e)}")
+                if email_config:
+                    # Importar aquí para evitar problemas de importación circular
+                    from email_service import EmailService
+                    
+                    # Crear servicio de email
+                    email_service = EmailService(
+                        smtp_server=email_config.smtp_server,
+                        smtp_port=email_config.smtp_port,
+                        username=email_config.smtp_username,
+                        password=email_config.smtp_password,
+                        sender_email=email_config.email_from
+                    )
+                    
+                    # Enviar recibo
+                    success, message = email_service.send_receipt_email(
+                        db=db,
+                        cobranza=db_cobranza, 
+                        recipient_email=usuario.email
+                    )
+                    
+                    # Actualizar estado del envío
+                    if success:
+                        db_cobranza.email_enviado = True
+                        db_cobranza.fecha_envio_email = datetime.now()
+                        db_cobranza.email_destinatario = usuario.email
+                        db.commit()
+                        db.refresh(db_cobranza)
+                        print(f"Recibo enviado por email a {usuario.email}")
+                    else:
+                        print(f"Error al enviar recibo: {message}")
+        except Exception as e:
+            print(f"Error en envío de recibo por email: {str(e)}")
     
     return db_cobranza
 
