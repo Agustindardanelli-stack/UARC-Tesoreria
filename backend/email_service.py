@@ -210,42 +210,29 @@ class EmailService:
         return buffer.getvalue()
 
     def send_receipt_email(self, db: Session, cobranza, recipient_email):
+        # Primero verificar si es una factura y NO enviar correo en ese caso
+        if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
+            # Si es una factura, retornar sin enviar correo
+            print(f"No se envía correo para facturas: ID {cobranza.id}")
+            return False, "No se envía correo para facturas"
+        
         try:
+            # El resto del código existente...
             # Crear mensaje
             msg = MIMEMultipart()
             msg['From'] = self.sender
             msg['To'] = recipient_email
+            msg['Subject'] = f"Recibo de Cobranza #{cobranza.id}"
             
-            # Modificado: Asunto según tipo de documento
-            if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
-                msg['Subject'] = f"Factura/Recibo #{cobranza.id}"
-            else:
-                msg['Subject'] = f"Recibo de Cobranza #{cobranza.id}"
+            body = """
+            Estimado/a usuario,
             
-            # Modificado: Cuerpo según tipo de documento
-            if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
-                body = f"""
-                Estimado/a usuario,
-                
-                Adjunto encontrará la factura/recibo correspondiente a su pago reciente.
-                
-                {f"Número de Factura: {cobranza.numero_factura}" if hasattr(cobranza, 'numero_factura') and cobranza.numero_factura else ""}
-                {f"Razón Social: {cobranza.razon_social}" if hasattr(cobranza, 'razon_social') and cobranza.razon_social else ""}
-                
-                Gracias por su preferencia.
-                
-                Unidad de Árbitros de Río Cuarto
-                """
-            else:
-                body = """
-                Estimado/a usuario,
-                
-                Adjunto encontrará el recibo correspondiente a su pago reciente.
-                
-                Gracias por su preferencia.
-                
-                Unidad de Árbitros de Río Cuarto
-                """
+            Adjunto encontrará el recibo correspondiente a su pago reciente.
+            
+            Gracias por su preferencia.
+            
+            Unidad de Árbitros de Río Cuarto
+            """
             
             # Usar utf-8 explícitamente
             text_part = MIMEText(body, 'plain', 'utf-8')
@@ -254,13 +241,7 @@ class EmailService:
             # Generar y adjuntar PDF
             pdf = self.generate_receipt_pdf(db, cobranza)
             attachment = MIMEApplication(pdf, _subtype="pdf")
-            
-            # Modificado: Nombre del archivo según tipo de documento
-            if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
-                filename = f"Factura_{cobranza.id}.pdf"
-            else:
-                filename = f"Recibo_{cobranza.id}.pdf"
-                
+            filename = f"Recibo_{cobranza.id}.pdf"
             attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(attachment)
             
@@ -275,8 +256,7 @@ class EmailService:
             
         except Exception as e:
             print(f"Error detallado: {e}")
-            return False, f"Error al enviar email: {str(e)}"
-    
+            return False, f"Error al enviar email: {str(e)}"    
     def numero_a_letras(self, numero):
         """Convierte un número a su representación en letras (versión simplificada)"""
         # Versión básica
@@ -385,42 +365,29 @@ class EmailService:
         return buffer.getvalue()
     
     def send_payment_receipt_email(self, db: Session, pago, recipient_email):
+        # Primero verificar si es una factura y NO enviar correo en ese caso
+        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
+            # Si es una factura, retornar sin enviar correo
+            print(f"No se envía correo para facturas de pago: ID {pago.id}")
+            return False, "No se envía correo para facturas de pago"
+        
         try:
+            # El resto del código existente...
             # Crear mensaje
             msg = MIMEMultipart()
             msg['From'] = self.sender
             msg['To'] = recipient_email
+            msg['Subject'] = f"Orden de Pago #{pago.id}"
             
-            # Modificado: Asunto según tipo de documento
-            if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
-                msg['Subject'] = f"Factura/Recibo de Pago #{pago.id}"
-            else:
-                msg['Subject'] = f"Orden de Pago #{pago.id}"
+            body = """
+            Estimado/a usuario,
             
-            # Modificado: Cuerpo según tipo de documento
-            if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
-                body = f"""
-                Estimado/a usuario,
-                
-                Adjunto encontrará la factura/recibo correspondiente a su pago.
-                
-                {f"Número de Factura: {pago.numero_factura}" if hasattr(pago, 'numero_factura') and pago.numero_factura else ""}
-                {f"Razón Social: {pago.razon_social}" if hasattr(pago, 'razon_social') and pago.razon_social else ""}
-                
-                Gracias.
-                
-                Unidad de Árbitros de Río Cuarto
-                """
-            else:
-                body = """
-                Estimado/a usuario,
-                
-                Adjunto encontrará la orden de pago correspondiente.
-                
-                Gracias.
-                
-                Unidad de Árbitros de Río Cuarto
-                """
+            Adjunto encontrará la orden de pago correspondiente.
+            
+            Gracias.
+            
+            Unidad de Árbitros de Río Cuarto
+            """
             
             # Usar utf-8 explícitamente
             text_part = MIMEText(body, 'plain', 'utf-8')
@@ -429,13 +396,7 @@ class EmailService:
             # Generar y adjuntar PDF
             pdf = self.generate_payment_receipt_pdf(db, pago)
             attachment = MIMEApplication(pdf, _subtype="pdf")
-            
-            # Modificado: Nombre del archivo según tipo de documento
-            if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
-                filename = f"Factura_{pago.id}.pdf"
-            else:
-                filename = f"OrdenPago_{pago.id}.pdf"
-                
+            filename = f"OrdenPago_{pago.id}.pdf"
             attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(attachment)
             
