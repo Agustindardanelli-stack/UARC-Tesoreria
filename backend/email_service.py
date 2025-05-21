@@ -73,6 +73,115 @@ class EmailService:
         except Exception as e:
             print(f"Error al cargar el ícono: {e}")
             
+    def generate_payment_receipt_pdf(self, db: Session, pago):
+        """Genera un PDF con el recibo del pago con diseño moderno y profesional"""
+        
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=landscape(letter))  # Orientación horizontal
+        width, height = landscape(letter)
+        
+        # Definir márgenes y colores
+        margin = 0.75 * inch
+        accent_color = (0.1, 0.5, 0.7)  # Color azul corporativo
+        
+        # Fondo con sombreado suave
+        p.setFillColorRGB(0.95, 0.95, 1)  # Fondo muy claro
+        p.rect(margin/2, margin/2, width - margin, height - margin, fill=1, stroke=0)
+        
+        # Borde con color de acento
+        p.setStrokeColorRGB(*accent_color)
+        p.setLineWidth(2)
+        p.rect(margin/2, margin/2, width - margin, height - margin)
+        
+        # Cargar logo en la esquina superior izquierda
+        self.load_logo(p, margin + 1*inch, height - margin - inch)
+        
+        # Encabezado
+        p.setFillColorRGB(*accent_color)
+        p.setFont("Helvetica-Bold", 16)
+        p.drawCentredString(width/2, height - 1.5*inch, "UNIDAD DE ÁRBITROS DE RÍO CUARTO")
+        
+        # Modificado: Título según tipo de documento
+        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
+            p.setFont("Helvetica-Bold", 14)
+            p.drawCentredString(width/2, height - 2*inch, "FACTURA/RECIBO DE PAGO")
+        else:
+            p.setFont("Helvetica-Bold", 14)
+            p.drawCentredString(width/2, height - 2*inch, "ORDEN DE PAGO")
+        
+        # Obtener usuario/árbitro
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()        
+        
+        # Detalles del pago
+        p.setFont("Helvetica", 12)
+        p.setFillColorRGB(0, 0, 0)
+        
+        # NUEVO: Buscar la partida asociada para obtener el número de comprobante
+        partida = db.query(models.Partida).filter(
+            models.Partida.pago_id == pago.id
+        ).first()
+        
+        # Número de orden de pago o factura
+        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
+            num_doc = pago.numero_factura if hasattr(pago, 'numero_factura') and pago.numero_factura else pago.id
+            p.drawRightString(width - margin, height - 2.5*inch, f"N° Factura: {num_doc}")
+        else:
+            # MODIFICADO: Usar el número de comprobante de la partida en lugar del ID
+            if partida and partida.recibo_factura and partida.recibo_factura.startswith("O.P-"):
+                numero_orden = partida.recibo_factura
+            else:
+                numero_orden = f"O.P-{pago.id:05d}"
+            
+            p.drawRightString(width - margin, height - 2.5*inch, f"N° Orden: {numero_orden}")
+        
+        # Información detallada
+        info_y = height - 3.5*inch
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(margin, info_y, "Datos del Pago")
+        
+        p.setFont("Helvetica", 11)
+        linea_altura = 0.3*inch
+        
+        # Campos de información
+        campos = [
+            ("Fecha:", pago.fecha.strftime('%d/%m/%Y')),
+        ]
+        
+        # Modificado: Agregar razón social si es factura
+        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura" and hasattr(pago, 'razon_social') and pago.razon_social:
+            campos.append(("Razón Social:", pago.razon_social))
+        else:
+            campos.append(("Beneficiario:", usuario.nombre if usuario else "No especificado"))
+                
+        campos.append(("Monto:", f"$ {float(pago.monto):,.2f}"))
+        
+        # Descripción
+        descripcion = pago.descripcion if hasattr(pago, 'descripcion') and pago.descripcion else "Sin descripción"
+        campos.append(("Descripción:", descripcion))
+        
+        for i, (etiqueta, valor) in enumerate(campos):
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(margin, info_y - (i+1)*linea_altura, etiqueta)
+            p.setFont("Helvetica", 10)
+            p.drawString(margin + 2*inch, info_y - (i+1)*linea_altura, str(valor))
+        
+        # Área de firma
+        firma_y = margin + 2*inch
+        p.setFont("Helvetica", 10)
+        p.drawString(margin, firma_y + linea_altura, "Firma:")
+        p.line(margin + inch, firma_y, margin + 4*inch, firma_y)
+        
+        # Información adicional en pie de página
+        p.setFont("Helvetica", 8)
+        p.setFillColorRGB(0.5, 0.5, 0.5)
+        p.drawString(margin, margin, "Unidad de Árbitros de Río Cuarto")
+        p.drawRightString(width - margin, margin, datetime.now().strftime("%d/%m/%Y %H:%M"))
+        
+        p.save()
+        buffer.seek(0)
+        return buffer.getvalue()
+    
+
     def generate_receipt_pdf(self, db: Session, cobranza):
         """Genera un PDF con el recibo de la cobranza con diseño moderno y detallado"""
         buffer = BytesIO()
@@ -123,12 +232,23 @@ class EmailService:
         p.setFont("Helvetica", 12)
         p.setFillColorRGB(0, 0, 0)
         
+        # NUEVO: Buscar la partida asociada para obtener el número de comprobante
+        partida = db.query(models.Partida).filter(
+            models.Partida.cobranza_id == cobranza.id
+        ).first()
+        
         # Número de recibo o factura
         if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
             num_doc = cobranza.numero_factura if hasattr(cobranza, 'numero_factura') and cobranza.numero_factura else cobranza.id
             p.drawRightString(width - margin, height - 2.5*inch, f"N° Factura: {num_doc}")
         else:
-            p.drawRightString(width - margin, height - 2.5*inch, f"N° Recibo: {cobranza.id:05d}")
+            # MODIFICADO: Usar el número de comprobante de la partida en lugar del ID
+            if partida and partida.recibo_factura and partida.recibo_factura.startswith("REC-"):
+                numero_recibo = partida.recibo_factura
+            else:
+                numero_recibo = f"REC-{cobranza.id:05d}"
+            
+            p.drawRightString(width - margin, height - 2.5*inch, f"N° Recibo: {numero_recibo}")
         
         # Información detallada
         info_y = height - 3.5*inch
@@ -217,12 +337,25 @@ class EmailService:
             return False, "No se envía correo para facturas"
         
         try:
-            # El resto del código existente...
+            # NUEVO: Buscar la partida asociada para obtener el número de comprobante
+            partida = db.query(models.Partida).filter(
+                models.Partida.cobranza_id == cobranza.id
+            ).first()
+            
             # Crear mensaje
             msg = MIMEMultipart()
             msg['From'] = self.sender
             msg['To'] = recipient_email
-            msg['Subject'] = f"Recibo de Cobranza #{cobranza.id}"
+            
+            # MODIFICADO: Usar el número de comprobante de la partida en lugar del ID
+            if partida and partida.recibo_factura and partida.recibo_factura.startswith("REC-"):
+                numero_recibo = partida.recibo_factura
+                msg['Subject'] = f"Recibo de Cobranza {numero_recibo}"
+                filename = f"{numero_recibo}.pdf"
+            else:
+                # Fallback al comportamiento anterior si no se encuentra la partida
+                msg['Subject'] = f"Recibo de Cobranza #{cobranza.id}"
+                filename = f"Recibo_{cobranza.id}.pdf"
             
             body = """
             Estimado/a usuario,
@@ -241,7 +374,8 @@ class EmailService:
             # Generar y adjuntar PDF
             pdf = self.generate_receipt_pdf(db, cobranza)
             attachment = MIMEApplication(pdf, _subtype="pdf")
-            filename = f"Recibo_{cobranza.id}.pdf"
+            
+            # MODIFICADO: Usar el nombre de archivo con el número de comprobante
             attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(attachment)
             
@@ -256,7 +390,7 @@ class EmailService:
             
         except Exception as e:
             print(f"Error detallado: {e}")
-            return False, f"Error al enviar email: {str(e)}"    
+            return False, f"Error al enviar email: {str(e)}"
     def numero_a_letras(self, numero):
         """Convierte un número a su representación en letras (versión simplificada)"""
         # Versión básica
@@ -269,7 +403,6 @@ class EmailService:
         
     def generate_payment_receipt_pdf(self, db: Session, pago):
         """Genera un PDF con el recibo del pago con diseño moderno y profesional"""
-        
         buffer = BytesIO()
         p = canvas.Canvas(buffer, pagesize=landscape(letter))  # Orientación horizontal
         width, height = landscape(letter)
@@ -310,12 +443,23 @@ class EmailService:
         p.setFont("Helvetica", 12)
         p.setFillColorRGB(0, 0, 0)
         
+        # NUEVO: Buscar la partida asociada para obtener el número de comprobante
+        partida = db.query(models.Partida).filter(
+            models.Partida.pago_id == pago.id
+        ).first()
+        
         # Número de orden de pago o factura
         if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
             num_doc = pago.numero_factura if hasattr(pago, 'numero_factura') and pago.numero_factura else pago.id
             p.drawRightString(width - margin, height - 2.5*inch, f"N° Factura: {num_doc}")
         else:
-            p.drawRightString(width - margin, height - 2.5*inch, f"N° Orden: {pago.id:05d}")
+            # MODIFICADO: Usar el número de comprobante de la partida en lugar del ID
+            if partida and partida.recibo_factura and partida.recibo_factura.startswith("O.P-"):
+                numero_orden = partida.recibo_factura
+            else:
+                numero_orden = f"O.P-{pago.id:05d}"
+            
+            p.drawRightString(width - margin, height - 2.5*inch, f"N° Orden: {numero_orden}")
         
         # Información detallada
         info_y = height - 3.5*inch
@@ -363,7 +507,7 @@ class EmailService:
         p.save()
         buffer.seek(0)
         return buffer.getvalue()
-    
+        
     def send_payment_receipt_email(self, db: Session, pago, recipient_email):
         # Primero verificar si es una factura y NO enviar correo en ese caso
         if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
@@ -372,12 +516,25 @@ class EmailService:
             return False, "No se envía correo para facturas de pago"
         
         try:
-            # El resto del código existente...
+            # NUEVO: Buscar la partida asociada para obtener el número de comprobante
+            partida = db.query(models.Partida).filter(
+                models.Partida.pago_id == pago.id
+            ).first()
+            
             # Crear mensaje
             msg = MIMEMultipart()
             msg['From'] = self.sender
             msg['To'] = recipient_email
-            msg['Subject'] = f"Orden de Pago #{pago.id}"
+            
+            # MODIFICADO: Usar el número de comprobante de la partida en lugar del ID
+            if partida and partida.recibo_factura and partida.recibo_factura.startswith("O.P-"):
+                numero_orden = partida.recibo_factura
+                msg['Subject'] = f"Orden de Pago {numero_orden}"
+                filename = f"{numero_orden}.pdf"
+            else:
+                # Fallback al comportamiento anterior si no se encuentra la partida
+                msg['Subject'] = f"Orden de Pago #{pago.id}"
+                filename = f"OrdenPago_{pago.id}.pdf"
             
             body = """
             Estimado/a usuario,
@@ -396,7 +553,8 @@ class EmailService:
             # Generar y adjuntar PDF
             pdf = self.generate_payment_receipt_pdf(db, pago)
             attachment = MIMEApplication(pdf, _subtype="pdf")
-            filename = f"OrdenPago_{pago.id}.pdf"
+            
+            # MODIFICADO: Usar el nombre de archivo con el número de comprobante
             attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(attachment)
             
@@ -411,7 +569,7 @@ class EmailService:
             
         except Exception as e:
             print(f"Error detallado: {e}")
-            return False, f"Error al enviar email: {str(e)}"    
+            return False, f"Error al enviar email: {str(e)}"
         
     def generate_cuota_receipt_pdf(self, db: Session, cuota):
         """Genera un PDF con el recibo de pago de cuota"""
