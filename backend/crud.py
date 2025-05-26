@@ -709,6 +709,8 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
     
     return {"message": "Cobranza eliminada exitosamente"}
 # Funciones CRUD para Cuotas
+# Funciones CRUD para Cuotas - CORREGIDAS
+
 @audit_trail("cuota")
 def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, no_generar_movimiento: bool = False):
     # Crear la cuota
@@ -746,129 +748,6 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
     
     return db_cuota
 
-def get_cuota(db: Session, cuota_id: int):
-    return db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
-
-def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bool] = None):
-    # Consulta base de cuotas
-    query = db.query(models.Cuota)
-    
-    # Filtrar por estado de pago si se especifica
-    if pagado is not None:
-        query = query.filter(models.Cuota.pagado == pagado)
-    
-    # Ordenar por fecha, más recientes primero
-    cuotas = query.order_by(desc(models.Cuota.fecha)).offset(skip).limit(limit).all()
-    
-    # Procesar cuotas para mostrar deudas acumuladas
-    cuotas_procesadas = []
-    usuarios_cuotas = {}
-    fecha_actual = datetime.now().date()
-
-    for cuota in cuotas:
-        # Si la cuota no está pagada, agrupar por usuario
-        if not cuota.pagado:
-            if cuota.usuario_id not in usuarios_cuotas:
-                usuarios_cuotas[cuota.usuario_id] = {
-                    'cuotas': [],
-                    'monto_total': 0,
-                    'fecha_primera': cuota.fecha
-                }
-            
-            usuarios_cuotas[cuota.usuario_id]['cuotas'].append(cuota)
-            usuarios_cuotas[cuota.usuario_id]['monto_total'] += cuota.monto
-            
-            # Actualizar fecha primera si es más antigua
-            if cuota.fecha < usuarios_cuotas[cuota.usuario_id]['fecha_primera']:
-                usuarios_cuotas[cuota.usuario_id]['fecha_primera'] = cuota.fecha
-
-    # Modificar las cuotas para incluir información de deuda
-    for cuota in cuotas:
-        # Si el usuario tiene múltiples cuotas pendientes, añadir información
-        if not cuota.pagado and cuota.usuario_id in usuarios_cuotas:
-            info_usuario = usuarios_cuotas[cuota.usuario_id]
-            
-            # Calcular meses de atraso
-            meses_atraso = (fecha_actual.year - cuota.fecha.year) * 12 + (fecha_actual.month - cuota.fecha.month)
-            
-            # Si hay más de una cuota pendiente, añadir información adicional
-            if len(info_usuario['cuotas']) > 1:
-                cuota.monto_total_pendiente = float(info_usuario['monto_total'])
-                cuota.cuotas_pendientes = len(info_usuario['cuotas'])
-                cuota.fecha_primera_deuda = info_usuario['fecha_primera']
-                cuota.meses_atraso = meses_atraso
-        
-        cuotas_procesadas.append(cuota)
-    
-    return cuotas_procesadas
-
-def calcular_meses_atraso(fecha_cuota):
-    """
-    Calcula los meses de atraso desde una fecha de cuota
-    """
-    # Obtener fecha actual
-    fecha_actual = datetime.now().date()
-    
-    # Calcular meses de atraso
-    meses_atraso = (
-        (fecha_actual.year - fecha_cuota.year) * 12 + 
-        (fecha_actual.month - fecha_cuota.month)
-    )
-    
-    # Ajustar si el día actual es menor que el día de la cuota
-    if fecha_actual.day < fecha_cuota.day:
-        meses_atraso -= 1
-    
-    return max(0, meses_atraso)
-
-def get_cuotas_by_usuario(db: Session, usuario_id: int, pagado: Optional[bool] = None):
-    # Consulta base de cuotas para un usuario específico
-    query = db.query(models.Cuota).filter(models.Cuota.usuario_id == usuario_id)
-    
-    # Filtrar por estado de pago si se especifica
-    if pagado is not None:
-        query = query.filter(models.Cuota.pagado == pagado)
-    
-    # Ordenar por fecha, más recientes primero
-    cuotas = query.order_by(desc(models.Cuota.fecha)).all()
-    
-    # Procesar cuotas no pagadas
-    cuotas_pendientes = [cuota for cuota in cuotas if not cuota.pagado]
-    fecha_actual = datetime.now().date()
-    
-    # Si hay cuotas pendientes, añadir información de deuda
-    if cuotas_pendientes:
-        # Calcular monto total de cuotas pendientes
-        monto_total_pendiente = sum(cuota.monto for cuota in cuotas_pendientes)
-        
-        # Encontrar la fecha de la primera cuota pendiente
-        fecha_primera_deuda = min(cuota.fecha for cuota in cuotas_pendientes)
-        
-        # Calcular meses de atraso
-        meses_atraso = (fecha_actual.year - fecha_primera_deuda.year) * 12 + (fecha_actual.month - fecha_primera_deuda.month)
-        
-        # Añadir información a cada cuota pendiente
-        for cuota in cuotas_pendientes:
-            cuota.monto_total_pendiente = float(monto_total_pendiente)
-            cuota.cuotas_pendientes = len(cuotas_pendientes)
-            cuota.fecha_primera_deuda = fecha_primera_deuda
-            cuota.meses_atraso = meses_atraso
-    
-    return cuotas
-@audit_trail("cuota")
-def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate):
-    db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
-    if not db_cuota:
-        raise HTTPException(status_code=404, detail="Cuota no encontrada")
-    
-    update_data = cuota_update.dict(exclude_unset=True)
-    
-    for key, value in update_data.items():
-        setattr(db_cuota, key, value)
-    
-    db.commit()
-    db.refresh(db_cuota)
-    return db_cuota
 @audit_trail("cuota")
 def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id: int, generar_movimiento: bool = True):
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
@@ -967,6 +846,113 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
     
     db.refresh(db_cuota)
     return db_cuota
+
+def get_cuota(db: Session, cuota_id: int):
+    return db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
+
+def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bool] = None):
+    # Consulta base de cuotas
+    query = db.query(models.Cuota)
+    
+    # Filtrar por estado de pago si se especifica
+    if pagado is not None:
+        query = query.filter(models.Cuota.pagado == pagado)
+    
+    # Ordenar por fecha, más recientes primero
+    cuotas = query.order_by(desc(models.Cuota.fecha)).offset(skip).limit(limit).all()
+    
+    # Procesar cuotas para mostrar deudas acumuladas
+    cuotas_procesadas = []
+    usuarios_cuotas = {}
+    fecha_actual = datetime.now().date()
+
+    for cuota in cuotas:
+        # Si la cuota no está pagada, agrupar por usuario
+        if not cuota.pagado:
+            if cuota.usuario_id not in usuarios_cuotas:
+                usuarios_cuotas[cuota.usuario_id] = {
+                    'cuotas': [],
+                    'monto_total': 0,
+                    'fecha_primera': cuota.fecha
+                }
+            
+            usuarios_cuotas[cuota.usuario_id]['cuotas'].append(cuota)
+            usuarios_cuotas[cuota.usuario_id]['monto_total'] += cuota.monto
+            
+            # Actualizar fecha primera si es más antigua
+            if cuota.fecha < usuarios_cuotas[cuota.usuario_id]['fecha_primera']:
+                usuarios_cuotas[cuota.usuario_id]['fecha_primera'] = cuota.fecha
+
+    # Modificar las cuotas para incluir información de deuda
+    for cuota in cuotas:
+        # Si el usuario tiene múltiples cuotas pendientes, añadir información
+        if not cuota.pagado and cuota.usuario_id in usuarios_cuotas:
+            info_usuario = usuarios_cuotas[cuota.usuario_id]
+            
+            # Calcular meses de atraso
+            meses_atraso = (fecha_actual.year - cuota.fecha.year) * 12 + (fecha_actual.month - cuota.fecha.month)
+            
+            # Si hay más de una cuota pendiente, añadir información adicional
+            if len(info_usuario['cuotas']) > 1:
+                cuota.monto_total_pendiente = float(info_usuario['monto_total'])
+                cuota.cuotas_pendientes = len(info_usuario['cuotas'])
+                cuota.fecha_primera_deuda = info_usuario['fecha_primera']
+                cuota.meses_atraso = meses_atraso
+        
+        cuotas_procesadas.append(cuota)
+    
+    return cuotas_procesadas
+
+def get_cuotas_by_usuario(db: Session, usuario_id: int, pagado: Optional[bool] = None):
+    # Consulta base de cuotas para un usuario específico
+    query = db.query(models.Cuota).filter(models.Cuota.usuario_id == usuario_id)
+    
+    # Filtrar por estado de pago si se especifica
+    if pagado is not None:
+        query = query.filter(models.Cuota.pagado == pagado)
+    
+    # Ordenar por fecha, más recientes primero
+    cuotas = query.order_by(desc(models.Cuota.fecha)).all()
+    
+    # Procesar cuotas no pagadas
+    cuotas_pendientes = [cuota for cuota in cuotas if not cuota.pagado]
+    fecha_actual = datetime.now().date()
+    
+    # Si hay cuotas pendientes, añadir información de deuda
+    if cuotas_pendientes:
+        # Calcular monto total de cuotas pendientes
+        monto_total_pendiente = sum(cuota.monto for cuota in cuotas_pendientes)
+        
+        # Encontrar la fecha de la primera cuota pendiente
+        fecha_primera_deuda = min(cuota.fecha for cuota in cuotas_pendientes)
+        
+        # Calcular meses de atraso
+        meses_atraso = (fecha_actual.year - fecha_primera_deuda.year) * 12 + (fecha_actual.month - fecha_primera_deuda.month)
+        
+        # Añadir información a cada cuota pendiente
+        for cuota in cuotas_pendientes:
+            cuota.monto_total_pendiente = float(monto_total_pendiente)
+            cuota.cuotas_pendientes = len(cuotas_pendientes)
+            cuota.fecha_primera_deuda = fecha_primera_deuda
+            cuota.meses_atraso = meses_atraso
+    
+    return cuotas
+
+@audit_trail("cuota")
+def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate):
+    db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
+    if not db_cuota:
+        raise HTTPException(status_code=404, detail="Cuota no encontrada")
+    
+    update_data = cuota_update.dict(exclude_unset=True)
+    
+    for key, value in update_data.items():
+        setattr(db_cuota, key, value)
+    
+    db.commit()
+    db.refresh(db_cuota)
+    return db_cuota
+
 def reenviar_recibo_cuota(db: Session, cuota_id: int, email: str = None , current_user_id: int = None):
     # Obtener la cuota
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
@@ -1030,7 +1016,6 @@ def delete_cuota(db: Session, cuota_id: int):
     db.delete(db_cuota)
     db.commit()
     return {"message": "Cuota eliminada exitosamente"}
-
 # Funciones CRUD para Partidas
 @audit_trail("partidas")
 def create_partida(db: Session, partida: schemas.PartidaCreate, current_user_id: int = None):
