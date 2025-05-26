@@ -711,6 +711,8 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
 # Funciones CRUD para Cuotas
 # Funciones CRUD para Cuotas - CORREGIDAS
 
+# Funciones CRUD para Cuotas - CORREGIDAS SIN CUOTA_ID
+
 @audit_trail("cuota")
 def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, no_generar_movimiento: bool = False):
     # Crear la cuota
@@ -725,7 +727,7 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
         usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
         
-        # CORRECCIÓN: Obtener la última partida para calcular el saldo correcto
+        # Obtener la última partida para calcular el saldo correcto
         ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
         saldo_anterior = ultima_partida.saldo if ultima_partida else 0
         nuevo_saldo = saldo_anterior + db_cuota.monto
@@ -737,9 +739,8 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
             tipo="ingreso",
             cuenta="CUOTAS",
             usuario_id=current_user_id,  # Usuario que realiza la acción
-            cuota_id=db_cuota.id,  # ✅ AGREGAR: Relacionar con la cuota
-            recibo_factura=f"C.S.-{db_cuota.id}",  # ✅ AGREGAR: Número de comprobante
-            saldo=nuevo_saldo,  # ✅ CORREGIR: Calcular saldo correcto
+            recibo_factura=f"C.S.-{db_cuota.id}",  # ✅ NÚMERO DE COMPROBANTE CORRECTO
+            saldo=nuevo_saldo,
             ingreso=db_cuota.monto,
             egreso=0
         )
@@ -750,14 +751,14 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
 
 @audit_trail("cuota")
 def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id: int, generar_movimiento: bool = True):
-    # ✅ AGREGAR: Limpiar caché de SQLAlchemy para evitar datos obsoletos
+    # Limpiar caché de SQLAlchemy para evitar datos obsoletos
     db.expire_all()
     
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
     if not db_cuota:
         raise HTTPException(status_code=404, detail="Cuota no encontrada")
     
-    # ✅ AGREGAR: Logging para debugging
+    # Logging para debugging
     print(f"DEBUG - Cuota ID {cuota_id}: pagado={db_cuota.pagado}, monto_pagado={db_cuota.monto_pagado}")
     
     if db_cuota.pagado:
@@ -770,7 +771,7 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
     
     # Crear partida directamente sin crear cobranza
     if generar_movimiento:
-        # CORRECCIÓN: Crear partida asociada directamente a la cuota CON cuota_id y recibo_factura
+        # Crear partida asociada directamente a la cuota CON recibo_factura
         partida = models.Partida(
             fecha=func.now(),
             detalle=f"Pago de cuota societaria del {db_cuota.fecha.strftime('%d/%m/%Y')}",
@@ -778,8 +779,7 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
             tipo="ingreso",
             cuenta="CAJA",
             usuario_id=db_cuota.usuario_id,
-            cuota_id=cuota_id,  # ✅ RELACIONAR: Con la cuota
-            recibo_factura=f"C.S.-{cuota_id}",  # ✅ NÚMERO: De comprobante correcto
+            recibo_factura=f"C.S.-{cuota_id}",  # ✅ NÚMERO DE COMPROBANTE CORRECTO
             saldo=0,  # Se calculará correctamente después
             ingreso=monto_pagado,
             egreso=0
