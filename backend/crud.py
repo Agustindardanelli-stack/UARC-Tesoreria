@@ -750,9 +750,15 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
 
 @audit_trail("cuota")
 def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id: int, generar_movimiento: bool = True):
+    # ✅ AGREGAR: Limpiar caché de SQLAlchemy para evitar datos obsoletos
+    db.expire_all()
+    
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
     if not db_cuota:
         raise HTTPException(status_code=404, detail="Cuota no encontrada")
+    
+    # ✅ AGREGAR: Logging para debugging
+    print(f"DEBUG - Cuota ID {cuota_id}: pagado={db_cuota.pagado}, monto_pagado={db_cuota.monto_pagado}")
     
     if db_cuota.pagado:
         raise HTTPException(status_code=400, detail="La cuota ya ha sido pagada")
@@ -772,8 +778,8 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
             tipo="ingreso",
             cuenta="CAJA",
             usuario_id=db_cuota.usuario_id,
-            cuota_id=cuota_id,  # ✅ AGREGAR: Relacionar con la cuota
-            recibo_factura=f"C.S.-{cuota_id}",  # ✅ AGREGAR: Número de comprobante correcto
+            cuota_id=cuota_id,  # ✅ RELACIONAR: Con la cuota
+            recibo_factura=f"C.S.-{cuota_id}",  # ✅ NÚMERO: De comprobante correcto
             saldo=0,  # Se calculará correctamente después
             ingreso=monto_pagado,
             egreso=0
