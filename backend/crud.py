@@ -723,6 +723,11 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
         usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
         
+        # CORRECCIÓN: Obtener la última partida para calcular el saldo correcto
+        ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
+        saldo_anterior = ultima_partida.saldo if ultima_partida else 0
+        nuevo_saldo = saldo_anterior + db_cuota.monto
+        
         partida = models.Partida(
             fecha=db_cuota.fecha,
             detalle=f"Cuota {nombre_usuario}",
@@ -730,7 +735,9 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
             tipo="ingreso",
             cuenta="CUOTAS",
             usuario_id=current_user_id,  # Usuario que realiza la acción
-            saldo=0,
+            cuota_id=db_cuota.id,  # ✅ AGREGAR: Relacionar con la cuota
+            recibo_factura=f"C.S.-{db_cuota.id}",  # ✅ AGREGAR: Número de comprobante
+            saldo=nuevo_saldo,  # ✅ CORREGIR: Calcular saldo correcto
             ingreso=db_cuota.monto,
             egreso=0
         )
@@ -878,7 +885,7 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
     
     # Crear partida directamente sin crear cobranza
     if generar_movimiento:
-        # Crear partida asociada directamente a la cuota
+        # CORRECCIÓN: Crear partida asociada directamente a la cuota CON cuota_id y recibo_factura
         partida = models.Partida(
             fecha=func.now(),
             detalle=f"Pago de cuota societaria del {db_cuota.fecha.strftime('%d/%m/%Y')}",
@@ -886,7 +893,8 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
             tipo="ingreso",
             cuenta="CAJA",
             usuario_id=db_cuota.usuario_id,
-            # No asignar cobranza_id
+            cuota_id=cuota_id,  # ✅ AGREGAR: Relacionar con la cuota
+            recibo_factura=f"C.S.-{cuota_id}",  # ✅ AGREGAR: Número de comprobante correcto
             saldo=0,  # Se calculará correctamente después
             ingreso=monto_pagado,
             egreso=0
