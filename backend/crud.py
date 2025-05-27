@@ -778,7 +778,7 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
         # Crear partida asociada directamente a la cuota CON información del usuario que pagó
         partida = models.Partida(
             fecha=func.now(),
-            detalle=f"Pago de cuota societaria del {db_cuota.fecha.strftime('%d/%m/%Y')}",
+            detalle=f"Pago de cuota : {db.query(models.Usuario).filter(models.Usuario.id == usuario_pago_id).first().nombre}",
             monto=monto_pagado,
             tipo="ingreso",
             cuenta="CAJA",
