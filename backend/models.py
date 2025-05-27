@@ -8,19 +8,46 @@ class Usuario(Base):
     __tablename__ = "usuarios"
     
     id = Column(Integer, primary_key=True, index=True)
-    nombre = Column(String(100), nullable=False, unique=True)
-    email = Column(String(100), nullable=False, unique=True)
-    password_hash = Column(Text, nullable=True)
-    rol_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
+    nombre = Column(String, index=True)
+    email = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
+    telefono = Column(String, nullable=True)
+    direccion = Column(String, nullable=True)
+    fecha_nacimiento = Column(Date, nullable=True)
+    activo = Column(Boolean, default=True)
+    rol_id = Column(Integer, ForeignKey("roles.id"))
     
-    # Relaciones
+    # Relación con roles
     rol = relationship("Rol", back_populates="usuarios")
+    
+    # 🔧 RELACIONES CORREGIDAS CON FOREIGN_KEYS ESPECÍFICOS
+    # Cuotas donde este usuario es el titular
+    cuotas = relationship(
+        "Cuota", 
+        foreign_keys="Cuota.usuario_id",
+        back_populates="usuario"
+    )
+    
+    # Cuotas que este usuario creó
+    cuotas_creadas = relationship(
+        "Cuota", 
+        foreign_keys="Cuota.creado_por_usuario_id",
+        back_populates="creado_por"
+    )
+    
+    # Cuotas que este usuario pagó
+    cuotas_pagadas = relationship(
+        "Cuota", 
+        foreign_keys="Cuota.pagado_por_usuario_id",
+        back_populates="pagado_por"
+    )
+    
+    # Otras relaciones existentes (mantén las que ya tienes)
     pagos = relationship("Pago", back_populates="usuario")
     cobranzas = relationship("Cobranza", back_populates="usuario")
     partidas = relationship("Partida", back_populates="usuario")
-    cuotas = relationship("Cuota", back_populates="usuario")
-    transacciones = relationship("Transaccion", back_populates="usuario")
     auditorias = relationship("Auditoria", back_populates="usuario")
+
 
 class Rol(Base):
     __tablename__ = "roles"
@@ -151,39 +178,44 @@ class EmailConfig(Base):
     email_from = Column(String(100), nullable=False)
     is_active = Column(Boolean, default=True)
 
-# En models.py, busca la clase Cuota y modifícala así:
-
 class Cuota(Base):
     __tablename__ = "cuota"
     
     id = Column(Integer, primary_key=True, index=True)
-    usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
-    fecha = Column(Date, nullable=False)
-    monto = Column(Numeric(10, 2), nullable=False)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"))
+    monto = Column(Numeric(10, 2))
+    fecha = Column(Date)
+    descripcion = Column(String, nullable=True)
     pagado = Column(Boolean, default=False)
+    fecha_vencimiento = Column(Date, nullable=True)
     monto_pagado = Column(Numeric(10, 2), default=0)
-    email_enviado = Column(Boolean, default=False)
-    fecha_envio_email = Column(DateTime, nullable=True)
-    email_destinatario = Column(String(100), nullable=True)
     
-    # Nuevos campos para deudas acumuladas
-    meses_atraso = Column(Integer, nullable=True)
-    monto_total_pendiente = Column(Numeric(10, 2), nullable=True)
-    cuotas_pendientes = Column(Integer, nullable=True)
-    fecha_primera_deuda = Column(Date, nullable=True)
+    # 🔧 NUEVOS CAMPOS AGREGADOS
+    creado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    pagado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    fecha_pago = Column(DateTime, nullable=True)
     
-    # ✅ NUEVOS CAMPOS PARA RASTREAR QUIÉN REALIZÓ LAS ACCIONES
-    creado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)  # Quién creó la cuota
-    pagado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)  # Quién pagó la cuota
-    fecha_pago = Column(DateTime, nullable=True)  # Cuándo se pagó
-
-    # Relaciones existentes
-    usuario = relationship("Usuario", back_populates="cuotas", foreign_keys=[usuario_id])
-    auditorias = relationship("Auditoria", back_populates="cuota")
+    # 🔧 RELACIONES CORREGIDAS CON FOREIGN_KEYS ESPECÍFICOS
+    # Usuario titular de la cuota
+    usuario = relationship(
+        "Usuario", 
+        foreign_keys=[usuario_id],
+        back_populates="cuotas"
+    )
     
-    # ✅ NUEVAS RELACIONES
-    creado_por = relationship("Usuario", foreign_keys=[creado_por_usuario_id])
-    pagado_por = relationship("Usuario", foreign_keys=[pagado_por_usuario_id])
+    # Usuario que creó la cuota
+    creado_por = relationship(
+        "Usuario", 
+        foreign_keys=[creado_por_usuario_id],
+        back_populates="cuotas_creadas"
+    )
+    
+    # Usuario que pagó la cuota
+    pagado_por = relationship(
+        "Usuario", 
+        foreign_keys=[pagado_por_usuario_id],
+        back_populates="cuotas_pagadas"
+    )
     
     @classmethod
     def calcular_meses_atraso(cls, fecha_cuota):
