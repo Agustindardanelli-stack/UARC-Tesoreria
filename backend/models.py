@@ -8,13 +8,9 @@ class Usuario(Base):
     __tablename__ = "usuarios"
     
     id = Column(Integer, primary_key=True, index=True)
-    nombre = Column(String(100), nullable=False)
+    nombre = Column(String(100), nullable=False, unique=True)
     email = Column(String(100), nullable=False, unique=True)
     password_hash = Column(Text, nullable=True)
-    telefono = Column(String, nullable=True)
-    direccion = Column(String, nullable=True)
-    fecha_nacimiento = Column(Date, nullable=True)
-    activo = Column(Boolean, default=True)
     rol_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
     
     # Relaciones
@@ -45,6 +41,8 @@ class Retencion(Base):
     # Relaciones existentes
     cobranzas = relationship("Cobranza", back_populates="retencion", primaryjoin="Retencion.id == Cobranza.retencion_id")
     divisiones = relationship("RetencionDivision", back_populates="retencion")
+    
+    
 
 class Categoria(Base):
     __tablename__ = "categorias"
@@ -74,19 +72,21 @@ class Pago(Base):
     fecha = Column(Date, nullable=False)
     monto = Column(Numeric(10, 2), nullable=False)    
     transaccion_id = Column(Integer, ForeignKey("transacciones.id"), nullable=True)
-    descripcion = Column(Text, nullable=True)
+    descripcion = Column(Text, nullable=True)  # Nuevo campo para descripción
     tipo_documento = Column(String(20), nullable=False, default="orden_pago")
     numero_factura = Column(String(50), nullable=True)
     razon_social = Column(String(100), nullable=True)
-    email_enviado = Column(Boolean, default=False)
-    fecha_envio_email = Column(DateTime, nullable=True)
-    email_destinatario = Column(String(100), nullable=True)
+    
+    # Eliminar la relación con retencion_id
     
     # Relaciones
     usuario = relationship("Usuario", back_populates="pagos")
     transaccion = relationship("Transaccion", back_populates="pagos")
     auditorias = relationship("Auditoria", back_populates="pago")
     partidas = relationship("Partida", back_populates="pago")
+    email_enviado = Column(Boolean, default=False)
+    fecha_envio_email = Column(DateTime, nullable=True)
+    email_destinatario = Column(String(100), nullable=True)
 
 class Cobranza(Base):
     __tablename__ = "cobranzas"
@@ -96,8 +96,12 @@ class Cobranza(Base):
     fecha = Column(Date, nullable=False)
     monto = Column(Numeric(10, 2), nullable=False)
     transaccion_id = Column(Integer, ForeignKey("transacciones.id"), nullable=True)
+    # Agregar estos dos campos nuevos
     retencion_id = Column(Integer, ForeignKey("retenciones.id"), nullable=True)
-    descripcion = Column(Text, nullable=True)
+    descripcion = Column(Text, nullable=True)  # Campo para descripción
+    
+    auditorias = relationship("Auditoria", back_populates="cobranza")
+    # Campos para tracking de email
     email_enviado = Column(Boolean, default=False)
     fecha_envio_email = Column(DateTime, nullable=True)
     email_destinatario = Column(String(100), nullable=True)
@@ -110,8 +114,6 @@ class Cobranza(Base):
     transaccion = relationship("Transaccion", back_populates="cobranzas")
     partidas = relationship("Partida", back_populates="cobranza")
     retencion = relationship("Retencion", back_populates="cobranzas")
-    auditorias = relationship("Auditoria", back_populates="cobranza")
-
 class Partida(Base):
     __tablename__ = "partidas"
     
@@ -163,32 +165,34 @@ class Cuota(Base):
     email_destinatario = Column(String(100), nullable=True)
     
     # Nuevos campos para deudas acumuladas
-    meses_atraso = Column(Integer, nullable=True)
-    monto_total_pendiente = Column(Numeric(10, 2), nullable=True)
-    cuotas_pendientes = Column(Integer, nullable=True)
-    fecha_primera_deuda = Column(Date, nullable=True)
+    meses_atraso = Column(Integer, nullable=True)  # Meses de atraso
+    monto_total_pendiente = Column(Numeric(10, 2), nullable=True)  # Monto total de cuotas pendientes
+    cuotas_pendientes = Column(Integer, nullable=True)  # Número de cuotas pendientes
+    fecha_primera_deuda = Column(Date, nullable=True)  # Fecha de la primera cuota pendiente
 
     # Relaciones
     usuario = relationship("Usuario", back_populates="cuotas")
     auditorias = relationship("Auditoria", back_populates="cuota")
-    
     @classmethod
     def calcular_meses_atraso(cls, fecha_cuota):
         """
         Calcula los meses de atraso desde una fecha de cuota
         """
+        # Obtener fecha actual
         fecha_actual = datetime.now().date()
         
+        # Calcular meses de atraso
         meses_atraso = (
             (fecha_actual.year - fecha_cuota.year) * 12 + 
             (fecha_actual.month - fecha_cuota.month)
         )
         
+        # Ajustar si el día actual es menor que el día de la cuota
         if fecha_actual.day < fecha_cuota.day:
             meses_atraso -= 1
         
-        return max(0, meses_atraso)
-
+        return max(0, meses_atraso)       
+        
 class Transaccion(Base):
     __tablename__ = "transacciones"
     
@@ -221,13 +225,14 @@ class Auditoria(Base):
     fecha = Column(DateTime, default=func.current_timestamp())
     detalles = Column(Text, nullable=True)
     
-    # Relaciones específicas
+    # Relaciones con otros modelos
+    usuario = relationship("Usuario", back_populates="auditorias")
+    
+    # Relaciones específicas (opcional, dependiendo de tus necesidades)
     pago_id = Column(Integer, ForeignKey("pagos.id"), nullable=True)
     cobranza_id = Column(Integer, ForeignKey("cobranzas.id"), nullable=True)
     cuota_id = Column(Integer, ForeignKey("cuota.id"), nullable=True)
     
-    # Relaciones
-    usuario = relationship("Usuario", back_populates="auditorias")
     pago = relationship("Pago", back_populates="auditorias")
     cobranza = relationship("Cobranza", back_populates="auditorias")
     cuota = relationship("Cuota", back_populates="auditorias")
