@@ -151,6 +151,8 @@ class EmailConfig(Base):
     email_from = Column(String(100), nullable=False)
     is_active = Column(Boolean, default=True)
 
+# En models.py, busca la clase Cuota y modifícala así:
+
 class Cuota(Base):
     __tablename__ = "cuota"
     
@@ -165,14 +167,24 @@ class Cuota(Base):
     email_destinatario = Column(String(100), nullable=True)
     
     # Nuevos campos para deudas acumuladas
-    meses_atraso = Column(Integer, nullable=True)  # Meses de atraso
-    monto_total_pendiente = Column(Numeric(10, 2), nullable=True)  # Monto total de cuotas pendientes
-    cuotas_pendientes = Column(Integer, nullable=True)  # Número de cuotas pendientes
-    fecha_primera_deuda = Column(Date, nullable=True)  # Fecha de la primera cuota pendiente
+    meses_atraso = Column(Integer, nullable=True)
+    monto_total_pendiente = Column(Numeric(10, 2), nullable=True)
+    cuotas_pendientes = Column(Integer, nullable=True)
+    fecha_primera_deuda = Column(Date, nullable=True)
+    
+    # ✅ NUEVOS CAMPOS PARA RASTREAR QUIÉN REALIZÓ LAS ACCIONES
+    creado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)  # Quién creó la cuota
+    pagado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)  # Quién pagó la cuota
+    fecha_pago = Column(DateTime, nullable=True)  # Cuándo se pagó
 
-    # Relaciones
-    usuario = relationship("Usuario", back_populates="cuotas")
+    # Relaciones existentes
+    usuario = relationship("Usuario", back_populates="cuotas", foreign_keys=[usuario_id])
     auditorias = relationship("Auditoria", back_populates="cuota")
+    
+    # ✅ NUEVAS RELACIONES
+    creado_por = relationship("Usuario", foreign_keys=[creado_por_usuario_id])
+    pagado_por = relationship("Usuario", foreign_keys=[pagado_por_usuario_id])
+    
     @classmethod
     def calcular_meses_atraso(cls, fecha_cuota):
         """
@@ -191,7 +203,7 @@ class Cuota(Base):
         if fecha_actual.day < fecha_cuota.day:
             meses_atraso -= 1
         
-        return max(0, meses_atraso)       
+        return max(0, meses_atraso)
         
 class Transaccion(Base):
     __tablename__ = "transacciones"

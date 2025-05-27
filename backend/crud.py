@@ -709,14 +709,14 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
     
     return {"message": "Cobranza eliminada exitosamente"}
 # Funciones CRUD para Cuotas
-# Funciones CRUD para Cuotas - CORREGIDAS
-
-# Funciones CRUD para Cuotas - CORREGIDAS SIN CUOTA_ID
 
 @audit_trail("cuota")
 def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, no_generar_movimiento: bool = False):
-    # Crear la cuota
-    db_cuota = models.Cuota(**cuota.dict())
+    # Crear la cuota con información del usuario que la creó
+    cuota_data = cuota.dict()
+    cuota_data['creado_por_usuario_id'] = current_user_id  # ✅ NUEVO: Guardar quién creó la cuota
+    
+    db_cuota = models.Cuota(**cuota_data)
     db.add(db_cuota)
     db.commit()
     db.refresh(db_cuota)
@@ -738,8 +738,8 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
             monto=db_cuota.monto,
             tipo="ingreso",
             cuenta="CUOTAS",
-            usuario_id=current_user_id,  # Usuario que realiza la acción
-            recibo_factura=f"C.S.-{db_cuota.id}",  # ✅ NÚMERO DE COMPROBANTE CORRECTO
+            usuario_id=current_user_id,  # Usuario que realiza la acción (quien creó la cuota)
+            recibo_factura=f"C.S.-{db_cuota.id}",
             saldo=nuevo_saldo,
             ingreso=db_cuota.monto,
             egreso=0
@@ -750,7 +750,7 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
     return db_cuota
 
 @audit_trail("cuota")
-def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id: int, generar_movimiento: bool = True):
+def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id: int, generar_movimiento: bool = True, usuario_que_paga_id: int = None):
     # Limpiar caché de SQLAlchemy para evitar datos obsoletos
     db.expire_all()
     
@@ -764,22 +764,26 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
     if db_cuota.pagado:
         raise HTTPException(status_code=400, detail="La cuota ya ha sido pagada")
     
+    # ✅ MODIFICACIÓN PRINCIPAL: Guardar quién realizó el pago
+    usuario_pago_id = usuario_que_paga_id if usuario_que_paga_id else current_user_id
+    
     # Actualizar cuota
     db_cuota.monto_pagado = monto_pagado
     db_cuota.fecha_pago = func.now()
     db_cuota.pagado = True
+    db_cuota.pagado_por_usuario_id = usuario_pago_id  # ✅ NUEVO: Guardar quién pagó
     
     # Crear partida directamente sin crear cobranza
     if generar_movimiento:
-        # Crear partida asociada directamente a la cuota CON recibo_factura
+        # Crear partida asociada directamente a la cuota CON información del usuario que pagó
         partida = models.Partida(
             fecha=func.now(),
             detalle=f"Pago de cuota societaria del {db_cuota.fecha.strftime('%d/%m/%Y')}",
             monto=monto_pagado,
             tipo="ingreso",
             cuenta="CAJA",
-            usuario_id=db_cuota.usuario_id,
-            recibo_factura=f"C.S.-{cuota_id}",  # ✅ NÚMERO DE COMPROBANTE CORRECTO
+            usuario_id=usuario_pago_id,  # ✅ MODIFICADO: Usar el usuario que realizó el pago
+            recibo_factura=f"C.S.-{cuota_id}",
             saldo=0,  # Se calculará correctamente después
             ingreso=monto_pagado,
             egreso=0
@@ -806,6 +810,7 @@ def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id
                 p.saldo = saldo_actual
             
             db.commit()
+            print(f"Saldos recalculados correctamente")
         except Exception as e:
             print(f"Error al recalcular saldos: {str(e)}")
     
