@@ -14,11 +14,11 @@ Sistema de gestión contable y administrativa para una agrupación de árbitros,
 
 ## 🛠️ Tecnologías Utilizadas
 
-- **Python 3**
-- **SQLite** como base de datos
-- **PyQt5** para la interfaz gráfica de usuario
-- **FastAPI / Flask** (si hay backend web, aclarar aquí)
-- **Render.com** para despliegue (si aplica)
+- Python 3
+- SQLite como base de datos
+- PyQt5 para la interfaz gráfica de usuario
+- FastAPI / Flask (si hay backend web, aclarar aquí)
+- Render.com para despliegue (si aplica)
 
 ## 📂 Estructura del Proyecto
 
@@ -29,38 +29,26 @@ UARC-Tesoreria/
 ├── render.yaml # Configuración para despliegue (Render)
 └── README.md
 
-bash
-Copiar
-Editar
+
 
 ## 🚀 Instalación y Ejecución
 
-1. Clona el repositorio:
-
-```bash
+`
+# 1. Clona el repositorio:
 git clone https://github.com/Agustindardanelli-stack/UARC-Tesoreria.git
 cd UARC-Tesoreria
-Crea y activa un entorno virtual (opcional pero recomendado):
 
-bash
-Copiar
-Editar
+# 2. Crea y activa un entorno virtual (opcional pero recomendado):
 python -m venv venv
 source venv/bin/activate  # En Windows: venv\Scripts\activate
-Instala las dependencias:
 
-bash
-Copiar
-Editar
+# 3. Instala las dependencias:
 pip install -r requirements.txt
-Ejecuta la app:
 
-bash
-Copiar
-Editar
+# 4. Ejecuta la app:
 python frontend/main.py
 🔐 Roles y Accesos
-Presidente / Tesorero: Acceso total al sistema.
+Admin / Tesorero: Acceso total al sistema.
 
 Árbitros: Solo pueden consultar sus movimientos o realizar pagos.
 
@@ -69,20 +57,16 @@ Usuarios sin acceso: Registrados para el libro diario, pero sin uso interactivo.
 📊 Funcionalidades del Libro Diario
 Visualización automática de ingresos y egresos.
 
-Registro de todos los movimientos.
+-Registro de todos los movimientos.
 
-Cálculo automático de saldos.
+-Cálculo automático de saldos.
 
-Exportación de reportes.
+-Exportación de reportes.
 
 📌 Estado del Proyecto
-✅ En desarrollo activo
-📅 Última actualización: junio 2025
+-En desarrollo activo
+
+-Última actualización: junio 2025
 
 🤝 Contribuciones
 ¿Querés colaborar? ¡Bienvenido! Abrí un issue o hacé un pull request.
-
-🧑 Autor
-Agustín Dardanelli
-🔗 GitHub
-
