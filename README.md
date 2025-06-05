@@ -6,19 +6,19 @@ Sistema de gestión contable y administrativa para una agrupación de árbitros,
 
 - Gestión de ingresos y egresos.
 - Registro de pagos y cobranzas por usuario.
-- Categorización de movimientos (retenciones, campeonatos, seguros, etc.).
+- Categorización de movimientos (retenciones, Cobranzas , Pagos , Cuotas.).
 - Dashboard con resumen financiero.
 - Filtros por fecha y usuario.
-- Control de acceso para diferentes perfiles (Tesorero, Presidente).
-- Backup y restauración de base de datos.
+- Control de acceso para diferentes perfiles (Tesorero, Admin).
+
 
 ## 🛠️ Tecnologías Utilizadas
 
 - Python 3
-- SQLite como base de datos
+- Postgres como base de datos
 - PyQt5 para la interfaz gráfica de usuario
-- FastAPI / Flask (si hay backend web, aclarar aquí)
-- Render.com para despliegue (si aplica)
+- FastAPI  
+- Render.com  
 
 ## 📂 Estructura del Proyecto
 
