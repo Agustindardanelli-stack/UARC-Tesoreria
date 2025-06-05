@@ -23,13 +23,8 @@ Sistema de gestión contable y administrativa para una agrupación de árbitros,
 ## 📂 Estructura del Proyecto
 
 UARC-Tesoreria/
-├── backend/ # Lógica del servidor (si aplica)
-├── frontend/ # Interfaz gráfica con PyQt5
-├── bd_backup.sql # Respaldo de base de datos
-├── render.yaml # Configuración para despliegue (Render)
-└── README.md
-
-
+├── backend/ 
+├── frontend/ 
 
 ## 🚀 Instalación y Ejecución
 
