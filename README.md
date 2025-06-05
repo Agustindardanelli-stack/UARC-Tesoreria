@@ -86,8 +86,3 @@ Exportación de reportes.
 Agustín Dardanelli
 🔗 GitHub
 
-nginx
-Copiar
-Editar
-
-Si necesitás que te ayude con más archivos o detalles, avisame.
