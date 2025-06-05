@@ -410,16 +410,24 @@ class DashboardView(QWidget):
                     # Ordenar partidas por fecha (descendente) y luego por ID (descendente)
                     partidas_data.sort(key=lambda x: (x.get('fecha', ''), x.get('id', 0)), reverse=True)
                     
-                    # Identificar todas las partidas que son cuotas societarias
+                    # CORRECCIÓN: Identificar y numerar correctamente las cuotas societarias
+                    # Filtrar solo las cuotas societarias (ingresos con 'cuota' en el detalle)
                     cuotas_societarias = []
                     for item in partidas_data:
                         detalle = item.get('detalle', '').lower()
                         ingreso = item.get('ingreso', 0)
                         if 'cuota' in detalle and ingreso > 0:
-                            cuotas_societarias.append(item.get('id'))
+                            cuotas_societarias.append(item)
                     
-                    # No calculamos los saldos manualmente, usamos los saldos del servidor
-                    # que han sido calculados correctamente cuando se hizo el recálculo
+                    # Ordenar las cuotas societarias por fecha y ID (más recientes primero)
+                    cuotas_societarias.sort(key=lambda x: (x.get('fecha', ''), x.get('id', 0)), reverse=True)
+                    
+                    # Crear un diccionario para mapear ID de cuota con su número de comprobante
+                    cuotas_comprobantes = {}
+                    for index, cuota in enumerate(cuotas_societarias):
+                        # El número de comprobante será secuencial empezando desde el más alto
+                        numero_comprobante = len(cuotas_societarias) - index
+                        cuotas_comprobantes[cuota.get('id')] = f"C.S.-{numero_comprobante}"
                     
                     # Llenar la tabla con los datos
                     for row, partida_item in enumerate(partidas_data):
@@ -477,21 +485,19 @@ class DashboardView(QWidget):
                         usuario_accion = usuario_obj.get('nombre', 'Sin registro') if usuario_obj else 'Sin registro'
                         self.partidas_table.setItem(row, 3, QTableWidgetItem(usuario_accion))
                         
-                        # MODIFICADO: Usar recibo_factura si está disponible
-                        # Número de comprobante
+                        # CORRECCIÓN: Número de comprobante mejorado
                         if partida_item.get('recibo_factura'):
                             # Si hay un número de comprobante ya asignado, usarlo
                             num_comprobante = partida_item.get('recibo_factura')
                         else:
-                            # Si no hay, usar la lógica anterior como respaldo
-                            if tipo_movimiento == "INGRESO" and ('cuota' in partida_item.get('detalle', '').lower()):
-                                # Contador para cuotas societarias
-                                if partida_item.get('id') in cuotas_societarias:
-                                    posicion = cuotas_societarias.index(partida_item.get('id')) + 1
-                                    num_recibo = str(len(cuotas_societarias) - posicion + 1)
-                                    num_comprobante = f"C.S.-{num_recibo}"
-                                else:
-                                    num_comprobante = f"C.S.-{partida_item.get('id')}"
+                            # Lógica corregida para asignar números de comprobante
+                            partida_id = partida_item.get('id')
+                            
+                            # Para cuotas societarias, usar el mapeo precalculado
+                            if (tipo_movimiento == "INGRESO" and 
+                                'cuota' in partida_item.get('detalle', '').lower() and 
+                                partida_id in cuotas_comprobantes):
+                                num_comprobante = cuotas_comprobantes[partida_id]
                             elif partida_item.get('cobranza_id'):
                                 # Verificar si la cobranza está relacionada con una factura
                                 cobranza_id = partida_item.get('cobranza_id')

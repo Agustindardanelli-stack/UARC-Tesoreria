@@ -954,11 +954,11 @@ class SocioCuotaView(QWidget):
                 print("Limpiado ComboBox")
                 for usuario in self.usuarios:
                     self.arbitro_combo.addItem(f"{usuario['nombre']}", usuario['id'])
-                    print(f"Añadido usuario: {usuario['nombre']}")
+                    
                 
                 # Verificar estado del checkbox para habilitar/deshabilitar combo
                 self.arbitro_combo.setEnabled(not self.todos_usuarios_check.isChecked())
-                print(f"Estado de habilitado del ComboBox: {self.arbitro_combo.isEnabled()}")
+                
                 
                 # Actualizar combo box de filtro
                 self.arbitro_filtro_combo.clear()
