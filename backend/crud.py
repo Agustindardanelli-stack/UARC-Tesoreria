@@ -709,10 +709,14 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
     
     return {"message": "Cobranza eliminada exitosamente"}
 # Funciones CRUD para Cuotas
+
 @audit_trail("cuota")
 def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, no_generar_movimiento: bool = False):
-    # Crear la cuota
-    db_cuota = models.Cuota(**cuota.dict())
+    # Crear la cuota con información del usuario que la creó
+    cuota_data = cuota.dict()
+    cuota_data['creado_por_usuario_id'] = current_user_id  # ✅ NUEVO: Guardar quién creó la cuota
+    
+    db_cuota = models.Cuota(**cuota_data)
     db.add(db_cuota)
     db.commit()
     db.refresh(db_cuota)
@@ -723,20 +727,135 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
         usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
         
+        # Obtener la última partida para calcular el saldo correcto
+        ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
+        saldo_anterior = ultima_partida.saldo if ultima_partida else 0
+        nuevo_saldo = saldo_anterior + db_cuota.monto
+        
         partida = models.Partida(
             fecha=db_cuota.fecha,
             detalle=f"Cuota {nombre_usuario}",
             monto=db_cuota.monto,
             tipo="ingreso",
             cuenta="CUOTAS",
-            usuario_id=current_user_id,  # Usuario que realiza la acción
-            saldo=0,
+            usuario_id=current_user_id,  # Usuario que realiza la acción (quien creó la cuota)
+            recibo_factura=f"C.S.-{db_cuota.id}",
+            saldo=nuevo_saldo,
             ingreso=db_cuota.monto,
             egreso=0
         )
         db.add(partida)
         db.commit()
     
+    return db_cuota
+
+@audit_trail("cuota")
+def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id: int, generar_movimiento: bool = True, usuario_que_paga_id: int = None):
+    # Limpiar caché de SQLAlchemy para evitar datos obsoletos
+    db.expire_all()
+    
+    db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
+    if not db_cuota:
+        raise HTTPException(status_code=404, detail="Cuota no encontrada")
+    
+    # Logging para debugging
+    print(f"DEBUG - Cuota ID {cuota_id}: pagado={db_cuota.pagado}, monto_pagado={db_cuota.monto_pagado}")
+    
+    if db_cuota.pagado:
+        raise HTTPException(status_code=400, detail="La cuota ya ha sido pagada")
+    
+    # ✅ MODIFICACIÓN PRINCIPAL: Guardar quién realizó el pago
+    usuario_pago_id = usuario_que_paga_id if usuario_que_paga_id else current_user_id
+    
+    # Actualizar cuota
+    db_cuota.monto_pagado = monto_pagado
+    db_cuota.fecha_pago = func.now()
+    db_cuota.pagado = True
+    db_cuota.pagado_por_usuario_id = usuario_pago_id  # ✅ NUEVO: Guardar quién pagó
+    
+    # Crear partida directamente sin crear cobranza
+    if generar_movimiento:
+        # Crear partida asociada directamente a la cuota CON información del usuario que pagó
+        partida = models.Partida(
+            fecha=func.now(),
+            detalle=f"Pago de cuota : {db.query(models.Usuario).filter(models.Usuario.id == usuario_pago_id).first().nombre}",
+            monto=monto_pagado,
+            tipo="ingreso",
+            cuenta="CAJA",
+            usuario_id=usuario_pago_id,  # ✅ MODIFICADO: Usar el usuario que realizó el pago
+            recibo_factura=f"C.S.-{cuota_id}",
+            saldo=0,  # Se calculará correctamente después
+            ingreso=monto_pagado,
+            egreso=0
+        )
+        db.add(partida)
+        db.commit()
+        
+        # Recalcular saldo
+        try:
+            # Obtener todas las partidas en orden cronológico
+            partidas = db.query(models.Partida).order_by(
+                models.Partida.fecha,
+                models.Partida.id
+            ).all()
+            
+            # Recalcular saldos
+            saldo_actual = 0
+            for p in partidas:
+                if p.tipo == "ingreso":
+                    saldo_actual += p.monto
+                else:  # egreso o anulacion
+                    saldo_actual -= p.monto
+                
+                p.saldo = saldo_actual
+            
+            db.commit()
+            print(f"Saldos recalculados correctamente")
+        except Exception as e:
+            print(f"Error al recalcular saldos: {str(e)}")
+    
+    try:
+        # Obtener usuario para su email
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
+        
+        # Verificar si hay configuración de email activa y el usuario tiene email
+        if usuario and usuario.email:
+            email_config = get_active_email_config(db)
+            
+            if email_config:
+                # Importar aquí para evitar problemas de importación circular
+                from email_service import EmailService
+                
+                # Crear servicio de email
+                email_service = EmailService(
+                    smtp_server=email_config.smtp_server,
+                    smtp_port=email_config.smtp_port,
+                    username=email_config.smtp_username,
+                    password=email_config.smtp_password,
+                    sender_email=email_config.email_from
+                )
+                
+                # Enviar recibo
+                success, message = email_service.send_cuota_receipt_email(
+                    db=db,
+                    cuota=db_cuota, 
+                    recipient_email=usuario.email
+                )
+                
+                # Actualizar estado del envío
+                if success:
+                    db_cuota.email_enviado = True
+                    db_cuota.fecha_envio_email = datetime.now()
+                    db_cuota.email_destinatario = usuario.email
+                    db.commit()
+                    db.refresh(db_cuota)
+                    print(f"Recibo de cuota enviado por email a {usuario.email}")
+                else:
+                    print(f"Error al enviar recibo de cuota: {message}")
+    except Exception as e:
+        print(f"Error en envío de recibo de cuota por email: {str(e)}")
+    
+    db.refresh(db_cuota)
     return db_cuota
 
 def get_cuota(db: Session, cuota_id: int):
@@ -795,25 +914,6 @@ def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bo
     
     return cuotas_procesadas
 
-def calcular_meses_atraso(fecha_cuota):
-    """
-    Calcula los meses de atraso desde una fecha de cuota
-    """
-    # Obtener fecha actual
-    fecha_actual = datetime.now().date()
-    
-    # Calcular meses de atraso
-    meses_atraso = (
-        (fecha_actual.year - fecha_cuota.year) * 12 + 
-        (fecha_actual.month - fecha_cuota.month)
-    )
-    
-    # Ajustar si el día actual es menor que el día de la cuota
-    if fecha_actual.day < fecha_cuota.day:
-        meses_atraso -= 1
-    
-    return max(0, meses_atraso)
-
 def get_cuotas_by_usuario(db: Session, usuario_id: int, pagado: Optional[bool] = None):
     # Consulta base de cuotas para un usuario específico
     query = db.query(models.Cuota).filter(models.Cuota.usuario_id == usuario_id)
@@ -848,6 +948,7 @@ def get_cuotas_by_usuario(db: Session, usuario_id: int, pagado: Optional[bool] =
             cuota.meses_atraso = meses_atraso
     
     return cuotas
+
 @audit_trail("cuota")
 def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate):
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
@@ -862,103 +963,7 @@ def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate):
     db.commit()
     db.refresh(db_cuota)
     return db_cuota
-@audit_trail("cuota")
-def pagar_cuota(db: Session, cuota_id: int, monto_pagado: float, current_user_id: int, generar_movimiento: bool = True):
-    db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
-    if not db_cuota:
-        raise HTTPException(status_code=404, detail="Cuota no encontrada")
-    
-    if db_cuota.pagado:
-        raise HTTPException(status_code=400, detail="La cuota ya ha sido pagada")
-    
-    # Actualizar cuota
-    db_cuota.monto_pagado = monto_pagado
-    db_cuota.fecha_pago = func.now()
-    db_cuota.pagado = True
-    
-    # Crear partida directamente sin crear cobranza
-    if generar_movimiento:
-        # Crear partida asociada directamente a la cuota
-        partida = models.Partida(
-            fecha=func.now(),
-            detalle=f"Pago de cuota societaria del {db_cuota.fecha.strftime('%d/%m/%Y')}",
-            monto=monto_pagado,
-            tipo="ingreso",
-            cuenta="CAJA",
-            usuario_id=db_cuota.usuario_id,
-            # No asignar cobranza_id
-            saldo=0,  # Se calculará correctamente después
-            ingreso=monto_pagado,
-            egreso=0
-        )
-        db.add(partida)
-        db.commit()
-        
-        # Recalcular saldo
-        try:
-            # Obtener todas las partidas en orden cronológico
-            partidas = db.query(models.Partida).order_by(
-                models.Partida.fecha,
-                models.Partida.id
-            ).all()
-            
-            # Recalcular saldos
-            saldo_actual = 0
-            for p in partidas:
-                if p.tipo == "ingreso":
-                    saldo_actual += p.monto
-                else:  # egreso o anulacion
-                    saldo_actual -= p.monto
-                
-                p.saldo = saldo_actual
-            
-            db.commit()
-        except Exception as e:
-            print(f"Error al recalcular saldos: {str(e)}")
-    
-    try:
-        # Obtener usuario para su email
-        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
-        
-        # Verificar si hay configuración de email activa y el usuario tiene email
-        if usuario and usuario.email:
-            email_config = get_active_email_config(db)
-            
-            if email_config:
-                # Importar aquí para evitar problemas de importación circular
-                from email_service import EmailService
-                
-                # Crear servicio de email
-                email_service = EmailService(
-                    smtp_server=email_config.smtp_server,
-                    smtp_port=email_config.smtp_port,
-                    username=email_config.smtp_username,
-                    password=email_config.smtp_password,
-                    sender_email=email_config.email_from
-                )
-                
-                # Enviar recibo
-                success, message = email_service.send_cuota_receipt_email(
-                    db=db,
-                    cuota=db_cuota, 
-                    recipient_email=usuario.email
-                )
-                
-                # Actualizar estado del envío
-                if success:
-                    db_cuota.email_enviado = True
-                    db_cuota.fecha_envio_email = datetime.now()
-                    db_cuota.email_destinatario = usuario.email
-                    db.commit()
-                    db.refresh(db_cuota)
-                    print(f"Recibo de cuota enviado por email a {usuario.email}")
-                else:
-                    print(f"Error al enviar recibo de cuota: {message}")
-    except Exception as e:
-        print(f"Error en envío de recibo de cuota por email: {str(e)}")
-    
-    db.refresh(db_cuota)
-    return db_cuota
+
 def reenviar_recibo_cuota(db: Session, cuota_id: int, email: str = None , current_user_id: int = None):
     # Obtener la cuota
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
@@ -1022,7 +1027,6 @@ def delete_cuota(db: Session, cuota_id: int):
     db.delete(db_cuota)
     db.commit()
     return {"message": "Cuota eliminada exitosamente"}
-
 # Funciones CRUD para Partidas
 @audit_trail("partidas")
 def create_partida(db: Session, partida: schemas.PartidaCreate, current_user_id: int = None):

@@ -18,9 +18,13 @@ class Usuario(Base):
     pagos = relationship("Pago", back_populates="usuario")
     cobranzas = relationship("Cobranza", back_populates="usuario")
     partidas = relationship("Partida", back_populates="usuario")
-    cuotas = relationship("Cuota", back_populates="usuario")
+    cuotas = relationship("Cuota", foreign_keys="Cuota.usuario_id", back_populates="usuario")
+
     transacciones = relationship("Transaccion", back_populates="usuario")
     auditorias = relationship("Auditoria", back_populates="usuario")
+
+    # En el modelo Usuario, agrega esta línea:
+
 
 class Rol(Base):
     __tablename__ = "roles"
@@ -165,33 +169,38 @@ class Cuota(Base):
     email_destinatario = Column(String(100), nullable=True)
     
     # Nuevos campos para deudas acumuladas
-    meses_atraso = Column(Integer, nullable=True)  # Meses de atraso
-    monto_total_pendiente = Column(Numeric(10, 2), nullable=True)  # Monto total de cuotas pendientes
-    cuotas_pendientes = Column(Integer, nullable=True)  # Número de cuotas pendientes
-    fecha_primera_deuda = Column(Date, nullable=True)  # Fecha de la primera cuota pendiente
+    meses_atraso = Column(Integer, nullable=True)
+    monto_total_pendiente = Column(Numeric(10, 2), nullable=True)
+    cuotas_pendientes = Column(Integer, nullable=True)
+    fecha_primera_deuda = Column(Date, nullable=True)
+    
+    # NUEVOS CAMPOS para auditoría
+    creado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    pagado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    fecha_pago = Column(DateTime, nullable=True)
 
     # Relaciones
-    usuario = relationship("Usuario", back_populates="cuotas")
+    usuario = relationship("Usuario", foreign_keys=[usuario_id], back_populates="cuotas")
+    creado_por = relationship("Usuario", foreign_keys=[creado_por_usuario_id])
+    pagado_por = relationship("Usuario", foreign_keys=[pagado_por_usuario_id])
     auditorias = relationship("Auditoria", back_populates="cuota")
+    
     @classmethod
     def calcular_meses_atraso(cls, fecha_cuota):
         """
         Calcula los meses de atraso desde una fecha de cuota
         """
-        # Obtener fecha actual
         fecha_actual = datetime.now().date()
         
-        # Calcular meses de atraso
         meses_atraso = (
             (fecha_actual.year - fecha_cuota.year) * 12 + 
             (fecha_actual.month - fecha_cuota.month)
         )
         
-        # Ajustar si el día actual es menor que el día de la cuota
         if fecha_actual.day < fecha_cuota.day:
             meses_atraso -= 1
         
-        return max(0, meses_atraso)       
+        return max(0, meses_atraso)
         
 class Transaccion(Base):
     __tablename__ = "transacciones"
