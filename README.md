@@ -33,7 +33,6 @@ UARC-Tesoreria/
 
 ## 🚀 Instalación y Ejecución
 
-`
 # 1. Clona el repositorio:
 git clone https://github.com/Agustindardanelli-stack/UARC-Tesoreria.git
 cd UARC-Tesoreria
@@ -48,25 +47,26 @@ pip install -r requirements.txt
 # 4. Ejecuta la app:
 python frontend/main.py
 🔐 Roles y Accesos
-Admin / Tesorero: Acceso total al sistema.
+## Admin / Tesorero: Acceso total al sistema.
 
-Árbitros: Solo pueden consultar sus movimientos o realizar pagos.
+## Árbitros: Solo pueden consultar sus movimientos o realizar pagos.
 
-Usuarios sin acceso: Registrados para el libro diario, pero sin uso interactivo.
+## Usuarios sin acceso: Registrados para el libro diario, pero sin uso interactivo.
 
 📊 Funcionalidades del Libro Diario
-Visualización automática de ingresos y egresos.
+## Visualización automática de ingresos y egresos.
 
--Registro de todos los movimientos.
+**Registro de todos los movimientos**
 
--Cálculo automático de saldos.
+**Cálculo automático de saldos.**
 
--Exportación de reportes.
+**Exportación de reportes.**
 
 📌 Estado del Proyecto
--En desarrollo activo
 
--Última actualización: junio 2025
+### En desarrollo activo
 
-🤝 Contribuciones
-¿Querés colaborar? ¡Bienvenido! Abrí un issue o hacé un pull request.
+# Última actualización: junio 2025
+
+🤝 Contribuciones :
+**¿Querés colaborar? ¡Bienvenido! Abrí un issue o hacé un pull request.**
