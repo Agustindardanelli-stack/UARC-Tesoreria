@@ -1545,28 +1545,107 @@ def get_ingresos_egresos_mensuales(db: Session, anio: Optional[int] = None):
         "datos": result
     }
 
+from datetime import datetime, date
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, cast, Date
+
 def get_cuotas_pendientes(db: Session):
-    cuotas_pendientes = db.query(models.Cuota).filter(
-        models.Cuota.pagado == False,
-        models.Cuota.fecha < func.now()
-    ).all()
-    
-    result = []
-    
-    for cuota in cuotas_pendientes:
-        usuario = db.query(models.Usuario).filter(models.Usuario.id == cuota.usuario_id).first()
+    try:
+        # Usar date.today() en lugar de func.now() para evitar problemas de tipo
+        today = date.today()
         
-        if usuario:
+        # Versión optimizada con JOIN (recomendada)
+        query_result = db.query(
+            models.Cuota.id.label('cuota_id'),
+            models.Usuario.id.label('usuario_id'),
+            models.Usuario.nombre.label('nombre_usuario'),
+            models.Cuota.monto,
+            models.Cuota.fecha
+        ).join(
+            models.Usuario, models.Cuota.usuario_id == models.Usuario.id
+        ).filter(
+            and_(
+                models.Cuota.pagado == False,
+                cast(models.Cuota.fecha, Date) < today
+            )
+        ).all()
+        
+        result = []
+        
+        for row in query_result:
+            # Asegurar que fecha sea un objeto date para la comparación
+            fecha_cuota = row.fecha
+            if isinstance(fecha_cuota, datetime):
+                fecha_cuota = fecha_cuota.date()
+            elif isinstance(fecha_cuota, str):
+                fecha_cuota = datetime.strptime(fecha_cuota, "%Y-%m-%d").date()
+            
+            dias_vencido = (today - fecha_cuota).days
+            
             result.append({
-                "cuota_id": cuota.id,
-                "usuario_id": usuario.id,
-                "nombre_usuario": usuario.nombre,
-                "monto": cuota.monto,
-                "fecha": cuota.fecha.strftime("%Y-%m-%d"),
-                "dias_vencido": (datetime.now().date() - cuota.fecha).days
+                "cuota_id": row.cuota_id,
+                "usuario_id": row.usuario_id,
+                "nombre_usuario": row.nombre_usuario,
+                "monto": float(row.monto) if row.monto else 0.0,
+                "fecha": fecha_cuota.strftime("%Y-%m-%d"),
+                "dias_vencido": dias_vencido
             })
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error en get_cuotas_pendientes: {e}")
+        return []
+
+# Versión alternativa sin JOIN (si la anterior falla)
+def get_cuotas_pendientes_alternative(db: Session):
+    from datetime import datetime, date
     
-    return result
+    try:
+        today = date.today()
+        
+        cuotas_pendientes = db.query(models.Cuota).filter(
+            and_(
+                models.Cuota.pagado == False,
+                cast(models.Cuota.fecha, Date) < today
+            )
+        ).all()
+        
+        result = []
+        
+        for cuota in cuotas_pendientes:
+            try:
+                usuario = db.query(models.Usuario).filter(
+                    models.Usuario.id == cuota.usuario_id
+                ).first()
+                
+                if usuario:
+                    # Manejo seguro de la fecha
+                    fecha_cuota = cuota.fecha
+                    if isinstance(fecha_cuota, datetime):
+                        fecha_cuota = fecha_cuota.date()
+                    elif isinstance(fecha_cuota, str):
+                        fecha_cuota = datetime.strptime(fecha_cuota, "%Y-%m-%d").date()
+                    
+                    dias_vencido = (today - fecha_cuota).days
+                    
+                    result.append({
+                        "cuota_id": cuota.id,
+                        "usuario_id": usuario.id,
+                        "nombre_usuario": str(usuario.nombre),
+                        "monto": float(cuota.monto) if cuota.monto else 0.0,
+                        "fecha": fecha_cuota.strftime("%Y-%m-%d"),
+                        "dias_vencido": dias_vencido
+                    })
+            except Exception as inner_e:
+                print(f"Error procesando cuota {cuota.id}: {inner_e}")
+                continue
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error en get_cuotas_pendientes_alternative: {e}")
+        return []
 
 # Función auxiliar para obtener el nombre del mes
 def get_nombre_mes(month_number):
