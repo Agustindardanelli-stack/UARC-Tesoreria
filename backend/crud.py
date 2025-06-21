@@ -779,17 +779,13 @@ def get_cuota(db: Session, cuota_id: int):
     return db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
 
 def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bool] = None):
-    # Consulta base de cuotas usando el modelo ORM (NO db.execute)
     query = db.query(models.Cuota)
-    
-    # Filtrar por estado de pago si se especifica
+
     if pagado is not None:
         query = query.filter(models.Cuota.pagado == pagado)
-    
-    # Ordenar por fecha, más recientes primero
+
     cuotas = query.order_by(desc(models.Cuota.fecha)).offset(skip).limit(limit).all()
-    
-    # Procesar cuotas para mostrar deudas acumuladas
+
     cuotas_procesadas = []
     usuarios_cuotas = {}
     fecha_actual = datetime.now().date()
@@ -802,7 +798,7 @@ def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bo
                     'monto_total': 0,
                     'fecha_primera': cuota.fecha
                 }
-            
+
             usuarios_cuotas[cuota.usuario_id]['cuotas'].append(cuota)
             usuarios_cuotas[cuota.usuario_id]['monto_total'] += cuota.monto
 
@@ -810,20 +806,26 @@ def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bo
                 usuarios_cuotas[cuota.usuario_id]['fecha_primera'] = cuota.fecha
 
     for cuota in cuotas:
-        if not cuota.pagado and cuota.usuario_id in usuarios_cuotas:
-            info_usuario = usuarios_cuotas[cuota.usuario_id]
+        info_usuario = usuarios_cuotas.get(cuota.usuario_id, {})
+        meses_atraso = (fecha_actual.year - cuota.fecha.year) * 12 + (fecha_actual.month - cuota.fecha.month)
 
-            meses_atraso = (fecha_actual.year - cuota.fecha.year) * 12 + (fecha_actual.month - cuota.fecha.month)
+        cuota_dict = {
+            "id": cuota.id,
+            "fecha": cuota.fecha,
+            "monto": cuota.monto,
+            "pagado": cuota.pagado,
+            "monto_pagado": cuota.monto_pagado,
+            "fecha_pago": cuota.fecha_pago,
+            "usuario_id": cuota.usuario_id,
+            "meses_atraso": meses_atraso if not cuota.pagado else None,
+            "cuotas_pendientes": len(info_usuario.get('cuotas', [])) if not cuota.pagado else None,
+            "fecha_primera_deuda": info_usuario.get('fecha_primera') if not cuota.pagado else None
+        }
 
-            if len(info_usuario['cuotas']) > 1:
-                cuota.monto_total_pendiente = float(info_usuario['monto_total'])
-                cuota.cuotas_pendientes = len(info_usuario['cuotas'])
-                cuota.fecha_primera_deuda = info_usuario['fecha_primera']
-                cuota.meses_atraso = meses_atraso
-
-        cuotas_procesadas.append(cuota)
+        cuotas_procesadas.append(cuota_dict)
 
     return cuotas_procesadas
+
 
 def get_cuotas_by_usuario(db: Session, usuario_id: int, pagado: Optional[bool] = None):
     # Consulta base de cuotas para un usuario específico
