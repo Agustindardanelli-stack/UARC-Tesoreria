@@ -862,7 +862,7 @@ def get_cuota(db: Session, cuota_id: int):
     return db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
 
 def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bool] = None):
-    # Consulta base de cuotas
+    # Consulta base de cuotas usando el modelo ORM (NO db.execute)
     query = db.query(models.Cuota)
     
     # Filtrar por estado de pago si se especifica
@@ -878,7 +878,6 @@ def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bo
     fecha_actual = datetime.now().date()
 
     for cuota in cuotas:
-        # Si la cuota no está pagada, agrupar por usuario
         if not cuota.pagado:
             if cuota.usuario_id not in usuarios_cuotas:
                 usuarios_cuotas[cuota.usuario_id] = {
@@ -889,29 +888,24 @@ def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bo
             
             usuarios_cuotas[cuota.usuario_id]['cuotas'].append(cuota)
             usuarios_cuotas[cuota.usuario_id]['monto_total'] += cuota.monto
-            
-            # Actualizar fecha primera si es más antigua
+
             if cuota.fecha < usuarios_cuotas[cuota.usuario_id]['fecha_primera']:
                 usuarios_cuotas[cuota.usuario_id]['fecha_primera'] = cuota.fecha
 
-    # Modificar las cuotas para incluir información de deuda
     for cuota in cuotas:
-        # Si el usuario tiene múltiples cuotas pendientes, añadir información
         if not cuota.pagado and cuota.usuario_id in usuarios_cuotas:
             info_usuario = usuarios_cuotas[cuota.usuario_id]
-            
-            # Calcular meses de atraso
+
             meses_atraso = (fecha_actual.year - cuota.fecha.year) * 12 + (fecha_actual.month - cuota.fecha.month)
-            
-            # Si hay más de una cuota pendiente, añadir información adicional
+
             if len(info_usuario['cuotas']) > 1:
                 cuota.monto_total_pendiente = float(info_usuario['monto_total'])
                 cuota.cuotas_pendientes = len(info_usuario['cuotas'])
                 cuota.fecha_primera_deuda = info_usuario['fecha_primera']
                 cuota.meses_atraso = meses_atraso
-        
+
         cuotas_procesadas.append(cuota)
-    
+
     return cuotas_procesadas
 
 def get_cuotas_by_usuario(db: Session, usuario_id: int, pagado: Optional[bool] = None):
