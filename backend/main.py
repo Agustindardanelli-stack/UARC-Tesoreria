@@ -421,7 +421,7 @@ def create_cuota(
         no_generar_movimiento=no_generar_movimiento  # Agregar este parámetro
     )
 
-@app.get(f"{settings.API_PREFIX}/cuotas", response_model=List[schemas.CuotaDetalle], tags=["Cuotas"])
+@app.get(f"{settings.API_PREFIX}/cuotas", tags=["Cuotas"])
 def read_cuotas(
     skip: int = 0, 
     limit: int = 100, 
