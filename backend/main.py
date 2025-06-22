@@ -5,6 +5,10 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 from typing import List, Optional
 from fastapi import Request, HTTPException, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+
+
 from database import SessionLocal
 from jose import JWTError, jwt
 from auth import get_current_user
