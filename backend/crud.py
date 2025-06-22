@@ -810,17 +810,20 @@ def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bo
         meses_atraso = (fecha_actual.year - cuota.fecha.year) * 12 + (fecha_actual.month - cuota.fecha.month)
 
         cuota_dict = {
-            "id": cuota.id,
-            "fecha": cuota.fecha,
-            "monto": cuota.monto,
-            "pagado": cuota.pagado,
-            "monto_pagado": cuota.monto_pagado,
-            "fecha_pago": cuota.fecha_pago,
-            "usuario_id": cuota.usuario_id,
-            "meses_atraso": meses_atraso if not cuota.pagado else None,
-            "cuotas_pendientes": len(info_usuario.get('cuotas', [])) if not cuota.pagado else None,
-            "fecha_primera_deuda": info_usuario.get('fecha_primera') if not cuota.pagado else None
-        }
+    "id": cuota.id,
+    "fecha": cuota.fecha,
+    "monto": cuota.monto,
+    "pagado": cuota.pagado,
+    "usuario_id": cuota.usuario_id,
+    "usuario": {
+        "id": cuota.usuario.id,
+        "nombre": cuota.usuario.nombre
+    } if cuota.usuario else None,
+    "meses_atraso": meses_atraso if not cuota.pagado else None,
+    "cuotas_pendientes": len(info_usuario.get('cuotas', [])) if not cuota.pagado else None,
+    "fecha_primera_deuda": info_usuario.get('fecha_primera') if not cuota.pagado else None
+}
+
 
         cuotas_procesadas.append(cuota_dict)
 
