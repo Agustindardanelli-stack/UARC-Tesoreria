@@ -5,9 +5,8 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 from typing import List, Optional
 from fastapi import Request, HTTPException, status
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-
+from fastapi.encoders import jsonable_encoder
 
 from database import SessionLocal
 from jose import JWTError, jwt
@@ -425,8 +424,6 @@ def create_cuota(
         no_generar_movimiento=no_generar_movimiento  # Agregar este parámetro
     )
 
-from fastapi.responses import JSONResponse
-
 @app.get(f"{settings.API_PREFIX}/cuotas", tags=["Cuotas"])
 def read_cuotas(
     skip: int = 0, 
@@ -437,19 +434,19 @@ def read_cuotas(
 ):
     cuotas = crud.get_cuotas(db, skip=skip, limit=limit, pagado=pagado)
 
-    from datetime import datetime
-
     for cuota in cuotas:
-        if not cuota.pagado:
+        if not cuota["pagado"]:
+            fecha = cuota["fecha"]
             meses_atraso = (
-                (datetime.now().date().year - cuota.fecha.year) * 12 + 
-                (datetime.now().date().month - cuota.fecha.month)
+                (datetime.now().year - fecha.year) * 12 + 
+                (datetime.now().month - fecha.month)
             )
-            if datetime.now().date().day < cuota.fecha.day:
+            if datetime.now().day < fecha.day:
                 meses_atraso -= 1
-            cuota.meses_atraso = max(0, meses_atraso)
+            cuota["meses_atraso"] = max(0, meses_atraso)
 
-    cuota_ids = [cuota.id for cuota in cuotas]
+    cuota_ids = [cuota["id"] for cuota in cuotas]
+
     auditorias = db.query(models.Auditoria)\
         .filter(
             models.Auditoria.tabla_afectada == 'cuota', 
@@ -459,16 +456,15 @@ def read_cuotas(
         .order_by(models.Auditoria.fecha.desc())\
         .all()
 
-    auditoria_map = {
-        str(a.registro_id): a.usuario.nombre if a.usuario else 'Sin usuario'
-        for a in auditorias if str(a.registro_id) not in auditoria_map
-    }
+    auditoria_map = {}
+    for a in auditorias:
+        if str(a.registro_id) not in auditoria_map:
+            auditoria_map[str(a.registro_id)] = a.usuario.nombre if a.usuario else 'Sin usuario'
 
     for cuota in cuotas:
-        cuota.usuario_auditoria = auditoria_map.get(str(cuota.id), 'Sin registro')
+        cuota["usuario_auditoria"] = auditoria_map.get(str(cuota["id"]), 'Sin registro')
 
-    return JSONResponse(content=[cuota.__dict__ for cuota in cuotas])
-
+    return JSONResponse(content=jsonable_encoder(cuotas))
 
 @app.get(f"{settings.API_PREFIX}/cuotas/usuario/{{usuario_id}}", response_model=List[schemas.CuotaDetalle], tags=["Cuotas"])
 def read_cuotas_by_usuario(
