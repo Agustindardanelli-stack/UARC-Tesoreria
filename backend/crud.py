@@ -820,7 +820,8 @@ def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bo
             "usuario_id": cuota.usuario_id,
             "usuario": {
                 "id": cuota.usuario.id,
-                "nombre": cuota.usuario.nombre
+                "nombre": str(cuota.usuario.nombre)
+
             } if cuota.usuario else None,
             "meses_atraso": meses_atraso if not cuota.pagado else None,
             "cuotas_pendientes": len(info_usuario.get('cuotas', [])) if not cuota.pagado else None,
