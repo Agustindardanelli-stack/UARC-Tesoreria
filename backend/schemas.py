@@ -298,9 +298,13 @@ class Cuota(CuotaBase):
 class CuotaDetalle(Cuota):
     usuario: Optional[Usuario] = None
     usuario_auditoria: Optional[str] = None
-    
+    meses_atraso: Optional[int] = None
+    cuotas_pendientes: Optional[int] = None
+    fecha_primera_deuda: Optional[date] = None
+
     class Config:
         orm_mode = True
+
 
 # Transaccion Schemas
 class TransaccionBase(BaseModel):
