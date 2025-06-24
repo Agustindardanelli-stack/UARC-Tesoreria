@@ -786,8 +786,8 @@ def pagar_cuota(
 
         nueva_partida = models.Partida(
             fecha=datetime.now().date(),
-            cuenta="Caja",
-            detalle=f"Pago de cuota ID {cuota.id}",
+            cuenta="INGRESOS",
+            detalle = f"Pago de cuota de {cuota.usuario.nombre}",
             ingreso=monto_pagado,
             egreso=0,
             saldo=nuevo_saldo,
