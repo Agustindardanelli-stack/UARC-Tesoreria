@@ -1,16 +1,19 @@
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
+from sqlalchemy import func, extract
 from datetime import datetime
 from typing import Optional
 from fastapi import HTTPException
 from typing import List, Optional, Dict, Any
+from decimal import Decimal
+
 
 from datetime import date, datetime
 import models
 import schemas
 from audit_middleware import audit_trail
 from auth import get_password_hash
-
+import models
 # Funciones CRUD para Usuarios
 def create_usuario(db: Session, usuario: schemas.UsuarioCreate):
     hashed_password = get_password_hash(usuario.password)
@@ -753,8 +756,17 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
     return db_cuota
 
 @audit_trail("cuota")
-def pagar_cuota(db: Session, cuota_id: int, usuario_id: int):
-    cuota = db.query(Cuota).filter(Cuota.id == cuota_id).first()
+def pagar_cuota(
+    db: Session,
+    cuota_id: int,
+    current_user_id: int,
+    monto_pagado: float,
+    generar_movimiento: bool = True,
+    actualizar_saldo: bool = True
+):
+    monto_pagado = Decimal(monto_pagado)
+
+    cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
 
     if not cuota:
         raise ValueError("No se encontró la cuota")
@@ -763,20 +775,33 @@ def pagar_cuota(db: Session, cuota_id: int, usuario_id: int):
         raise ValueError("La cuota ya está pagada")
 
     cuota.pagado = True
-    cuota.monto_pagado = cuota.monto
-    cuota.pagado_por_usuario_id = usuario_id
+    cuota.monto_pagado = monto_pagado
+    cuota.pagado_por_usuario_id = current_user_id
     cuota.fecha_pago = datetime.now()
 
-    # Limpiar campos de deuda acumulada que ya no aplican
-    cuota.monto_total_pendiente = None
-    cuota.cuotas_pendientes = None
-    cuota.fecha_primera_deuda = None
-    cuota.meses_atraso = None
+    if generar_movimiento:
+        ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
+        saldo_anterior = ultima_partida.saldo if ultima_partida else Decimal("0.0")
+        nuevo_saldo = saldo_anterior + monto_pagado
+
+        nueva_partida = models.Partida(
+            fecha=datetime.now().date(),
+            cuenta="Caja",
+            detalle=f"Pago de cuota ID {cuota.id}",
+            ingreso=monto_pagado,
+            egreso=0,
+            saldo=nuevo_saldo,
+            usuario_id=current_user_id,
+            monto=monto_pagado,
+            tipo="ingreso"
+        )
+        db.add(nueva_partida)
 
     db.commit()
     db.refresh(cuota)
 
     return cuota
+
 
 def get_cuota(db: Session, cuota_id: int):
     return db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()

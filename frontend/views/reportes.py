@@ -389,8 +389,11 @@ class ReportesView(QWidget):
         
         # Tabla mejorada
         self.libro_table = QTableWidget()
-        self.libro_table.setColumnCount(9)
-        self.libro_table.setHorizontalHeaderLabels(["ID", "Fecha", "Cuenta", "Detalle", "Nº Comprobante", "Ingreso", "Egreso", "Saldo", "Usuario"])
+        self.libro_table.setColumnCount(10)
+        self.libro_table.setHorizontalHeaderLabels([
+            "ID", "Fecha", "Cuenta", "Detalle", "Nº Comprobante", 
+            "Ingreso", "Egreso", "Saldo", "Usuario", "Descripción"
+        ])
         self.libro_table.setStyleSheet(TABLE_STYLE)
         self.libro_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.libro_table.setAlternatingRowColors(True)
@@ -809,203 +812,162 @@ class ReportesView(QWidget):
             desde = self.libro_desde_date.date().toString("yyyy-MM-dd")
             hasta = self.libro_hasta_date.date().toString("yyyy-MM-dd")
             tipo = self.tipo_combo.currentText().lower()
-            
-            # Mostrar mensaje de carga
+
             QMessageBox.information(self, "Procesando", "Obteniendo datos del libro diario, espere un momento...")
-            
-            # Preparar parámetros
+
             params = {
                 "skip": 0,
                 "limit": 1000,
                 "fecha_desde": desde,
                 "fecha_hasta": hasta
             }
-            
-            # Agregar filtro por tipo si no es "todos"
             if tipo != "todos":
                 params["tipo"] = tipo
-            
-            # Llamada a la API
+
             headers = session.get_headers()
             response = requests.get(
                 f"{session.api_url}/partidas",
                 headers=headers,
                 params=params
             )
-            
+
             if response.status_code == 200:
                 partidas = response.json()
-                
-                # NUEVO: Ordenar partidas por ID (orden numérico ascendente)
-                try:
-                    # Convertir IDs a números para ordenamiento correcto
-                    for partida in partidas:
-                        # Asegurar que ID sea un número (para ordenamiento correcto)
-                        if 'id' in partida and partida['id'] is not None:
-                            partida['id_numeric'] = int(partida['id'])
-                        else:
-                            partida['id_numeric'] = 0
-                    
-                    # Ordenar por ID numérico (ascendente)
-                    partidas = sorted(partidas, key=lambda x: (x.get('fecha', ''), x.get('id_numeric', 0)), reverse=True)
 
-                    print(f"Datos ordenados por ID, total: {len(partidas)} registros")
-                except Exception as e:
-                    print(f"Error al ordenar por ID: {str(e)}")
-                
-                # Limpiar tabla
+                # Ordenar por ID y fecha descendente
+                for partida in partidas:
+                    partida['id_numeric'] = int(partida.get('id', 0))
+                partidas = sorted(partidas, key=lambda x: (x.get('fecha', ''), x.get('id_numeric', 0)), reverse=True)
+
                 self.libro_table.setRowCount(0)
-                
-                # Variables para totales
+                self.libro_table.setColumnCount(10)
+                self.libro_table.setHorizontalHeaderLabels([
+                    "ID", "Fecha", "Cuenta", "Detalle", "Nº Comprobante", 
+                    "Ingreso", "Egreso", "Saldo", "Usuario", "Descripción"
+                ])
+
                 total_ingresos = 0
                 total_egresos = 0
-                
-                # Identificar todas las cuotas societarias
-                cuotas_societarias = []
-                for partida in partidas:
-                    detalle = partida.get('detalle', '').lower()
-                    ingreso = partida.get('ingreso', 0)
-                    if 'cuota' in detalle and ingreso > 0:
-                        cuotas_societarias.append(partida.get('id'))
-                
-                # Llenar tabla con datos
+
                 for row, partida in enumerate(partidas):
                     self.libro_table.insertRow(row)
-                    
+
                     # ID
                     id_item = QTableWidgetItem(str(partida.get('id', '')))
                     id_item.setTextAlignment(Qt.AlignCenter)
                     self.libro_table.setItem(row, 0, id_item)
-                    
+
                     # Fecha
                     fecha = datetime.strptime(partida.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if partida.get('fecha') else ''
                     fecha_item = QTableWidgetItem(fecha)
                     fecha_item.setTextAlignment(Qt.AlignCenter)
                     self.libro_table.setItem(row, 1, fecha_item)
-                    
+
                     # Cuenta
-                    cuenta_item = QTableWidgetItem(partida.get('cuenta', ''))
+                    # Cuenta: mostrar INGRESO o EGRESO según el valor
+                    cuenta = "INGRESO" if partida.get('ingreso', 0) > 0 else "EGRESO"
+                    cuenta_item = QTableWidgetItem(cuenta)
                     cuenta_item.setTextAlignment(Qt.AlignCenter)
                     self.libro_table.setItem(row, 2, cuenta_item)
-                    
+
+
                     # Detalle
                     self.libro_table.setItem(row, 3, QTableWidgetItem(partida.get('detalle', '')))
-                    
-                    # Nº Comprobante (MODIFICADO)
+
+                    # Nº Comprobante
                     nro_comprobante = ""
-                    
-                    # CAMBIO: Primero verificar si ya tiene un recibo_factura asignado
                     if partida.get('recibo_factura'):
-                        # Si tiene recibo_factura, usar ese valor directamente
                         nro_comprobante = partida.get('recibo_factura')
-                    else:
-                        # Si no, usar la lógica anterior como respaldo
-                        detalle = partida.get('detalle', '').lower()
-                        ingreso = partida.get('ingreso', 0)
-                        egreso = partida.get('egreso', 0)
-                        
-                        if ingreso > 0 and egreso == 0 and 'cuota' in detalle:
-                            # Es una cuota societaria
-                            if partida.get('id') in cuotas_societarias:
-                                posicion = cuotas_societarias.index(partida.get('id')) + 1
-                                num_recibo = str(len(cuotas_societarias) - posicion + 1)
-                                nro_comprobante = f"C.S.-{num_recibo}"
-                            else:
-                                nro_comprobante = f"C.S.-{partida.get('id')}"
-                        elif partida.get('cobranza_id'):
-                            # Verificar si la cobranza es una factura o un recibo
-                            cobranza_id = partida.get('cobranza_id')
-                            if 'factura' in detalle:
-                                nro_comprobante = f"FAC/REC.A-{cobranza_id}"
-                            else:
-                                nro_comprobante = f"REC-{cobranza_id}"
-                        elif partida.get('pago_id'):
-                            # Verificar si este pago está relacionado con una factura
-                            pago_id = partida.get('pago_id')
-                            # Obtener datos del pago para verificar el tipo_documento
-                            try:
-                                pago_response = requests.get(
-                                    f"{session.api_url}/pagos/{pago_id}",
-                                    headers=headers
-                                )
-                                if pago_response.status_code == 200:
-                                    pago_data = pago_response.json()
-                                    if pago_data.get('tipo_documento') == 'factura':
-                                        nro_comprobante = f"FAC/REC.A-{pago_data.get('numero_factura', pago_id)}"
-                                    else:
-                                        nro_comprobante = f"O.P-{pago_id}"
+                    elif partida.get('pago_id'):
+                        try:
+                            pago_response = requests.get(f"{session.api_url}/pagos/{partida.get('pago_id')}", headers=headers)
+                            if pago_response.status_code == 200:
+                                pago_data = pago_response.json()
+                                if pago_data.get("tipo_documento") == "factura":
+                                    nro_comprobante = f"FAC/REC.A-{pago_data.get('numero_factura', partida.get('pago_id'))}"
                                 else:
-                                    nro_comprobante = f"O.P-{pago_id}"
-                            except:
-                                # Si hay algún error, usar formato estándar
-                                nro_comprobante = f"O.P-{pago_id}"
-                        elif ingreso > 0 and egreso == 0:
-                            # Otros ingresos
-                            nro_comprobante = f"REC-{partida.get('id')}"
-                        elif egreso > 0 and ingreso == 0:
-                            # Egresos
-                            nro_comprobante = f"O.P-{partida.get('id')}"
-                        elif partida.get('tipo') == 'anulacion':
-                            # Anulaciones
-                            nro_comprobante = f"ANUL-{partida.get('id')}"
+                                    nro_comprobante = f"O.P-{partida.get('pago_id')}"
+                            else:
+                                nro_comprobante = f"O.P-{partida.get('pago_id')}"
+                        except:
+                            nro_comprobante = f"O.P-{partida.get('pago_id')}"
+                    elif partida.get('cobranza_id'):
+                        if "factura" in partida.get('detalle', '').lower():
+                            nro_comprobante = f"FAC/REC.A-{partida.get('cobranza_id')}"
                         else:
-                            # Valor predeterminado
-                            nro_comprobante = f"O.P-{partida.get('id')}"
-                    
+                            nro_comprobante = f"REC-{partida.get('cobranza_id')}"
+                    elif partida.get('tipo') == 'anulacion':
+                        nro_comprobante = f"ANUL-{partida.get('id')}"
+                    elif partida.get('egreso', 0) > 0:
+                        nro_comprobante = f"O.P-{partida.get('id')}"
+                    else:
+                        nro_comprobante = f"REC-{partida.get('id')}"
+
                     comprobante_item = QTableWidgetItem(nro_comprobante)
                     comprobante_item.setTextAlignment(Qt.AlignCenter)
                     self.libro_table.setItem(row, 4, comprobante_item)
-                    
+
                     # Ingreso
                     ingreso = partida.get('ingreso', 0)
                     ingreso_item = QTableWidgetItem(f"${ingreso:,.2f}")
                     ingreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    if ingreso > 0:
-                        ingreso_item.setForeground(QColor(AppColors.SECONDARY))
                     self.libro_table.setItem(row, 5, ingreso_item)
-                    
+
                     # Egreso
                     egreso = partida.get('egreso', 0)
                     egreso_item = QTableWidgetItem(f"${egreso:,.2f}")
                     egreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    if egreso > 0:
-                        egreso_item.setForeground(QColor(AppColors.DANGER))
                     self.libro_table.setItem(row, 6, egreso_item)
-                    
+
                     # Saldo
                     saldo = partida.get('saldo', 0)
                     saldo_item = QTableWidgetItem(f"${saldo:,.2f}")
                     saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    if saldo >= 0:
-                        saldo_item.setForeground(QColor(AppColors.SECONDARY))
-                    else:
-                        saldo_item.setForeground(QColor(AppColors.DANGER))
                     self.libro_table.setItem(row, 7, saldo_item)
-                    
+
                     # Usuario
                     usuario = partida.get('usuario', {}).get('nombre', '') if partida.get('usuario') else partida.get('usuario_auditoria', '')
                     self.libro_table.setItem(row, 8, QTableWidgetItem(usuario))
-                    
-                    # Acumular totales
+
+                    # Descripción (nueva columna)
+                    descripcion = ""
+                    if partida.get('pago_id'):
+                        try:
+                            pago_response = requests.get(f"{session.api_url}/pagos/{partida.get('pago_id')}", headers=headers)
+                            if pago_response.status_code == 200:
+                                pago_data = pago_response.json()
+                                descripcion = pago_data.get("descripcion", "")
+                        except:
+                            pass
+                    elif partida.get('cobranza_id'):
+                        try:
+                            cobranza_response = requests.get(f"{session.api_url}/cobranzas/{partida.get('cobranza_id')}", headers=headers)
+                            if cobranza_response.status_code == 200:
+                                cobranza_data = cobranza_response.json()
+                                descripcion = cobranza_data.get("descripcion", "")
+                        except:
+                            pass
+
+                    descripcion_item = QTableWidgetItem(descripcion)
+                    descripcion_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                    self.libro_table.setItem(row, 9, descripcion_item)
+
+                    # Totales
                     total_ingresos += ingreso
                     total_egresos += egreso
-                
-                # Ajustar columnas
+
                 self.libro_table.resizeColumnsToContents()
-                
-                # Actualizar totales
                 self.libro_total_ingresos_label.setText(f"Total Ingresos: ${total_ingresos:,.2f}")
                 self.libro_total_egresos_label.setText(f"Total Egresos: ${total_egresos:,.2f}")
-                
                 balance = total_ingresos - total_egresos
-                balance_color = AppColors.SECONDARY if balance >= 0 else AppColors.DANGER
+                balance_color = "#388E3C" if balance >= 0 else "#D32F2F"
                 self.libro_balance_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {balance_color};")
                 self.libro_balance_label.setText(f"Balance: ${balance:,.2f}")
-                
             else:
                 QMessageBox.warning(self, "Error", "No se pudieron obtener las partidas")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al buscar partidas: {str(e)}")
+
 
     def descargar_libro_diario(self):
         """Descarga automáticamente el libro diario en Excel"""

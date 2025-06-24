@@ -1,23 +1,29 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from datetime import timedelta
-from typing import List, Optional
-from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
+from fastapi.security import OAuth2PasswordRequestForm
 
-from database import SessionLocal
+from sqlalchemy.orm import Session
+from datetime import timedelta, datetime
+from typing import List, Optional
+
 from jose import JWTError, jwt
-from auth import get_current_user
 
 import models
 import schemas
 import crud
-from database import engine, get_db
-from auth import authenticate_user, create_access_token, get_current_active_user, is_admin, is_tesorero
+from database import SessionLocal, engine, get_db
+from auth import (
+    get_current_user,
+    authenticate_user,
+    create_access_token,
+    get_current_active_user,
+    is_admin,
+    is_tesorero
+)
 from config import settings
+
 
 # Crear tablas en la base de datos
 models.Base.metadata.create_all(bind=engine)
