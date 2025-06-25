@@ -22,7 +22,7 @@ from auth import (
     is_admin,
     is_tesorero
 )
-from config import settings
+from config import settings 
 
 
 # Crear tablas en la base de datos
@@ -622,6 +622,7 @@ def create_partida(
         partida=partida,
         current_user_id=current_user.id
     )
+from fastapi.encoders import jsonable_encoder
 
 @app.get(f"{settings.API_PREFIX}/partidas", response_model=List[schemas.PartidaDetalle], tags=["Partidas"])
 def read_partidas(
@@ -634,7 +635,6 @@ def read_partidas(
     db: Session = Depends(get_db), 
     current_user: models.Usuario = Depends(get_current_active_user)
 ):
-    # Obtener partidas
     partidas = crud.get_partida(
         db, 
         skip=skip, 
@@ -644,9 +644,10 @@ def read_partidas(
         tipo=tipo,
         cuenta=cuenta
     )
-    
-    # Obtener registros de auditoría para estas partidas
-    partida_ids = [partida.id for partida in partidas]
+
+    partida_ids = [p.id for p in partidas]
+
+    # Map auditoría
     auditorias = db.query(models.Auditoria)\
         .filter(
             models.Auditoria.tabla_afectada == 'partidas', 
@@ -655,18 +656,35 @@ def read_partidas(
         .join(models.Usuario, models.Auditoria.usuario_id == models.Usuario.id, isouter=True)\
         .order_by(models.Auditoria.fecha.desc())\
         .all()
-    
-    # Crear un diccionario de mapeo de auditorías 
-    auditoria_map = {}
-    for a in auditorias:
-        if str(a.registro_id) not in auditoria_map:
-            auditoria_map[str(a.registro_id)] = a.usuario.nombre if a.usuario else 'Sin usuario'
-    
-    # Añadir información de auditoría a cada partida
-    for partida in partidas:
-        partida.usuario_auditoria = auditoria_map.get(str(partida.id), 'Sin registro')
-    
+
+    auditoria_map = {
+        str(a.registro_id): a.usuario.nombre if a.usuario else 'Sin usuario'
+        for a in auditorias
+    }
+
+    # Map de descripciones desde pagos y cobranzas
+    pagos = db.query(models.Pago).filter(models.Pago.id.in_(
+        [p.pago_id for p in partidas if p.pago_id is not None]
+    )).all()
+    pagos_map = {p.id: p.descripcion for p in pagos if p.descripcion}
+
+    cobranzas = db.query(models.Cobranza).filter(models.Cobranza.id.in_(
+        [p.cobranza_id for p in partidas if p.cobranza_id is not None]
+    )).all()
+    cobranzas_map = {c.id: c.descripcion for c in cobranzas if c.descripcion}
+
+    # Agregar campos auxiliares
+    for p in partidas:
+        p.usuario_auditoria = auditoria_map.get(str(p.id), 'Sin registro')
+
+        # Campo adicional para mostrar en el frontend
+        descripcion = pagos_map.get(p.pago_id) or cobranzas_map.get(p.cobranza_id) or ""
+        p.descripcion = descripcion  # Esto es solo en memoria, no afecta la DB
+
+
     return partidas
+
+
 
 @app.get(f"{settings.API_PREFIX}/partidas/{{partida_id}}", response_model=schemas.PartidaDetalle, tags=["Partidas"])
 def read_partida(partida_id: int, db: Session = Depends(get_db), current_user: models.Usuario = Depends(get_current_active_user)):

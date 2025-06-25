@@ -125,6 +125,7 @@ class Partida(Base):
     fecha = Column(Date, nullable=False)
     cuenta = Column(String(50), nullable=False)
     detalle = Column(String(255), nullable=True)
+    descripcion = Column(String, nullable=True)
     recibo_factura = Column(String(50), nullable=True)
     ingreso = Column(Numeric(10, 2), nullable=False, default=0)
     egreso = Column(Numeric(10, 2), nullable=False, default=0)

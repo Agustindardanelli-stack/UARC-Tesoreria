@@ -1,6 +1,8 @@
 from pydantic import BaseModel, EmailStr, Field
+
 from typing import Optional, List
 from datetime import date, datetime
+from typing import Optional, Union
 
 # Token Schemas
 class Token(BaseModel):
@@ -256,12 +258,43 @@ class Partida(PartidaBase):
     class Config:
         orm_mode = True
 
-class PartidaDetalle(Partida):
-    usuario: Usuario
-    usuario_auditoria: Optional[str] = None 
-    
+from pydantic import BaseModel, Field
+from datetime import date
+from typing import Optional
+
+class UsuarioOut(BaseModel):
+    id: int
+    nombre: str
+
     class Config:
         orm_mode = True
+
+class PartidaDetalle(BaseModel):
+    id: int
+    fecha: date
+    cuenta: str
+    detalle: Optional[str]
+    recibo_factura: Optional[str]
+    ingreso: float
+    egreso: float
+    saldo: float
+    usuario_id: int
+    usuario: Optional[UsuarioOut]
+    cobranza_id: Optional[int]
+    pago_id: Optional[int]
+    monto: float
+    tipo: str
+    usuario_auditoria: Optional[str]
+
+    # Campo adicional solo de salida
+    descripcion: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+
+
+
 
 # Cuota Schemas
 class CuotaBase(BaseModel):

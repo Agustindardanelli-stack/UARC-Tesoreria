@@ -808,7 +808,6 @@ class ReportesView(QWidget):
     def on_buscar_libro(self):
         """Busca partidas para el libro diario ordenadas por ID"""
         try:
-            # Obtener filtros
             desde = self.libro_desde_date.date().toString("yyyy-MM-dd")
             hasta = self.libro_hasta_date.date().toString("yyyy-MM-dd")
             tipo = self.tipo_combo.currentText().lower()
@@ -825,16 +824,11 @@ class ReportesView(QWidget):
                 params["tipo"] = tipo
 
             headers = session.get_headers()
-            response = requests.get(
-                f"{session.api_url}/partidas",
-                headers=headers,
-                params=params
-            )
+            response = requests.get(f"{session.api_url}/partidas", headers=headers, params=params)
 
             if response.status_code == 200:
                 partidas = response.json()
 
-                # Ordenar por ID y fecha descendente
                 for partida in partidas:
                     partida['id_numeric'] = int(partida.get('id', 0))
                 partidas = sorted(partidas, key=lambda x: (x.get('fecha', ''), x.get('id_numeric', 0)), reverse=True)
@@ -852,107 +846,61 @@ class ReportesView(QWidget):
                 for row, partida in enumerate(partidas):
                     self.libro_table.insertRow(row)
 
-                    # ID
                     id_item = QTableWidgetItem(str(partida.get('id', '')))
                     id_item.setTextAlignment(Qt.AlignCenter)
                     self.libro_table.setItem(row, 0, id_item)
 
-                    # Fecha
                     fecha = datetime.strptime(partida.get('fecha', ''), '%Y-%m-%d').strftime('%d/%m/%Y') if partida.get('fecha') else ''
                     fecha_item = QTableWidgetItem(fecha)
                     fecha_item.setTextAlignment(Qt.AlignCenter)
                     self.libro_table.setItem(row, 1, fecha_item)
 
-                    # Cuenta
-                    # Cuenta: mostrar INGRESO o EGRESO según el valor
                     cuenta = "INGRESO" if partida.get('ingreso', 0) > 0 else "EGRESO"
                     cuenta_item = QTableWidgetItem(cuenta)
                     cuenta_item.setTextAlignment(Qt.AlignCenter)
                     self.libro_table.setItem(row, 2, cuenta_item)
 
-
-                    # Detalle
+                    # Detalle (ya viene con nombre del usuario desde backend)
                     self.libro_table.setItem(row, 3, QTableWidgetItem(partida.get('detalle', '')))
 
                     # Nº Comprobante
-                    nro_comprobante = ""
-                    if partida.get('recibo_factura'):
-                        nro_comprobante = partida.get('recibo_factura')
-                    elif partida.get('pago_id'):
-                        try:
-                            pago_response = requests.get(f"{session.api_url}/pagos/{partida.get('pago_id')}", headers=headers)
-                            if pago_response.status_code == 200:
-                                pago_data = pago_response.json()
-                                if pago_data.get("tipo_documento") == "factura":
-                                    nro_comprobante = f"FAC/REC.A-{pago_data.get('numero_factura', partida.get('pago_id'))}"
-                                else:
-                                    nro_comprobante = f"O.P-{partida.get('pago_id')}"
-                            else:
-                                nro_comprobante = f"O.P-{partida.get('pago_id')}"
-                        except:
-                            nro_comprobante = f"O.P-{partida.get('pago_id')}"
-                    elif partida.get('cobranza_id'):
-                        if "factura" in partida.get('detalle', '').lower():
-                            nro_comprobante = f"FAC/REC.A-{partida.get('cobranza_id')}"
-                        else:
-                            nro_comprobante = f"REC-{partida.get('cobranza_id')}"
-                    elif partida.get('tipo') == 'anulacion':
+                                    # Nº Comprobante
+                    if partida.get('tipo') == 'anulacion':
                         nro_comprobante = f"ANUL-{partida.get('id')}"
                     elif partida.get('egreso', 0) > 0:
                         nro_comprobante = f"O.P-{partida.get('id')}"
+                    elif partida.get('cuenta') == "INGRESOS" and "cuota" in partida.get("detalle", "").lower():
+                        nro_comprobante = f"C.S-{partida.get('id')}"
                     else:
                         nro_comprobante = f"REC-{partida.get('id')}"
-
                     comprobante_item = QTableWidgetItem(nro_comprobante)
                     comprobante_item.setTextAlignment(Qt.AlignCenter)
                     self.libro_table.setItem(row, 4, comprobante_item)
 
-                    # Ingreso
                     ingreso = partida.get('ingreso', 0)
                     ingreso_item = QTableWidgetItem(f"${ingreso:,.2f}")
                     ingreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     self.libro_table.setItem(row, 5, ingreso_item)
 
-                    # Egreso
                     egreso = partida.get('egreso', 0)
                     egreso_item = QTableWidgetItem(f"${egreso:,.2f}")
                     egreso_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     self.libro_table.setItem(row, 6, egreso_item)
 
-                    # Saldo
                     saldo = partida.get('saldo', 0)
                     saldo_item = QTableWidgetItem(f"${saldo:,.2f}")
                     saldo_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     self.libro_table.setItem(row, 7, saldo_item)
 
-                    # Usuario
                     usuario = partida.get('usuario', {}).get('nombre', '') if partida.get('usuario') else partida.get('usuario_auditoria', '')
                     self.libro_table.setItem(row, 8, QTableWidgetItem(usuario))
 
-                    # Descripción (nueva columna)
-                    descripcion = ""
-                    if partida.get('pago_id'):
-                        try:
-                            pago_response = requests.get(f"{session.api_url}/pagos/{partida.get('pago_id')}", headers=headers)
-                            if pago_response.status_code == 200:
-                                pago_data = pago_response.json()
-                                descripcion = pago_data.get("descripcion", "")
-                        except:
-                            pass
-                    elif partida.get('cobranza_id'):
-                        try:
-                            cobranza_response = requests.get(f"{session.api_url}/cobranzas/{partida.get('cobranza_id')}", headers=headers)
-                            if cobranza_response.status_code == 200:
-                                cobranza_data = cobranza_response.json()
-                                descripcion = cobranza_data.get("descripcion", "")
-                        except:
-                            pass
-
+                    # Descripción
+                    descripcion = partida.get('descripcion', '')
                     descripcion_item = QTableWidgetItem(descripcion)
                     descripcion_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                     self.libro_table.setItem(row, 9, descripcion_item)
 
-                    # Totales
                     total_ingresos += ingreso
                     total_egresos += egreso
 
@@ -960,13 +908,16 @@ class ReportesView(QWidget):
                 self.libro_total_ingresos_label.setText(f"Total Ingresos: ${total_ingresos:,.2f}")
                 self.libro_total_egresos_label.setText(f"Total Egresos: ${total_egresos:,.2f}")
                 balance = total_ingresos - total_egresos
-                balance_color = "#388E3C" if balance >= 0 else "#D32F2F"
-                self.libro_balance_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {balance_color};")
+                color = "#388E3C" if balance >= 0 else "#D32F2F"
+                self.libro_balance_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {color};")
                 self.libro_balance_label.setText(f"Balance: ${balance:,.2f}")
+
             else:
                 QMessageBox.warning(self, "Error", "No se pudieron obtener las partidas")
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al buscar partidas: {str(e)}")
+
 
 
     def descargar_libro_diario(self):
