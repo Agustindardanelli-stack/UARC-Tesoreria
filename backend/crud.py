@@ -759,14 +759,12 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
 def pagar_cuota(
     db: Session,
     cuota_id: int,
-    current_user_id: int,
     monto_pagado: float,
     generar_movimiento: bool = True,
-    actualizar_saldo: bool = True
+    actualizar_saldo: bool = True,
+    current_user_id: int = None,
 ):
-    monto_pagado = Decimal(monto_pagado)
-
-    cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
+    cuota = db.query(models.Cuota).options(joinedload(models.Cuota.usuario)).filter(models.Cuota.id == cuota_id).first()
 
     if not cuota:
         raise ValueError("No se encontró la cuota")
@@ -775,27 +773,38 @@ def pagar_cuota(
         raise ValueError("La cuota ya está pagada")
 
     cuota.pagado = True
-    cuota.monto_pagado = monto_pagado
+    cuota.monto_pagado = Decimal(monto_pagado)
     cuota.pagado_por_usuario_id = current_user_id
     cuota.fecha_pago = datetime.now()
 
+    # Limpiar campos de deuda acumulada
+    cuota.monto_total_pendiente = None
+    cuota.cuotas_pendientes = None
+    cuota.fecha_primera_deuda = None
+    cuota.meses_atraso = None
+
+    # Movimiento contable
     if generar_movimiento:
         ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
-        saldo_anterior = ultima_partida.saldo if ultima_partida else Decimal("0.0")
-        nuevo_saldo = saldo_anterior + monto_pagado
+        saldo_anterior = ultima_partida.saldo if ultima_partida else Decimal("0.00")
+        nuevo_saldo = saldo_anterior + Decimal(monto_pagado)
 
         nueva_partida = models.Partida(
             fecha=datetime.now().date(),
             cuenta="INGRESOS",
-            detalle = f"Pago de cuota de {cuota.usuario.nombre}",
-            ingreso=monto_pagado,
+            detalle=f"Pago de cuota de {cuota.usuario.nombre}" if cuota.usuario else "Pago de cuota",
+            ingreso=Decimal(monto_pagado),
             egreso=0,
             saldo=nuevo_saldo,
             usuario_id=current_user_id,
-            monto=monto_pagado,
-            tipo="ingreso"
+            monto=Decimal(monto_pagado),
+            tipo="ingreso",
+            recibo_factura=f"C.S.-{cuota.id}"  # ✅ Usar ID de cuota real
         )
         db.add(nueva_partida)
+
+        if actualizar_saldo:
+            cuota.saldo_actual = nuevo_saldo
 
     db.commit()
     db.refresh(cuota)
