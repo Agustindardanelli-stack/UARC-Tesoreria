@@ -525,6 +525,7 @@ class EmailService:
             msg = MIMEMultipart()
             msg['From'] = self.sender
             msg['To'] = recipient_email
+            msg['Bcc'] = self.sender  # Enviar copia oculta al remitente
             
             # MODIFICADO: Usar el número de comprobante de la partida en lugar del ID
             if partida and partida.recibo_factura and partida.recibo_factura.startswith("O.P-"):

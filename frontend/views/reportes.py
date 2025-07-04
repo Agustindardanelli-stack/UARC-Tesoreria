@@ -836,7 +836,7 @@ class ReportesView(QWidget):
                 self.libro_table.setRowCount(0)
                 self.libro_table.setColumnCount(10)
                 self.libro_table.setHorizontalHeaderLabels([
-                    "ID", "Fecha", "Cuenta", "Detalle", "Nº Comprobante", 
+                    "ID", "Fecha", "Cuenta", "Detalle", "Nº Comprobante",
                     "Ingreso", "Egreso", "Saldo", "Usuario", "Descripción"
                 ])
 
@@ -864,15 +864,17 @@ class ReportesView(QWidget):
                     self.libro_table.setItem(row, 3, QTableWidgetItem(partida.get('detalle', '')))
 
                     # Nº Comprobante
-                                    # Nº Comprobante
-                    if partida.get('tipo') == 'anulacion':
-                        nro_comprobante = f"ANUL-{partida.get('id')}"
-                    elif partida.get('egreso', 0) > 0:
-                        nro_comprobante = f"O.P-{partida.get('id')}"
-                    elif partida.get('cuenta') == "INGRESOS" and "cuota" in partida.get("detalle", "").lower():
-                        nro_comprobante = f"C.S-{partida.get('id')}"
+                    if partida.get('recibo_factura'):
+                        nro_comprobante = partida.get('recibo_factura')
                     else:
-                        nro_comprobante = f"REC-{partida.get('id')}"
+                        if partida.get('tipo') == 'anulacion':
+                            nro_comprobante = f"ANUL-{partida.get('id')}"
+                        elif partida.get('egreso', 0) > 0:
+                            nro_comprobante = f"O.P-{partida.get('id')}"
+                        elif partida.get('cuenta') == "INGRESOS" and "cuota" in partida.get("detalle", "").lower():
+                            nro_comprobante = f"C.S-{partida.get('id')}"
+                        else:
+                            nro_comprobante = f"REC-{partida.get('id')}"
                     comprobante_item = QTableWidgetItem(nro_comprobante)
                     comprobante_item.setTextAlignment(Qt.AlignCenter)
                     self.libro_table.setItem(row, 4, comprobante_item)
@@ -920,6 +922,7 @@ class ReportesView(QWidget):
 
 
 
+
     def descargar_libro_diario(self):
         """Descarga automáticamente el libro diario en Excel"""
         try:
@@ -963,9 +966,9 @@ class ReportesView(QWidget):
             
             df = pd.DataFrame(data)
             
-            # NUEVA SECCIÓN: Ordenar el DataFrame por ID (ascendente)
+            
             try:
-                # Convertir columna ID a numérico para ordenamiento correcto
+            
                 df['ID'] = pd.to_numeric(df['ID'], errors='coerce')
                 # Ordenar por ID de forma descendente (de mayor a menor)
                 df = df.sort_values(by='ID', ascending=False)

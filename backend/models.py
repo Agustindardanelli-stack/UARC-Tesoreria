@@ -165,6 +165,7 @@ class Cuota(Base):
     monto = Column(Numeric(10, 2), nullable=False)
     pagado = Column(Boolean, default=False)
     monto_pagado = Column(Numeric(10, 2), default=0)
+    nro_comprobante = Column(Integer, unique=True, nullable=False)
     email_enviado = Column(Boolean, default=False)
     fecha_envio_email = Column(DateTime, nullable=True)
     email_destinatario = Column(String(100), nullable=True)
