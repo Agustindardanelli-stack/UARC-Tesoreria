@@ -718,42 +718,48 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
 
 @audit_trail("cuota")
 def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, no_generar_movimiento: bool = False):
+    # Obtener el último número de comprobante
+    ultimo = db.query(func.max(models.Cuota.nro_comprobante)).scalar() or 42
+    nro_comprobante = ultimo + 1
+
     # Crear la cuota con información del usuario que la creó
     cuota_data = cuota.dict()
-    cuota_data['creado_por_usuario_id'] = current_user_id  # ✅ NUEVO: Guardar quién creó la cuota
-    
+    cuota_data['creado_por_usuario_id'] = current_user_id
+    cuota_data['nro_comprobante'] = nro_comprobante  # ✅ Asignar número único
+
     db_cuota = models.Cuota(**cuota_data)
     db.add(db_cuota)
     db.commit()
     db.refresh(db_cuota)
-    
+
     # Solo crear partida si no_generar_movimiento es False
     if not no_generar_movimiento:
         # Obtener información del usuario para el detalle
         usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
-        
+
         # Obtener la última partida para calcular el saldo correcto
         ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
         saldo_anterior = ultima_partida.saldo if ultima_partida else 0
         nuevo_saldo = saldo_anterior + db_cuota.monto
-        
+
         partida = models.Partida(
             fecha=db_cuota.fecha,
             detalle=f"Cuota {nombre_usuario}",
             monto=db_cuota.monto,
             tipo="ingreso",
             cuenta="CUOTAS",
-            usuario_id=current_user_id,  # Usuario que realiza la acción (quien creó la cuota)
-            recibo_factura=f"C.S.-{db_cuota.id}",
+            usuario_id=current_user_id,
+            recibo_factura=f"C.S.-{db_cuota.nro_comprobante}",  # ✅ usar número real
             saldo=nuevo_saldo,
             ingreso=db_cuota.monto,
             egreso=0
         )
         db.add(partida)
         db.commit()
-    
+
     return db_cuota
+
 
 @audit_trail("cuota")
 def pagar_cuota(
@@ -799,7 +805,7 @@ def pagar_cuota(
             usuario_id=current_user_id,
             monto=Decimal(monto_pagado),
             tipo="ingreso",
-            recibo_factura=f"C.S.-{cuota.id}"  # ✅ Usar ID de cuota real
+            recibo_factura=f"C.S.-{cuota.nro_comprobante}",  # ✅ usar nro_comprobante
         )
         db.add(nueva_partida)
 
@@ -810,6 +816,7 @@ def pagar_cuota(
     db.refresh(cuota)
 
     return cuota
+
 
 
 def get_cuota(db: Session, cuota_id: int):
