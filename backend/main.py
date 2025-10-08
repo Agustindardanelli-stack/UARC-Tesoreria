@@ -1172,7 +1172,6 @@ async def test_email(request: Request, email: str):
         
         # Verificar token manualmente
         try:
-            # Decodificar token sin usar dependencias
             payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
             user_id = payload.get("sub")
             if user_id is None:
@@ -1181,7 +1180,6 @@ async def test_email(request: Request, email: str):
                     detail="No se pudieron validar las credenciales",
                 )
                 
-            # Obtener usuario directamente con la sesión
             current_user = db.query(models.Usuario).filter(models.Usuario.id == user_id).first()
             if current_user is None:
                 raise HTTPException(
@@ -1204,7 +1202,7 @@ async def test_email(request: Request, email: str):
             )
         
         try:
-            # Importar aquí para evitar problemas de importación circular
+            # Importar EmailService
             from email_service import EmailService
             
             # Crear servicio de email
@@ -1216,33 +1214,54 @@ async def test_email(request: Request, email: str):
                 sender_email=email_config.email_from
             )
             
-            # Crear mensaje de prueba
-            import smtplib
-            from email.mime.multipart import MIMEMultipart
-            from email.mime.text import MIMEText
+            # Crear un PDF de prueba simple
+            from io import BytesIO
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.pagesizes import letter
             
-            msg = MIMEMultipart()
-            msg['From'] = email_config.email_from
-            msg['To'] = email
-            msg['Subject'] = "Prueba de Configuración de Email - UARC"
+            buffer = BytesIO()
+            p = canvas.Canvas(buffer, pagesize=letter)
+            p.setFont("Helvetica-Bold", 16)
+            p.drawString(100, 750, "Email de Prueba - UARC")
+            p.setFont("Helvetica", 12)
+            p.drawString(100, 720, "Si recibe este mensaje, la configuracion es correcta.")
+            p.drawString(100, 700, "Unidad de Arbitros de Rio Cuarto")
+            p.save()
+            buffer.seek(0)
+            pdf_data = buffer.getvalue()
             
-            body = """
-            Este es un mensaje de prueba para verificar la configuración de email.
+            subject = "Prueba de Configuracion de Email - UARC"
+            body = """Este es un mensaje de prueba para verificar la configuracion de email.
             
-            Si está recibiendo este mensaje, la configuración es correcta.
+Si esta recibiendo este mensaje, la configuracion es correcta.
+
+Unidad de Arbitros de Rio Cuarto"""
             
-            Unidad de Árbitros de Río Cuarto
-            """
-            msg.attach(MIMEText(body, 'plain', 'utf-8'))  # Añadido 'utf-8' para soportar caracteres especiales
+            # Usar el método apropiado (Resend o SMTP)
+            if email_service.use_resend:
+                success, message = email_service._send_email_resend(
+                    recipient_email=email,
+                    subject=subject,
+                    body=body,
+                    pdf_data=pdf_data,
+                    filename="prueba_email.pdf"
+                )
+            else:
+                success, message = email_service._send_email_smtp(
+                    recipient_email=email,
+                    subject=subject,
+                    body=body,
+                    pdf_data=pdf_data,
+                    filename="prueba_email.pdf"
+                )
             
-            # Enviar email
-            with smtplib.SMTP(email_config.smtp_server, email_config.smtp_port) as server:
-                server.starttls()
-                server.login(email_config.smtp_username, email_config.smtp_password)
-                server.send_message(msg)
-            
-            return {"success": True, "message": "Email de prueba enviado exitosamente"}
+            if success:
+                return {"success": True, "message": "Email de prueba enviado exitosamente"}
+            else:
+                return {"success": False, "message": message}
+                
         except Exception as e:
+            print(f"Error en test_email: {str(e)}")
             return {"success": False, "message": str(e)}
     finally:
         db.close()
