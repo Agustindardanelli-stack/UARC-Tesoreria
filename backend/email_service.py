@@ -1,24 +1,20 @@
 import smtplib
 import os
+import base64
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from datetime import datetime
-from io import BytesIO
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 from reportlab.lib.units import inch
-from reportlab.lib.utils import ImageReader
-from sqlalchemy.orm import Session
-import models
-import base64
+from io import BytesIO
+from num2words import num2words
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition
 
-# Importar Resend solo si está disponible
-try:
-    import resend
-    RESEND_AVAILABLE = True
-except ImportError:
-    RESEND_AVAILABLE = False
 
 class EmailService:
     def __init__(self, smtp_server, smtp_port, username, password, sender_email):
@@ -28,475 +24,338 @@ class EmailService:
         self.password = password
         self.sender = sender_email
         
-        # Detectar si usar Resend
-        self.resend_api_key = os.getenv('RESEND_API_KEY')
-        self.use_resend = bool(self.resend_api_key and RESEND_AVAILABLE)
+        # Detectar si usar SendGrid
+        self.sendgrid_api_key = os.getenv('SENDGRID_API_KEY')
+        self.use_sendgrid = bool(self.sendgrid_api_key)
         
-        if self.use_resend:
-            print("✅ Usando Resend API para envío de emails")
+        if self.use_sendgrid:
+            print("✅ Usando SendGrid API para envío de emails")
         else:
             print("📧 Usando SMTP tradicional para envío de emails")
     
-    def _send_email_resend(self, recipient_email, subject, body, pdf_data, filename):
-        """Enviar email usando Resend API"""
+    def _send_email_sendgrid(self, recipient_email, subject, body, pdf_data, filename):
+        """Enviar email usando SendGrid API"""
         try:
-            resend.api_key = self.resend_api_key
+            # Crear el mensaje
+            message = Mail(
+                from_email=self.sender,
+                to_emails=recipient_email,
+                subject=subject,
+                html_content=body.replace('\n', '<br>')
+            )
             
-            # Codificar PDF en base64
+            # Adjuntar PDF
             pdf_base64 = base64.b64encode(pdf_data).decode()
+            attachment = Attachment()
+            attachment.file_content = FileContent(pdf_base64)
+            attachment.file_type = FileType('application/pdf')
+            attachment.file_name = FileName(filename)
+            attachment.disposition = Disposition('attachment')
+            message.attachment = attachment
             
-            params = {
-                "from": f"Unidad de Árbitros <onboarding@resend.dev>",
-                "reply_to": self.sender,
-                "to": [recipient_email],
-                "subject": subject,
-                "html": body.replace('\n', '<br>'),
-                "attachments": [{
-                    "filename": filename,
-                    "content": pdf_base64
-                }]
-            }
+            # Enviar
+            sg = SendGridAPIClient(self.sendgrid_api_key)
+            response = sg.send(message)
             
-            email = resend.Emails.send(params)
-            print(f"✅ Resend response: {email}")
-            return True, "Email enviado exitosamente"
-            
+            if response.status_code in [200, 201, 202]:
+                print(f"✅ Email enviado exitosamente a {recipient_email}")
+                return True, "Email enviado exitosamente"
+            else:
+                print(f"❌ Error al enviar email: {response.status_code}")
+                return False, f"Error al enviar email: {response.status_code}"
+                
         except Exception as e:
-            print(f"❌ Error con Resend: {e}")
+            print(f"❌ Excepción al enviar email: {str(e)}")
             return False, f"Error al enviar email: {str(e)}"
     
     def _send_email_smtp(self, recipient_email, subject, body, pdf_data, filename):
-        """Enviar email usando SMTP tradicional"""
+        """Enviar email usando SMTP tradicional (para entorno local)"""
         try:
             msg = MIMEMultipart()
             msg['From'] = self.sender
             msg['To'] = recipient_email
             msg['Subject'] = subject
             
-            text_part = MIMEText(body, 'plain', 'utf-8')
-            msg.attach(text_part)
+            msg.attach(MIMEText(body, 'plain'))
             
-            attachment = MIMEApplication(pdf_data, _subtype="pdf")
-            attachment.add_header('Content-Disposition', 'attachment', filename=filename)
-            msg.attach(attachment)
+            # Adjuntar PDF
+            pdf_attachment = MIMEApplication(pdf_data, _subtype='pdf')
+            pdf_attachment.add_header('Content-Disposition', 'attachment', filename=filename)
+            msg.attach(pdf_attachment)
             
-            with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10) as server:
+            # Enviar
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
                 server.starttls()
                 server.login(self.username, self.password)
                 server.send_message(msg)
             
-            print(f"✅ Email enviado via SMTP")
+            print(f"✅ Email SMTP enviado exitosamente a {recipient_email}")
             return True, "Email enviado exitosamente"
             
         except Exception as e:
-            print(f"❌ Error con SMTP: {e}")
+            print(f"❌ Error SMTP: {str(e)}")
             return False, f"Error al enviar email: {str(e)}"
-
-    def get_logo_path(self):
-        """Encontrar la ruta correcta del logo"""
-        possible_paths = [
-            r'C:\Users\agusd\Desktop\Abuela Coca\uarc-tesoreria\frontend\assets\UarcLogo.png',
-            '/opt/render/project/src/frontend/assets/UarcLogo.png',
-            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                        'frontend', 'assets', 'UarcLogo.png')
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        
-        raise FileNotFoundError("No se encontró el logo UarcLogo.png")
-
-    def load_logo(self, pdf_canvas, width, height):
-        """Cargar y dibujar el logo en el PDF"""
+    
+    def send_receipt_email(self, db, cobranza, recipient_email):
+        """Enviar recibo de cobranza por email"""
         try:
-            ruta_icono = self.get_logo_path()
-            icono = ImageReader(ruta_icono)
-            icono_ancho = 1.5 * inch
-            icono_alto = 1.5 * inch
+            # Generar PDF
+            pdf_data = self.generate_receipt_pdf(db, cobranza)
             
-            pdf_canvas.drawImage(
-                icono, 
-                0.5 * inch,
-                height - 1.5 * inch,
-                width=icono_ancho, 
-                height=icono_alto
-            )
-        except Exception as e:
-            print(f"Error al cargar el ícono: {e}")
+            # Preparar email
+            subject = f"Recibo de Cobranza #{cobranza.numero_recibo}"
+            body = f"""
+Estimado/a,
 
-    def generate_receipt_pdf(self, db: Session, cobranza):
-        """Genera un PDF con el recibo de la cobranza con diseño moderno y detallado"""
-        buffer = BytesIO()
-        p = canvas.Canvas(buffer, pagesize=landscape(letter))
-        width, height = landscape(letter)
-        
-        margin = 0.75 * inch
-        accent_color = (0.1, 0.5, 0.7)
-        
-        p.setFillColorRGB(0.95, 0.95, 1)
-        p.rect(margin/2, margin/2, width - margin, height - margin, fill=1, stroke=0)
-        
-        p.setStrokeColorRGB(*accent_color)
-        p.setLineWidth(2)
-        p.rect(margin/2, margin/2, width - margin, height - margin)
-        
-        self.load_logo(p, margin + 1*inch, height - margin - inch)
-        
-        p.setFillColorRGB(*accent_color)
-        p.setFont("Helvetica-Bold", 16)
-        p.drawCentredString(width/2, height - 1.5*inch, "UNIDAD DE ÁRBITROS DE RÍO CUARTO")
-        
-        if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
-            p.setFont("Helvetica-Bold", 14)
-            p.drawCentredString(width/2, height - 2*inch, "FACTURA/RECIBO")
-        else:
-            p.setFont("Helvetica-Bold", 14)
-            p.drawCentredString(width/2, height - 2*inch, "RECIBO DE COBRANZA")
-        
-        usuario = db.query(models.Usuario).filter(models.Usuario.id == cobranza.usuario_id).first()
-        
-        retencion = None
-        retencion_info = "Sin retención"
-        if cobranza.retencion_id:
-            retencion = db.query(models.Retencion).filter(models.Retencion.id == cobranza.retencion_id).first()
-            if retencion:
-                retencion_info = f"{retencion.nombre} - ${float(retencion.monto):,.2f}"
-        
-        p.setFont("Helvetica", 12)
-        p.setFillColorRGB(0, 0, 0)
-        
-        partida = db.query(models.Partida).filter(
-            models.Partida.cobranza_id == cobranza.id
-        ).first()
-        
-        if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
-            num_doc = cobranza.numero_factura if hasattr(cobranza, 'numero_factura') and cobranza.numero_factura else cobranza.id
-            p.drawRightString(width - margin, height - 2.5*inch, f"N° Factura: {num_doc}")
-        else:
-            if partida and partida.recibo_factura and partida.recibo_factura.startswith("REC-"):
-                numero_recibo = partida.recibo_factura
-            else:
-                numero_recibo = f"REC-{cobranza.id:05d}"
-            
-            p.drawRightString(width - margin, height - 2.5*inch, f"N° Recibo: {numero_recibo}")
-        
-        info_y = height - 3.5*inch
-        p.setFont("Helvetica-Bold", 12)
-        p.drawString(margin, info_y, "Datos de la Cobranza")
-        
-        p.setFont("Helvetica", 11)
-        linea_altura = 0.3*inch
-        
-        campos = [
-            ("Fecha:", cobranza.fecha.strftime('%d/%m/%Y')),
-        ]
-        
-        if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura" and hasattr(cobranza, 'razon_social') and cobranza.razon_social:
-            campos.append(("Razón Social:", cobranza.razon_social))
-        else:
-            campos.append(("Pagador:", usuario.nombre if usuario else "No especificado"))
-        
-        campos.extend([
-            ("Monto:", f"$ {float(cobranza.monto):,.2f}"),
-            ("Retención:", retencion_info)
-        ])
-        
-        for i, (etiqueta, valor) in enumerate(campos):
-            p.setFont("Helvetica-Bold", 10)
-            p.drawString(margin, info_y - (i+1)*linea_altura, etiqueta)
-            p.setFont("Helvetica", 10)
-            p.drawString(margin + 2*inch, info_y - (i+1)*linea_altura, str(valor))
-        
-        descripcion = cobranza.descripcion if cobranza.descripcion else "Sin descripción"
-        p.setFont("Helvetica-Bold", 10)
-        p.drawString(margin, info_y - (len(campos)+1)*linea_altura, "Descripción:")
-        p.setFont("Helvetica", 10)
-        
-        palabras = descripcion.split()
-        lineas = []
-        linea_actual = []
-        ancho_maximo = 60
-        
-        for palabra in palabras:
-            linea_actual.append(palabra)
-            if len(' '.join(linea_actual)) > ancho_maximo:
-                linea_actual.pop()
-                lineas.append(' '.join(linea_actual))
-                linea_actual = [palabra]
-        if linea_actual:
-            lineas.append(' '.join(linea_actual))
-        
-        for i, linea in enumerate(lineas):
-            p.drawString(margin + 2*inch, info_y - (len(campos)+1+i)*linea_altura, linea)
-        
-        p.setFont("Helvetica-Bold", 10)
-        y_pos = info_y - (len(campos)+1+len(lineas))*linea_altura
-        p.drawString(margin, y_pos, "Monto en letras:")
-        p.setFont("Helvetica", 10)
-        monto_texto = self.numero_a_letras(float(cobranza.monto))
-        p.drawString(margin + 2*inch, y_pos, monto_texto)
-        
-        firma_y = margin + 2*inch
-        p.setFont("Helvetica", 10)
-        p.drawString(margin, firma_y + linea_altura, "Firma:")
-        p.line(margin + inch, firma_y, margin + 4*inch, firma_y)
-        
-        p.setFont("Helvetica", 8)
-        p.setFillColorRGB(0.5, 0.5, 0.5)
-        p.drawString(margin, margin, "Unidad de Árbitros de Río Cuarto")
-        p.drawRightString(width - margin, margin, datetime.now().strftime("%d/%m/%Y %H:%M"))
-        
-        p.save()
-        buffer.seek(0)
-        return buffer.getvalue()
+Adjuntamos el recibo de cobranza correspondiente a:
 
-    def send_receipt_email(self, db: Session, cobranza, recipient_email):
-        if hasattr(cobranza, 'tipo_documento') and cobranza.tipo_documento == "factura":
-            print(f"No se envía correo para facturas: ID {cobranza.id}")
-            return False, "No se envía correo para facturas"
-        
-        try:
-            partida = db.query(models.Partida).filter(
-                models.Partida.cobranza_id == cobranza.id
-            ).first()
-            
-            if partida and partida.recibo_factura and partida.recibo_factura.startswith("REC-"):
-                numero_recibo = partida.recibo_factura
-                subject = f"Recibo de Cobranza {numero_recibo}"
-                filename = f"{numero_recibo}.pdf"
-            else:
-                subject = f"Recibo de Cobranza #{cobranza.id}"
-                filename = f"Recibo_{cobranza.id}.pdf"
-            
-            body = """
-            Estimado/a usuario,
-            
-            Adjunto encontrará el recibo correspondiente a su pago reciente.
-            
-            Gracias por su preferencia.
-            
-            Unidad de Árbitros de Río Cuarto
+Número de Recibo: {cobranza.numero_recibo}
+Fecha: {cobranza.fecha.strftime('%d/%m/%Y')}
+Monto: ${cobranza.monto:.2f}
+
+Gracias por su pago.
+
+Saludos cordiales,
+Unidad de Árbitros Río Cuarto
             """
             
-            pdf = self.generate_receipt_pdf(db, cobranza)
+            filename = f"Recibo_{cobranza.numero_recibo}.pdf"
             
-            # Decidir qué método usar
-            if self.use_resend:
-                return self._send_email_resend(recipient_email, subject, body, pdf, filename)
+            # Decidir método de envío
+            if self.use_sendgrid:
+                return self._send_email_sendgrid(recipient_email, subject, body, pdf_data, filename)
             else:
-                return self._send_email_smtp(recipient_email, subject, body, pdf, filename)
-            
+                return self._send_email_smtp(recipient_email, subject, body, pdf_data, filename)
+                
         except Exception as e:
-            print(f"Error detallado: {e}")
-            return False, f"Error al enviar email: {str(e)}"
-
-    def numero_a_letras(self, numero):
-        """Convierte un número a su representación en letras"""
+            print(f"❌ Error al enviar recibo: {str(e)}")
+            return False, f"Error al enviar recibo: {str(e)}"
+    
+    def send_payment_receipt_email(self, db, orden_pago, recipient_email):
+        """Enviar orden de pago por email"""
         try:
-            from num2words import num2words
-            return num2words(numero, lang='es') + " pesos"
+            # Generar PDF
+            pdf_data = self.generate_payment_receipt_pdf(db, orden_pago)
+            
+            # Preparar email
+            subject = f"Orden de Pago #{orden_pago.numero_orden}"
+            body = f"""
+Estimado/a,
+
+Adjuntamos la orden de pago correspondiente a:
+
+Número de Orden: {orden_pago.numero_orden}
+Fecha: {orden_pago.fecha.strftime('%d/%m/%Y')}
+Monto: ${orden_pago.monto:.2f}
+
+Saludos cordiales,
+Unidad de Árbitros Río Cuarto
+            """
+            
+            filename = f"Orden_Pago_{orden_pago.numero_orden}.pdf"
+            
+            # Decidir método de envío
+            if self.use_sendgrid:
+                return self._send_email_sendgrid(recipient_email, subject, body, pdf_data, filename)
+            else:
+                return self._send_email_smtp(recipient_email, subject, body, pdf_data, filename)
+                
+        except Exception as e:
+            print(f"❌ Error al enviar orden de pago: {str(e)}")
+            return False, f"Error al enviar orden de pago: {str(e)}"
+    
+    def send_cuota_receipt_email(self, db, pago_cuota, recipient_email):
+        """Enviar recibo de cuota por email"""
+        try:
+            # Generar PDF
+            pdf_data = self.generate_cuota_receipt_pdf(db, pago_cuota)
+            
+            # Preparar email
+            subject = f"Recibo de Cuota #{pago_cuota.numero_recibo}"
+            body = f"""
+Estimado/a,
+
+Adjuntamos el recibo de pago de cuota correspondiente a:
+
+Número de Recibo: {pago_cuota.numero_recibo}
+Fecha: {pago_cuota.fecha_pago.strftime('%d/%m/%Y')}
+Monto: ${pago_cuota.monto_pagado:.2f}
+
+Gracias por su pago.
+
+Saludos cordiales,
+Unidad de Árbitros Río Cuarto
+            """
+            
+            filename = f"Recibo_Cuota_{pago_cuota.numero_recibo}.pdf"
+            
+            # Decidir método de envío
+            if self.use_sendgrid:
+                return self._send_email_sendgrid(recipient_email, subject, body, pdf_data, filename)
+            else:
+                return self._send_email_smtp(recipient_email, subject, body, pdf_data, filename)
+                
+        except Exception as e:
+            print(f"❌ Error al enviar recibo de cuota: {str(e)}")
+            return False, f"Error al enviar recibo de cuota: {str(e)}"
+    
+    def generate_receipt_pdf(self, db, cobranza):
+        """Generar PDF del recibo de cobranza"""
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        # Título
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            textColor=colors.HexColor('#1a5490'),
+            spaceAfter=20,
+            alignment=1
+        )
+        elements.append(Paragraph("RECIBO DE COBRANZA", title_style))
+        elements.append(Spacer(1, 0.2*inch))
+        
+        # Información del recibo
+        info_data = [
+            ['Número de Recibo:', str(cobranza.numero_recibo)],
+            ['Fecha:', cobranza.fecha.strftime('%d/%m/%Y')],
+            ['Concepto:', cobranza.concepto],
+            ['Monto:', f"${cobranza.monto:.2f}"],
+        ]
+        
+        info_table = Table(info_data, colWidths=[2*inch, 4*inch])
+        info_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.grey),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        elements.append(info_table)
+        elements.append(Spacer(1, 0.3*inch))
+        
+        # Monto en letras
+        try:
+            monto_letras = num2words(cobranza.monto, lang='es', to='currency')
+            elements.append(Paragraph(f"<b>Son:</b> {monto_letras.upper()}", styles['Normal']))
         except:
-            return f"{numero:,.2f} pesos"
-
-    def generate_payment_receipt_pdf(self, db: Session, pago):
-        """Genera un PDF con el recibo del pago"""
+            pass
+        
+        doc.build(elements)
+        pdf_data = buffer.getvalue()
+        buffer.close()
+        
+        return pdf_data
+    
+    def generate_payment_receipt_pdf(self, db, orden_pago):
+        """Generar PDF de orden de pago"""
         buffer = BytesIO()
-        p = canvas.Canvas(buffer, pagesize=landscape(letter))
-        width, height = landscape(letter)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+        elements = []
+        styles = getSampleStyleSheet()
         
-        margin = 0.75 * inch
-        accent_color = (0.1, 0.5, 0.7)
+        # Título
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            textColor=colors.HexColor('#1a5490'),
+            spaceAfter=20,
+            alignment=1
+        )
+        elements.append(Paragraph("ORDEN DE PAGO", title_style))
+        elements.append(Spacer(1, 0.2*inch))
         
-        p.setFillColorRGB(0.95, 0.95, 1)
-        p.rect(margin/2, margin/2, width - margin, height - margin, fill=1, stroke=0)
-        
-        p.setStrokeColorRGB(*accent_color)
-        p.setLineWidth(2)
-        p.rect(margin/2, margin/2, width - margin, height - margin)
-        
-        self.load_logo(p, margin + 1*inch, height - margin - inch)
-        
-        p.setFillColorRGB(*accent_color)
-        p.setFont("Helvetica-Bold", 16)
-        p.drawCentredString(width/2, height - 1.5*inch, "UNIDAD DE ÁRBITROS DE RÍO CUARTO")
-        
-        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
-            p.setFont("Helvetica-Bold", 14)
-            p.drawCentredString(width/2, height - 2*inch, "FACTURA/RECIBO DE PAGO")
-        else:
-            p.setFont("Helvetica-Bold", 14)
-            p.drawCentredString(width/2, height - 2*inch, "ORDEN DE PAGO")
-        
-        usuario = db.query(models.Usuario).filter(models.Usuario.id == pago.usuario_id).first()
-        
-        p.setFont("Helvetica", 12)
-        p.setFillColorRGB(0, 0, 0)
-        
-        partida = db.query(models.Partida).filter(
-            models.Partida.pago_id == pago.id
-        ).first()
-        
-        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
-            num_doc = pago.numero_factura if hasattr(pago, 'numero_factura') and pago.numero_factura else pago.id
-            p.drawRightString(width - margin, height - 2.5*inch, f"N° Factura: {num_doc}")
-        else:
-            if partida and partida.recibo_factura and partida.recibo_factura.startswith("O.P-"):
-                numero_orden = partida.recibo_factura
-            else:
-                numero_orden = f"O.P-{pago.id:05d}"
-            
-            p.drawRightString(width - margin, height - 2.5*inch, f"N° Orden: {numero_orden}")
-        
-        info_y = height - 3.5*inch
-        p.setFont("Helvetica-Bold", 12)
-        p.drawString(margin, info_y, "Datos del Pago")
-        
-        p.setFont("Helvetica", 11)
-        linea_altura = 0.3*inch
-        
-        campos = [
-            ("Fecha:", pago.fecha.strftime('%d/%m/%Y')),
+        # Información de la orden
+        info_data = [
+            ['Número de Orden:', str(orden_pago.numero_orden)],
+            ['Fecha:', orden_pago.fecha.strftime('%d/%m/%Y')],
+            ['Concepto:', orden_pago.concepto],
+            ['Monto:', f"${orden_pago.monto:.2f}"],
         ]
         
-        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura" and hasattr(pago, 'razon_social') and pago.razon_social:
-            campos.append(("Razón Social:", pago.razon_social))
-        else:
-            campos.append(("Beneficiario:", usuario.nombre if usuario else "No especificado"))
-            
-        campos.append(("Monto:", f"$ {float(pago.monto):,.2f}"))
+        info_table = Table(info_data, colWidths=[2*inch, 4*inch])
+        info_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.grey),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
         
-        descripcion = pago.descripcion if hasattr(pago, 'descripcion') and pago.descripcion else "Sin descripción"
-        campos.append(("Descripción:", descripcion))
+        elements.append(info_table)
+        elements.append(Spacer(1, 0.3*inch))
         
-        for i, (etiqueta, valor) in enumerate(campos):
-            p.setFont("Helvetica-Bold", 10)
-            p.drawString(margin, info_y - (i+1)*linea_altura, etiqueta)
-            p.setFont("Helvetica", 10)
-            p.drawString(margin + 2*inch, info_y - (i+1)*linea_altura, str(valor))
-        
-        firma_y = margin + 2*inch
-        p.setFont("Helvetica", 10)
-        p.drawString(margin, firma_y + linea_altura, "Firma:")
-        p.line(margin + inch, firma_y, margin + 4*inch, firma_y)
-        
-        p.setFont("Helvetica", 8)
-        p.setFillColorRGB(0.5, 0.5, 0.5)
-        p.drawString(margin, margin, "Unidad de Árbitros de Río Cuarto")
-        p.drawRightString(width - margin, margin, datetime.now().strftime("%d/%m/%Y %H:%M"))
-        
-        p.save()
-        buffer.seek(0)
-        return buffer.getvalue()
-        
-    def send_payment_receipt_email(self, db: Session, pago, recipient_email):
-        if hasattr(pago, 'tipo_documento') and pago.tipo_documento == "factura":
-            print(f"No se envía correo para facturas de pago: ID {pago.id}")
-            return False, "No se envía correo para facturas de pago"
-        
+        # Monto en letras
         try:
-            partida = db.query(models.Partida).filter(
-                models.Partida.pago_id == pago.id
-            ).first()
-            
-            if partida and partida.recibo_factura and partida.recibo_factura.startswith("O.P-"):
-                numero_orden = partida.recibo_factura
-                subject = f"Orden de Pago {numero_orden}"
-                filename = f"{numero_orden}.pdf"
-            else:
-                subject = f"Orden de Pago #{pago.id}"
-                filename = f"OrdenPago_{pago.id}.pdf"
-            
-            body = """
-            Estimado/a usuario,
-            
-            Adjunto encontrará la orden de pago correspondiente.
-            
-            Gracias.
-            
-            Unidad de Árbitros de Río Cuarto
-            """
-            
-            pdf = self.generate_payment_receipt_pdf(db, pago)
-            
-            # Decidir qué método usar
-            if self.use_resend:
-                return self._send_email_resend(recipient_email, subject, body, pdf, filename)
-            else:
-                return self._send_email_smtp(recipient_email, subject, body, pdf, filename)
-            
-        except Exception as e:
-            print(f"Error detallado: {e}")
-            return False, f"Error al enviar email: {str(e)}"
+            monto_letras = num2words(orden_pago.monto, lang='es', to='currency')
+            elements.append(Paragraph(f"<b>Son:</b> {monto_letras.upper()}", styles['Normal']))
+        except:
+            pass
         
-    def generate_cuota_receipt_pdf(self, db: Session, cuota):
-        """Genera un PDF con el recibo de pago de cuota"""
+        doc.build(elements)
+        pdf_data = buffer.getvalue()
+        buffer.close()
+        
+        return pdf_data
+    
+    def generate_cuota_receipt_pdf(self, db, pago_cuota):
+        """Generar PDF de recibo de cuota"""
         buffer = BytesIO()
-        p = canvas.Canvas(buffer, pagesize=landscape(letter))
-        width, height = landscape(letter)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+        elements = []
+        styles = getSampleStyleSheet()
         
-        self.load_logo(p, width, height)
+        # Título
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            textColor=colors.HexColor('#1a5490'),
+            spaceAfter=20,
+            alignment=1
+        )
+        elements.append(Paragraph("RECIBO DE PAGO DE CUOTA", title_style))
+        elements.append(Spacer(1, 0.2*inch))
         
-        p.setFont("Helvetica-Bold", 14)
-        p.drawCentredString(width/2, height - 1 * inch, "UNIDAD DE ÁRBITROS DE RÍO CUARTO")
-        p.drawCentredString(width/2, height - 1.5 * inch, "CUOTA SOCIETARIA")
+        # Información del pago
+        info_data = [
+            ['Número de Recibo:', str(pago_cuota.numero_recibo)],
+            ['Fecha de Pago:', pago_cuota.fecha_pago.strftime('%d/%m/%Y')],
+            ['Monto Pagado:', f"${pago_cuota.monto_pagado:.2f}"],
+        ]
         
-        p.setFont("Helvetica-Bold", 12)
-        p.drawRightString(width - 1 * inch, height - 1.5 * inch, f"RECIBO Nº {cuota.id:06d}")
+        info_table = Table(info_data, colWidths=[2*inch, 4*inch])
+        info_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.grey),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
         
-        usuario = db.query(models.Usuario).filter(models.Usuario.id == cuota.usuario_id).first()
+        elements.append(info_table)
+        elements.append(Spacer(1, 0.3*inch))
         
-        p.setFont("Helvetica", 12)
-        
-        p.drawString(1 * inch, height - 3 * inch, "Recibimos de:")
-        p.line(3 * inch, height - 3 * inch, width - 2 * inch, height - 3 * inch)
-        p.drawString(3.2 * inch, height - 3 * inch, usuario.nombre if usuario else "")
-        
-        p.drawString(1 * inch, height - 4 * inch, "La suma de pesos:")
-        p.line(3 * inch, height - 4 * inch, width - 2 * inch, height - 4 * inch)
-        
-        monto_valor = float(cuota.monto_pagado) if cuota.pagado else float(cuota.monto)
-        monto_texto = self.numero_a_letras(monto_valor)
-        p.drawString(3.2 * inch, height - 4 * inch, monto_texto)
-        
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(1 * inch, height - 5 * inch, "$ ")
-        p.drawString(2 * inch, height - 5 * inch, f"{monto_valor:,.2f}")
-        
-        p.setFont("Helvetica", 10)
-        p.line(1 * inch, 2 * inch, 5 * inch, 2 * inch)
-        p.drawCentredString(3 * inch, 1.7 * inch, "Firma")
-        
-        fecha_actual = datetime.now().strftime("%d/%m/%Y")
-        p.drawRightString(width - 1 * inch, 1.7 * inch, f"Fecha: {fecha_actual}")
-        
-        p.save()
-        buffer.seek(0)
-        return buffer.getvalue()
-        
-    def send_cuota_receipt_email(self, db: Session, cuota, recipient_email):
+        # Monto en letras
         try:
-            subject = f"Recibo de Cuota Societaria - {cuota.fecha.strftime('%B %Y')}"
-            filename = f"Cuota_Societaria_{cuota.id}.pdf"
-            
-            body = """
-            Estimado/a socio/a,
-            
-            Adjunto encontrará el recibo correspondiente a su cuota societaria.
-            
-            Gracias por formar parte de nuestra unidad.
-            
-            Unidad de Árbitros de Río Cuarto
-            """
-            
-            pdf = self.generate_cuota_receipt_pdf(db, cuota)
-            
-            # Decidir qué método usar
-            if self.use_resend:
-                return self._send_email_resend(recipient_email, subject, body, pdf, filename)
-            else:
-                return self._send_email_smtp(recipient_email, subject, body, pdf, filename)
-            
-        except Exception as e:
-            print(f"Error detallado: {e}")
-            return False, f"Error al enviar email: {str(e)}"
+            monto_letras = num2words(pago_cuota.monto_pagado, lang='es', to='currency')
+            elements.append(Paragraph(f"<b>Son:</b> {monto_letras.upper()}", styles['Normal']))
+        except:
+            pass
+        
+        doc.build(elements)
+        pdf_data = buffer.getvalue()
+        buffer.close()
+        
+        return pdf_data
