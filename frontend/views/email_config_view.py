@@ -1,9 +1,8 @@
-
 import os
 import sys
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFormLayout, 
-    QLineEdit, QSpinBox, QMessageBox, QCheckBox, QInputDialog
+    QLineEdit, QSpinBox, QMessageBox, QCheckBox, QInputDialog, QGroupBox
 )
 from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt, Signal
@@ -71,9 +70,6 @@ class EmailConfigView(QWidget):
         # Layout principal
         self.main_layout = QVBoxLayout(self)
         
-        # Layout para botones de navegación
-        buttons_layout = QHBoxLayout()
-        
         # Botón para volver al Dashboard
         self.dashboard_button = QPushButton("Volver al Dashboard")
         self.dashboard_button.clicked.connect(self.go_to_dashboard)
@@ -86,57 +82,64 @@ class EmailConfigView(QWidget):
         title_label.setFont(title_font)
         
         # Descripción
-        desc_label = QLabel("Configure los parámetros SMTP para el envío automático de recibos por email.")
+        desc_label = QLabel("El sistema utiliza SendGrid para el envío automático de recibos por email.")
         desc_label.setWordWrap(True)
         
-        # Formulario
+        # Grupo de información del sistema
+        info_group = QGroupBox("Estado del Sistema")
+        info_layout = QVBoxLayout()
+        
+        # Estado SendGrid
+        self.status_label = QLabel("✅ SendGrid API configurada en el servidor")
+        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+        info_layout.addWidget(self.status_label)
+        
+        # Información adicional
+        info_text = QLabel(
+            "La configuración de SendGrid se gestiona mediante variables de entorno en el servidor.\n"
+            "No es necesario configurar SMTP manualmente."
+        )
+        info_text.setWordWrap(True)
+        info_text.setStyleSheet("color: #666;")
+        info_layout.addWidget(info_text)
+        
+        info_group.setLayout(info_layout)
+        
+        # Formulario simplificado
+        form_group = QGroupBox("Configuración de Email")
         form_layout = QFormLayout()
         
-        # Servidor SMTP
-        self.smtp_server_edit = QLineEdit()
-        self.smtp_server_edit.setPlaceholderText("smtp.gmail.com")
-        form_layout.addRow("Servidor SMTP:", self.smtp_server_edit)
-        
-        # Puerto SMTP
-        self.smtp_port_spin = QSpinBox()
-        self.smtp_port_spin.setRange(1, 65535)
-        self.smtp_port_spin.setValue(587)  # Puerto por defecto para TLS
-        form_layout.addRow("Puerto SMTP:", self.smtp_port_spin)
-        
-        # Usuario SMTP
-        self.smtp_username_edit = QLineEdit()
-        self.smtp_username_edit.setPlaceholderText("tu.email@gmail.com")
-        form_layout.addRow("Usuario SMTP:", self.smtp_username_edit)
-        
-        # Contraseña SMTP
-        self.smtp_password_edit = QLineEdit()
-        self.smtp_password_edit.setEchoMode(QLineEdit.Password)
-        self.smtp_password_edit.setPlaceholderText("Contraseña o clave de aplicación")
-        form_layout.addRow("Contraseña SMTP:", self.smtp_password_edit)
-        
-        # Email Remitente
+        # Email Remitente (solo para referencia)
         self.email_from_edit = QLineEdit()
-        self.email_from_edit.setPlaceholderText("Unidad de Árbitros <tu.email@gmail.com>")
-        form_layout.addRow("Email Remitente:", self.email_from_edit)
+        self.email_from_edit.setPlaceholderText("unidadarbitrosriocuarto@gmail.com")
+        self.email_from_edit.setReadOnly(True)
+        form_layout.addRow("Email Remitente (verificado en SendGrid):", self.email_from_edit)
         
         # Activo
-        self.is_active_check = QCheckBox("Configuración Activa")
+        self.is_active_check = QCheckBox("Sistema de Email Activo")
         self.is_active_check.setChecked(True)
         form_layout.addRow("", self.is_active_check)
         
-        # Ayuda para Gmail
-        help_label = QLabel("Nota: Si usas Gmail, deberás usar una 'Contraseña de aplicación'. Ve a tu cuenta de Google → Seguridad → Verificación en dos pasos → Contraseñas de aplicación.")
+        form_group.setLayout(form_layout)
+        
+        # Nota informativa
+        help_label = QLabel(
+            "ℹ️ <b>Nota importante:</b> El email remitente debe estar verificado en SendGrid. "
+            "Los cambios en la API Key de SendGrid se realizan directamente en las variables de entorno del servidor (Render)."
+        )
         help_label.setWordWrap(True)
-        help_label.setStyleSheet("color: #666; font-style: italic;")
+        help_label.setStyleSheet("background-color: #e3f2fd; padding: 10px; border-radius: 5px;")
         
         # Botones de acción
         action_buttons_layout = QHBoxLayout()
         
         self.save_btn = QPushButton("Guardar Configuración")
         self.save_btn.clicked.connect(self.on_save_config)
+        self.save_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px; font-weight: bold;")
         
-        self.test_btn = QPushButton("Probar Configuración")
+        self.test_btn = QPushButton("Probar Envío de Email")
         self.test_btn.clicked.connect(self.on_test_config)
+        self.test_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px; font-weight: bold;")
         
         action_buttons_layout.addWidget(self.save_btn)
         action_buttons_layout.addWidget(self.test_btn)
@@ -145,7 +148,8 @@ class EmailConfigView(QWidget):
         self.main_layout.addWidget(self.dashboard_button)
         self.main_layout.addWidget(title_label)
         self.main_layout.addWidget(desc_label)
-        self.main_layout.addLayout(form_layout)
+        self.main_layout.addWidget(info_group)
+        self.main_layout.addWidget(form_group)
         self.main_layout.addWidget(help_label)
         self.main_layout.addLayout(action_buttons_layout)
         
@@ -164,18 +168,15 @@ class EmailConfigView(QWidget):
                 config = response.json()
                 self.config_id = config.get("id")
                 
-                # Llenar formulario
-                self.smtp_server_edit.setText(config.get("smtp_server", ""))
-                self.smtp_port_spin.setValue(config.get("smtp_port", 587))
-                self.smtp_username_edit.setText(config.get("smtp_username", ""))
-                # No llenamos la contraseña por seguridad
-                self.email_from_edit.setText(config.get("email_from", ""))
+                # Llenar formulario (solo email remitente)
+                self.email_from_edit.setText(config.get("email_from", "unidadarbitrosriocuarto@gmail.com"))
                 self.is_active_check.setChecked(config.get("is_active", True))
                 
                 print(f"Configuración de email cargada (ID: {self.config_id})")
             elif response.status_code == 404:
                 print("No hay configuración de email activa")
-                # No mostramos mensaje, simplemente dejamos el formulario vacío
+                # Establecer valores por defecto
+                self.email_from_edit.setText("unidadarbitrosriocuarto@gmail.com")
             elif response.status_code == 401:
                 QMessageBox.warning(self, "Error de autenticación", "Su sesión ha expirado o no tiene permisos suficientes")
             else:
@@ -186,30 +187,19 @@ class EmailConfigView(QWidget):
     def on_save_config(self):
         """Guarda la configuración de email"""
         # Validar campos
-        if not self.smtp_server_edit.text().strip():
-            QMessageBox.warning(self, "Error", "Por favor ingrese el servidor SMTP")
-            return
-        
-        if not self.smtp_username_edit.text().strip():
-            QMessageBox.warning(self, "Error", "Por favor ingrese el usuario SMTP")
-            return
-        
         if not self.email_from_edit.text().strip():
             QMessageBox.warning(self, "Error", "Por favor ingrese el email remitente")
             return
         
-        # Crear objeto de configuración
+        # Crear objeto de configuración simplificado para SendGrid
         config_data = {
-            "smtp_server": self.smtp_server_edit.text().strip(),
-            "smtp_port": self.smtp_port_spin.value(),
-            "smtp_username": self.smtp_username_edit.text().strip(),
+            "smtp_server": "sendgrid",  # Identificador
+            "smtp_port": 587,  # Valor dummy para compatibilidad
+            "smtp_username": "apikey",  # SendGrid usa esto
+            "smtp_password": "configured_in_env",  # La password real está en variables de entorno
             "email_from": self.email_from_edit.text().strip(),
             "is_active": self.is_active_check.isChecked()
         }
-        
-        # Agregar contraseña solo si se ha proporcionado una nueva
-        if self.smtp_password_edit.text():
-            config_data["smtp_password"] = self.smtp_password_edit.text()
         
         try:
             headers = session.get_headers()
@@ -220,24 +210,21 @@ class EmailConfigView(QWidget):
                 url = f"{session.api_url}/email-config/{self.config_id}"
                 response = requests.put(url, headers=headers, json=config_data)
             else:
-                # Si no hay contraseña y es una creación, mostrar error
-                if not self.smtp_password_edit.text():
-                    QMessageBox.warning(self, "Error", "Por favor ingrese una contraseña")
-                    return
-                    
                 url = f"{session.api_url}/email-config/"
                 response = requests.post(url, headers=headers, json=config_data)
             
             if response.status_code in [200, 201]:
-                QMessageBox.information(self, "Éxito", "Configuración de email guardada exitosamente")
+                QMessageBox.information(
+                    self, 
+                    "Éxito", 
+                    "Configuración de email guardada exitosamente.\n\n"
+                    "El sistema utilizará SendGrid para enviar los emails."
+                )
                 
                 # Actualizar config_id si es una creación
                 if not self.config_id:
                     result = response.json()
                     self.config_id = result.get("id")
-                
-                # Limpiar campo de contraseña
-                self.smtp_password_edit.clear()
             else:
                 error_msg = "Error al guardar la configuración"
                 try:
@@ -253,21 +240,28 @@ class EmailConfigView(QWidget):
     
     def on_test_config(self):
         """Prueba la configuración de email enviando un correo de prueba"""
-        # Validar que haya una configuración guardada
-        if not self.config_id:
-            QMessageBox.warning(self, "Advertencia", "Debe guardar la configuración antes de probarla")
-            return
-        
         try:
             # Pedir email para la prueba
             email_test, ok = QInputDialog.getText(
                 self, 
                 "Probar Email", 
-                "Ingrese email para la prueba:"
+                "Ingrese el email donde desea recibir el correo de prueba:"
             )
             
             if not ok or not email_test:
                 return
+            
+            # Validar formato de email básico
+            if '@' not in email_test or '.' not in email_test:
+                QMessageBox.warning(self, "Error", "Por favor ingrese un email válido")
+                return
+            
+            # Mostrar mensaje de espera
+            QMessageBox.information(
+                self,
+                "Enviando...",
+                "Enviando email de prueba. Por favor espere..."
+            )
             
             # Enviar solicitud de prueba
             url = f"{session.api_url}/email-test"
@@ -276,15 +270,25 @@ class EmailConfigView(QWidget):
             response = requests.post(
                 url, 
                 headers=headers,
-                params={"email": email_test}
+                params={"email": email_test},
+                timeout=30  # Timeout de 30 segundos
             )
             
             if response.status_code == 200:
                 result = response.json()
                 if result.get("success", False):
-                    QMessageBox.information(self, "Éxito", "Email de prueba enviado exitosamente")
+                    QMessageBox.information(
+                        self, 
+                        "✅ Éxito", 
+                        f"Email de prueba enviado exitosamente a:\n{email_test}\n\n"
+                        "Revisa tu bandeja de entrada (y spam si no lo encuentras)."
+                    )
                 else:
-                    QMessageBox.warning(self, "Advertencia", f"No se pudo enviar el email de prueba: {result.get('message', '')}")
+                    QMessageBox.warning(
+                        self, 
+                        "Advertencia", 
+                        f"No se pudo enviar el email de prueba:\n{result.get('message', 'Error desconocido')}"
+                    )
             else:
                 error_msg = "Error al enviar email de prueba"
                 try:
@@ -293,6 +297,19 @@ class EmailConfigView(QWidget):
                         error_msg = error_data["detail"]
                 except:
                     pass
-                QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
+                QMessageBox.critical(
+                    self, 
+                    "Error", 
+                    f"{error_msg}\n\nStatus code: {response.status_code}\n\n"
+                    "Verifica que:\n"
+                    "1. La API Key de SendGrid esté configurada en Render\n"
+                    "2. El email remitente esté verificado en SendGrid"
+                )
+        except requests.exceptions.Timeout:
+            QMessageBox.critical(
+                self,
+                "Error",
+                "La petición tardó demasiado tiempo. Verifica tu conexión a internet."
+            )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al probar configuración: {str(e)}")

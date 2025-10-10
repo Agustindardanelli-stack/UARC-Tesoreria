@@ -1163,6 +1163,7 @@ async def reenviar_recibo_cuota(request: Request, cuota_id: int, email: Optional
         db.close()
 
 # Endpoint para probar email
+# Endpoint para probar email - ACTUALIZADO PARA SENDGRID
 @app.post(f"{settings.API_PREFIX}/email-test", response_model=None)
 async def test_email(request: Request, email: str):
     db = SessionLocal()
@@ -1224,22 +1225,22 @@ async def test_email(request: Request, email: str):
             p.setFont("Helvetica-Bold", 16)
             p.drawString(100, 750, "Email de Prueba - UARC")
             p.setFont("Helvetica", 12)
-            p.drawString(100, 720, "Si recibe este mensaje, la configuracion es correcta.")
-            p.drawString(100, 700, "Unidad de Arbitros de Rio Cuarto")
+            p.drawString(100, 720, "Si recibe este mensaje, la configuración es correcta.")
+            p.drawString(100, 700, "Unidad de Árbitros de Río Cuarto")
             p.save()
             buffer.seek(0)
             pdf_data = buffer.getvalue()
             
-            subject = "Prueba de Configuracion de Email - UARC"
-            body = """Este es un mensaje de prueba para verificar la configuracion de email.
+            subject = "Prueba de Configuración de Email - UARC"
+            body = """Este es un mensaje de prueba para verificar la configuración de email.
             
-Si esta recibiendo este mensaje, la configuracion es correcta.
+Si está recibiendo este mensaje, la configuración es correcta.
 
-Unidad de Arbitros de Rio Cuarto"""
+Unidad de Árbitros de Río Cuarto"""
             
-            # Usar el método apropiado (Resend o SMTP)
-            if email_service.use_resend:
-                success, message = email_service._send_email_resend(
+            # Usar el método apropiado (SendGrid o SMTP)
+            if email_service.use_sendgrid:
+                success, message = email_service._send_email_sendgrid(
                     recipient_email=email,
                     subject=subject,
                     body=body,
