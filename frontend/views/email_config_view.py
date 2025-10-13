@@ -109,10 +109,10 @@ class EmailConfigView(QWidget):
         form_group = QGroupBox("Configuración de Email")
         form_layout = QFormLayout()
         
-        # Email Remitente (solo para referencia)
+        # Email Remitente (editable para corregir formato)
         self.email_from_edit = QLineEdit()
         self.email_from_edit.setPlaceholderText("unidadarbitrosriocuarto@gmail.com")
-        self.email_from_edit.setReadOnly(True)
+        self.email_from_edit.setReadOnly(False)  # Permitir edición
         form_layout.addRow("Email Remitente (verificado en SendGrid):", self.email_from_edit)
         
         # Activo
@@ -191,13 +191,27 @@ class EmailConfigView(QWidget):
             QMessageBox.warning(self, "Error", "Por favor ingrese el email remitente")
             return
         
+        # Limpiar email: extraer solo el email si tiene formato "Nombre <email@domain.com>"
+        email_text = self.email_from_edit.text().strip()
+        if '<' in email_text and '>' in email_text:
+            # Extraer solo el email entre < >
+            import re
+            match = re.search(r'<(.+?)>', email_text)
+            if match:
+                email_text = match.group(1).strip()
+        
+        # Validar formato de email básico
+        if '@' not in email_text or '.' not in email_text:
+            QMessageBox.warning(self, "Error", "Por favor ingrese un email válido")
+            return
+        
         # Crear objeto de configuración simplificado para SendGrid
         config_data = {
             "smtp_server": "sendgrid",  # Identificador
             "smtp_port": 587,  # Valor dummy para compatibilidad
             "smtp_username": "apikey",  # SendGrid usa esto
             "smtp_password": "configured_in_env",  # La password real está en variables de entorno
-            "email_from": self.email_from_edit.text().strip(),
+            "email_from": email_text,  # Email limpio, sin formato con nombre
             "is_active": self.is_active_check.isChecked()
         }
         
