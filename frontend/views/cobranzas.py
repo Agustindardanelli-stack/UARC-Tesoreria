@@ -1593,6 +1593,7 @@ class CobranzasView(QWidget):
                     )
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error al eliminar: {str(e)}")
+                
     # Método adicional para inicializar después del login (si lo prefieres usar en lugar de showEvent)
     def initialize_after_login(self):
         """Método para inicializar datos después del login (alternativa a showEvent)"""

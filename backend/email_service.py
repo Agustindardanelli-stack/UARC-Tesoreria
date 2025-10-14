@@ -99,17 +99,31 @@ class EmailService:
     def send_receipt_email(self, db, cobranza, recipient_email):
         """Enviar recibo de cobranza por email"""
         try:
+            # 🔥 SOLUCIÓN: Obtener número de recibo desde la partida asociada
+            from models import Partida
+            
+            partida = db.query(Partida).filter(Partida.cobranza_id == cobranza.id).first()
+            
+            # Determinar número de documento según tipo
+            if cobranza.tipo_documento == "factura":
+                numero_documento = cobranza.numero_factura or "S/N"
+                tipo_doc_texto = "Factura/Recibo"
+            else:
+                # Extraer número de recibo de la partida
+                numero_documento = partida.recibo_factura if partida else f"REC-{cobranza.id}"
+                tipo_doc_texto = "Recibo"
+            
             # Generar PDF
-            pdf_data = self.generate_receipt_pdf(db, cobranza)
+            pdf_data = self.generate_receipt_pdf(db, cobranza, numero_documento, tipo_doc_texto)
             
             # Preparar email
-            subject = f"Recibo de Cobranza #{cobranza.numero_recibo}"
+            subject = f"{tipo_doc_texto} #{numero_documento}"
             body = f"""
 Estimado/a,
 
-Adjuntamos el recibo de cobranza correspondiente a:
+Adjuntamos el {tipo_doc_texto.lower()} correspondiente a:
 
-Número de Recibo: {cobranza.numero_recibo}
+Número de {tipo_doc_texto}: {numero_documento}
 Fecha: {cobranza.fecha.strftime('%d/%m/%Y')}
 Monto: ${cobranza.monto:.2f}
 
@@ -119,7 +133,7 @@ Saludos cordiales,
 Unidad de Árbitros Río Cuarto
             """
             
-            filename = f"Recibo_{cobranza.numero_recibo}.pdf"
+            filename = f"{tipo_doc_texto.replace('/', '_')}_{numero_documento.replace('/', '_')}.pdf"
             
             # Decidir método de envío
             if self.use_sendgrid:
@@ -131,28 +145,42 @@ Unidad de Árbitros Río Cuarto
             print(f"❌ Error al enviar recibo: {str(e)}")
             return False, f"Error al enviar recibo: {str(e)}"
     
-    def send_payment_receipt_email(self, db, orden_pago, recipient_email):
+    def send_payment_receipt_email(self, db, pago, recipient_email):
         """Enviar orden de pago por email"""
         try:
+            # 🔥 SOLUCIÓN: Obtener número desde la partida asociada
+            from models import Partida
+            
+            partida = db.query(Partida).filter(Partida.pago_id == pago.id).first()
+            
+            # Determinar número de documento según tipo
+            if pago.tipo_documento == "factura":
+                numero_documento = pago.numero_factura or "S/N"
+                tipo_doc_texto = "Factura/Recibo"
+            else:
+                # Extraer número de orden de pago de la partida
+                numero_documento = partida.recibo_factura if partida else f"O.P-{pago.id}"
+                tipo_doc_texto = "Orden de Pago"
+            
             # Generar PDF
-            pdf_data = self.generate_payment_receipt_pdf(db, orden_pago)
+            pdf_data = self.generate_payment_receipt_pdf(db, pago, numero_documento, tipo_doc_texto)
             
             # Preparar email
-            subject = f"Orden de Pago #{orden_pago.numero_orden}"
+            subject = f"{tipo_doc_texto} #{numero_documento}"
             body = f"""
 Estimado/a,
 
-Adjuntamos la orden de pago correspondiente a:
+Adjuntamos la {tipo_doc_texto.lower()} correspondiente a:
 
-Número de Orden: {orden_pago.numero_orden}
-Fecha: {orden_pago.fecha.strftime('%d/%m/%Y')}
-Monto: ${orden_pago.monto:.2f}
+Número de {tipo_doc_texto}: {numero_documento}
+Fecha: {pago.fecha.strftime('%d/%m/%Y')}
+Monto: ${pago.monto:.2f}
 
 Saludos cordiales,
 Unidad de Árbitros Río Cuarto
             """
             
-            filename = f"Orden_Pago_{orden_pago.numero_orden}.pdf"
+            filename = f"{tipo_doc_texto.replace('/', '_')}_{numero_documento.replace('/', '_')}.pdf"
             
             # Decidir método de envío
             if self.use_sendgrid:
@@ -164,22 +192,25 @@ Unidad de Árbitros Río Cuarto
             print(f"❌ Error al enviar orden de pago: {str(e)}")
             return False, f"Error al enviar orden de pago: {str(e)}"
     
-    def send_cuota_receipt_email(self, db, pago_cuota, recipient_email):
+    def send_cuota_receipt_email(self, db, cuota, recipient_email):
         """Enviar recibo de cuota por email"""
         try:
+            # Obtener número de comprobante
+            numero_recibo = f"C.S.-{cuota.nro_comprobante}"
+            
             # Generar PDF
-            pdf_data = self.generate_cuota_receipt_pdf(db, pago_cuota)
+            pdf_data = self.generate_cuota_receipt_pdf(db, cuota, numero_recibo)
             
             # Preparar email
-            subject = f"Recibo de Cuota #{pago_cuota.numero_recibo}"
+            subject = f"Recibo de Cuota Societaria #{numero_recibo}"
             body = f"""
 Estimado/a,
 
 Adjuntamos el recibo de pago de cuota correspondiente a:
 
-Número de Recibo: {pago_cuota.numero_recibo}
-Fecha: {pago_cuota.fecha_pago.strftime('%d/%m/%Y')}
-Monto: ${pago_cuota.monto_pagado:.2f}
+Número de Recibo: {numero_recibo}
+Fecha de Pago: {cuota.fecha_pago.strftime('%d/%m/%Y') if cuota.fecha_pago else 'N/A'}
+Monto Pagado: ${cuota.monto_pagado:.2f}
 
 Gracias por su pago.
 
@@ -187,7 +218,7 @@ Saludos cordiales,
 Unidad de Árbitros Río Cuarto
             """
             
-            filename = f"Recibo_Cuota_{pago_cuota.numero_recibo}.pdf"
+            filename = f"Recibo_Cuota_{numero_recibo}.pdf"
             
             # Decidir método de envío
             if self.use_sendgrid:
@@ -199,7 +230,7 @@ Unidad de Árbitros Río Cuarto
             print(f"❌ Error al enviar recibo de cuota: {str(e)}")
             return False, f"Error al enviar recibo de cuota: {str(e)}"
     
-    def generate_receipt_pdf(self, db, cobranza):
+    def generate_receipt_pdf(self, db, cobranza, numero_documento, tipo_doc_texto):
         """Generar PDF del recibo de cobranza"""
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
@@ -215,16 +246,29 @@ Unidad de Árbitros Río Cuarto
             spaceAfter=20,
             alignment=1
         )
-        elements.append(Paragraph("RECIBO DE COBRANZA", title_style))
+        elements.append(Paragraph(tipo_doc_texto.upper(), title_style))
         elements.append(Spacer(1, 0.2*inch))
+        
+        # Obtener usuario
+        from models import Usuario
+        usuario = db.query(Usuario).filter(Usuario.id == cobranza.usuario_id).first()
+        nombre_usuario = usuario.nombre if usuario else "N/A"
         
         # Información del recibo
         info_data = [
-            ['Número de Recibo:', str(cobranza.numero_recibo)],
+            ['Número:', numero_documento],
             ['Fecha:', cobranza.fecha.strftime('%d/%m/%Y')],
-            ['Concepto:', cobranza.concepto],
+            ['Pagador/Cobrador:', nombre_usuario],
             ['Monto:', f"${cobranza.monto:.2f}"],
         ]
+        
+        # Agregar descripción si existe
+        if cobranza.descripcion:
+            info_data.append(['Concepto:', cobranza.descripcion])
+        
+        # Si es factura, agregar razón social
+        if cobranza.tipo_documento == "factura" and cobranza.razon_social:
+            info_data.append(['Razón Social:', cobranza.razon_social])
         
         info_table = Table(info_data, colWidths=[2*inch, 4*inch])
         info_table.setStyle(TableStyle([
@@ -242,7 +286,7 @@ Unidad de Árbitros Río Cuarto
         
         # Monto en letras
         try:
-            monto_letras = num2words(cobranza.monto, lang='es', to='currency')
+            monto_letras = num2words(float(cobranza.monto), lang='es', to='currency')
             elements.append(Paragraph(f"<b>Son:</b> {monto_letras.upper()}", styles['Normal']))
         except:
             pass
@@ -253,7 +297,7 @@ Unidad de Árbitros Río Cuarto
         
         return pdf_data
     
-    def generate_payment_receipt_pdf(self, db, orden_pago):
+    def generate_payment_receipt_pdf(self, db, pago, numero_documento, tipo_doc_texto):
         """Generar PDF de orden de pago"""
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
@@ -269,16 +313,29 @@ Unidad de Árbitros Río Cuarto
             spaceAfter=20,
             alignment=1
         )
-        elements.append(Paragraph("ORDEN DE PAGO", title_style))
+        elements.append(Paragraph(tipo_doc_texto.upper(), title_style))
         elements.append(Spacer(1, 0.2*inch))
+        
+        # Obtener usuario
+        from models import Usuario
+        usuario = db.query(Usuario).filter(Usuario.id == pago.usuario_id).first()
+        nombre_usuario = usuario.nombre if usuario else "N/A"
         
         # Información de la orden
         info_data = [
-            ['Número de Orden:', str(orden_pago.numero_orden)],
-            ['Fecha:', orden_pago.fecha.strftime('%d/%m/%Y')],
-            ['Concepto:', orden_pago.concepto],
-            ['Monto:', f"${orden_pago.monto:.2f}"],
+            ['Número:', numero_documento],
+            ['Fecha:', pago.fecha.strftime('%d/%m/%Y')],
+            ['Pagador/Cobrador:', nombre_usuario],
+            ['Monto:', f"${pago.monto:.2f}"],
         ]
+        
+        # Agregar descripción si existe
+        if pago.descripcion:
+            info_data.append(['Concepto:', pago.descripcion])
+        
+        # Si es factura, agregar razón social
+        if pago.tipo_documento == "factura" and pago.razon_social:
+            info_data.append(['Razón Social:', pago.razon_social])
         
         info_table = Table(info_data, colWidths=[2*inch, 4*inch])
         info_table.setStyle(TableStyle([
@@ -296,7 +353,7 @@ Unidad de Árbitros Río Cuarto
         
         # Monto en letras
         try:
-            monto_letras = num2words(orden_pago.monto, lang='es', to='currency')
+            monto_letras = num2words(float(pago.monto), lang='es', to='currency')
             elements.append(Paragraph(f"<b>Son:</b> {monto_letras.upper()}", styles['Normal']))
         except:
             pass
@@ -307,7 +364,7 @@ Unidad de Árbitros Río Cuarto
         
         return pdf_data
     
-    def generate_cuota_receipt_pdf(self, db, pago_cuota):
+    def generate_cuota_receipt_pdf(self, db, cuota, numero_recibo):
         """Generar PDF de recibo de cuota"""
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
@@ -323,14 +380,20 @@ Unidad de Árbitros Río Cuarto
             spaceAfter=20,
             alignment=1
         )
-        elements.append(Paragraph("RECIBO DE PAGO DE CUOTA", title_style))
+        elements.append(Paragraph("RECIBO DE CUOTA SOCIETARIA", title_style))
         elements.append(Spacer(1, 0.2*inch))
+        
+        # Obtener usuario
+        from models import Usuario
+        usuario = db.query(Usuario).filter(Usuario.id == cuota.usuario_id).first()
+        nombre_usuario = usuario.nombre if usuario else "N/A"
         
         # Información del pago
         info_data = [
-            ['Número de Recibo:', str(pago_cuota.numero_recibo)],
-            ['Fecha de Pago:', pago_cuota.fecha_pago.strftime('%d/%m/%Y')],
-            ['Monto Pagado:', f"${pago_cuota.monto_pagado:.2f}"],
+            ['Número de Recibo:', numero_recibo],
+            ['Socio:', nombre_usuario],
+            ['Fecha de Pago:', cuota.fecha_pago.strftime('%d/%m/%Y') if cuota.fecha_pago else 'N/A'],
+            ['Monto Pagado:', f"${cuota.monto_pagado:.2f}"],
         ]
         
         info_table = Table(info_data, colWidths=[2*inch, 4*inch])
@@ -349,7 +412,7 @@ Unidad de Árbitros Río Cuarto
         
         # Monto en letras
         try:
-            monto_letras = num2words(pago_cuota.monto_pagado, lang='es', to='currency')
+            monto_letras = num2words(float(cuota.monto_pagado), lang='es', to='currency')
             elements.append(Paragraph(f"<b>Son:</b> {monto_letras.upper()}", styles['Normal']))
         except:
             pass
