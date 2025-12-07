@@ -1114,6 +1114,97 @@ async def reenviar_orden_pago(request: Request, pago_id: int, email: Optional[st
     finally:
         db.close()
 
+# Endpoint para generar PDF de orden de pago
+@app.get(f"{settings.API_PREFIX}/pagos/{{pago_id}}/generar-pdf", response_model=None)
+async def generar_pdf_pago(request: Request, pago_id: int):
+    from fastapi.responses import Response
+    db = SessionLocal()
+    try:
+        # Extraer token manualmente
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        
+        # Verificar token manualmente
+        try:
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            user_id = payload.get("sub")
+            if user_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="No se pudieron validar las credenciales",
+                )
+                
+            current_user = db.query(models.Usuario).filter(models.Usuario.id == user_id).first()
+            if current_user is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Usuario no encontrado",
+                )
+                
+        except JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token inválido",
+            )
+        
+        # Obtener el pago
+        db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
+        if not db_pago:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pago no encontrado"
+            )
+        
+        # Importar EmailService para generar el PDF
+        from email_service import EmailService
+        
+        # Obtener configuración de email (para usar el sender)
+        email_config = crud.get_active_email_config(db=db)
+        sender_email = email_config.email_from if email_config else "sistema@uarc.com"
+        
+        # Crear servicio de email (solo para generar PDF)
+        email_service = EmailService(
+            smtp_server="",
+            smtp_port=0,
+            username="",
+            password="",
+            sender_email=sender_email
+        )
+        
+        # Obtener número de documento desde la partida
+        partida = db.query(models.Partida).filter(models.Partida.pago_id == pago_id).first()
+        
+        if db_pago.tipo_documento == "factura":
+            numero_documento = db_pago.numero_factura or "S/N"
+            tipo_doc_texto = "Factura/Recibo"
+        else:
+            numero_documento = partida.recibo_factura if partida else f"O.P-{pago_id}"
+            tipo_doc_texto = "Orden de Pago"
+        
+        # Generar el PDF
+        pdf_data = email_service.generate_payment_receipt_pdf(db, db_pago, numero_documento, tipo_doc_texto)
+        
+        # Devolver el PDF como respuesta
+        filename = f"{tipo_doc_texto.replace('/', '_')}_{numero_documento.replace('/', '_')}.pdf"
+        
+        return Response(
+            content=pdf_data,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error al generar PDF: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al generar PDF: {str(e)}"
+        )
+    finally:
+        db.close()
+
 # Endpoint para reenviar recibo de cuota
 @app.post(f"{settings.API_PREFIX}/cuotas/{{cuota_id}}/reenviar-recibo", response_model=None)
 async def reenviar_recibo_cuota(request: Request, cuota_id: int, email: Optional[str] = None):

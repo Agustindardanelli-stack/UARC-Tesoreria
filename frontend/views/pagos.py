@@ -615,6 +615,18 @@ class PagosView(QWidget):
             min-width: 100px;
             min-height: 40px;
         """
+
+        pdf_button_style = button_style + """
+            background-color: #36b9cc;
+            color: black;
+            font-weight: bold;
+            border: 2px solid #258391;
+            border-radius: 5px;
+            padding: 10px 20px;
+            font-size: 14px;
+            min-width: 120px;
+            min-height: 40px;
+        """
             
         # Campo de búsqueda
         busqueda_layout = QHBoxLayout()
@@ -646,6 +658,12 @@ class PagosView(QWidget):
         self.delete_btn.clicked.connect(self.on_eliminar_pago)
         self.delete_btn.setEnabled(False)
         self.delete_btn.setStyleSheet(delete_button_style)
+        
+        # Botón de Descargar PDF
+        self.pdf_btn = QPushButton("📄 Descargar PDF")
+        self.pdf_btn.clicked.connect(self.on_descargar_pdf)
+        self.pdf_btn.setEnabled(False)
+        self.pdf_btn.setStyleSheet(pdf_button_style)
         
         # Agregar widgets al layout
         busqueda_layout.addWidget(busqueda_label)
@@ -694,6 +712,7 @@ class PagosView(QWidget):
         
         botones_layout.addWidget(self.edit_btn)
         botones_layout.addWidget(self.delete_btn)
+        botones_layout.addWidget(self.pdf_btn)
         botones_layout.addStretch()
         
         layout.addLayout(botones_layout)
@@ -828,6 +847,8 @@ class PagosView(QWidget):
                 self.edit_btn.setEnabled(True)
                 self.delete_btn.setVisible(True)
                 self.delete_btn.setEnabled(True)
+                self.pdf_btn.setVisible(True)
+                self.pdf_btn.setEnabled(True)
                 
                 # Forzar actualización de la interfaz
                 QApplication.processEvents()
@@ -1105,6 +1126,78 @@ class PagosView(QWidget):
                 QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al enviar recibo: {str(e)}")
+
+    def on_descargar_pdf(self):
+        """Descarga el PDF del pago seleccionado"""
+        if not hasattr(self, 'pago_actual'):
+            QMessageBox.warning(self, "Error", "Primero seleccione un pago")
+            return
+        
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            import os
+            
+            pago_id = self.pago_actual['id']
+            
+            # Determinar nombre del archivo
+            tipo_doc = self.pago_actual.get('tipo_documento', 'orden_pago')
+            if tipo_doc == 'factura':
+                numero = self.pago_actual.get('numero_factura', f'FAC-{pago_id}')
+                nombre_archivo = f"Factura_{numero.replace('/', '_')}.pdf"
+            else:
+                nombre_archivo = f"Orden_Pago_{pago_id}.pdf"
+            
+            # Diálogo para seleccionar ubicación
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Guardar PDF",
+                nombre_archivo,
+                "Archivos PDF (*.pdf)"
+            )
+            
+            if not file_path:
+                return  # Usuario canceló
+            
+            # Llamar al endpoint para obtener el PDF
+            headers = session.get_headers()
+            url = f"{session.api_url}/pagos/{pago_id}/generar-pdf"
+            
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                # Guardar el PDF
+                with open(file_path, 'wb') as f:
+                    f.write(response.content)
+                
+                QMessageBox.information(
+                    self, 
+                    "Éxito", 
+                    f"PDF guardado exitosamente en:\n{file_path}"
+                )
+                
+                # Opcional: abrir el PDF automáticamente
+                import subprocess
+                import platform
+                
+                if platform.system() == 'Windows':
+                    os.startfile(file_path)
+                elif platform.system() == 'Darwin':  # macOS
+                    subprocess.call(['open', file_path])
+                else:  # Linux
+                    subprocess.call(['xdg-open', file_path])
+                    
+            else:
+                error_msg = "Error al generar el PDF"
+                try:
+                    error_data = response.json()
+                    if "detail" in error_data:
+                        error_msg = error_data["detail"]
+                except:
+                    pass
+                QMessageBox.critical(self, "Error", f"{error_msg}. Status code: {response.status_code}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al descargar PDF: {str(e)}")
     
     def on_buscar_pagos(self):
         """Busca pagos según los filtros seleccionados"""
@@ -1679,9 +1772,4 @@ class PagosView(QWidget):
     # Método adicional para inicializar después del login
     def initialize_after_login(self):
         """Método para inicializar datos después del login"""
-        self.refresh_data()    
-
-
-
-
-                                              
+        self.refresh_data()
