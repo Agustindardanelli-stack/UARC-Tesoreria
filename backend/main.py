@@ -1163,7 +1163,7 @@ async def reenviar_recibo_cuota(request: Request, cuota_id: int, email: Optional
         db.close()
 
 # Endpoint para probar email
-# Endpoint para probar email - ACTUALIZADO PARA SENDGRID
+# Endpoint para probar email - ACTUALIZADO PARA BREVO
 @app.post(f"{settings.API_PREFIX}/email-test", response_model=None)
 async def test_email(request: Request, email: str):
     db = SessionLocal()
@@ -1238,9 +1238,9 @@ Si está recibiendo este mensaje, la configuración es correcta.
 
 Unidad de Árbitros de Río Cuarto"""
             
-            # Usar el método apropiado (SendGrid o SMTP)
-            if email_service.use_sendgrid:
-                success, message = email_service._send_email_sendgrid(
+            # Usar el método apropiado (Brevo o SMTP)
+            if email_service.use_brevo:
+                success, message = email_service._send_email_brevo(
                     recipient_email=email,
                     subject=subject,
                     body=body,

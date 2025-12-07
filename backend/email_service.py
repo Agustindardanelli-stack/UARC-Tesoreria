@@ -1,6 +1,8 @@
 import smtplib
 import os
 import base64
+import requests
+import json
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -12,8 +14,6 @@ from reportlab.lib import colors
 from reportlab.lib.units import inch
 from io import BytesIO
 from num2words import num2words
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition
 
 
 class EmailService:
@@ -24,44 +24,60 @@ class EmailService:
         self.password = password
         self.sender = sender_email
         
-        # Detectar si usar SendGrid
-        self.sendgrid_api_key = os.getenv('SENDGRID_API_KEY')
-        self.use_sendgrid = bool(self.sendgrid_api_key)
+        # Detectar si usar Brevo (antes Sendinblue)
+        self.brevo_api_key = os.getenv('BREVO_API_KEY')
+        self.use_brevo = bool(self.brevo_api_key)
         
-        if self.use_sendgrid:
-            print("✅ Usando SendGrid API para envío de emails")
+        if self.use_brevo:
+            print("✅ Usando Brevo API para envío de emails")
         else:
             print("📧 Usando SMTP tradicional para envío de emails")
     
-    def _send_email_sendgrid(self, recipient_email, subject, body, pdf_data, filename):
-        """Enviar email usando SendGrid API"""
+    def _send_email_brevo(self, recipient_email, subject, body, pdf_data, filename):
+        """Enviar email usando Brevo API (antes Sendinblue)"""
         try:
-            # Crear el mensaje
-            message = Mail(
-                from_email=self.sender,
-                to_emails=recipient_email,
-                subject=subject,
-                html_content=body.replace('\n', '<br>')
-            )
+            url = "https://api.brevo.com/v3/smtp/email"
             
-            # Adjuntar PDF
-            pdf_base64 = base64.b64encode(pdf_data).decode()
-            attachment = Attachment()
-            attachment.file_content = FileContent(pdf_base64)
-            attachment.file_type = FileType('application/pdf')
-            attachment.file_name = FileName(filename)
-            attachment.disposition = Disposition('attachment')
-            message.attachment = attachment
+            headers = {
+                "accept": "application/json",
+                "api-key": self.brevo_api_key,
+                "content-type": "application/json"
+            }
             
-            # Enviar
-            sg = SendGridAPIClient(self.sendgrid_api_key)
-            response = sg.send(message)
+            # Preparar el contenido del email
+            payload = {
+                "sender": {
+                    "name": "UARC Río Cuarto",
+                    "email": self.sender
+                },
+                "to": [
+                    {
+                        "email": recipient_email
+                    }
+                ],
+                "subject": subject,
+                "htmlContent": body.replace('\n', '<br>')
+            }
+            
+            # Adjuntar PDF si existe
+            if pdf_data:
+                pdf_base64 = base64.b64encode(pdf_data).decode('utf-8')
+                payload["attachment"] = [
+                    {
+                        "content": pdf_base64,
+                        "name": filename
+                    }
+                ]
+            
+            # Enviar request
+            response = requests.post(url, headers=headers, json=payload)
             
             if response.status_code in [200, 201, 202]:
                 print(f"✅ Email enviado exitosamente a {recipient_email}")
                 return True, "Email enviado exitosamente"
             else:
-                print(f"❌ Error al enviar email: {response.status_code}")
+                error_msg = response.text
+                print(f"❌ Error al enviar email: {response.status_code} - {error_msg}")
                 return False, f"Error al enviar email: {response.status_code}"
                 
         except Exception as e:
@@ -136,8 +152,8 @@ Unidad de Árbitros Río Cuarto
             filename = f"{tipo_doc_texto.replace('/', '_')}_{numero_documento.replace('/', '_')}.pdf"
             
             # Decidir método de envío
-            if self.use_sendgrid:
-                return self._send_email_sendgrid(recipient_email, subject, body, pdf_data, filename)
+            if self.use_brevo:
+                return self._send_email_brevo(recipient_email, subject, body, pdf_data, filename)
             else:
                 return self._send_email_smtp(recipient_email, subject, body, pdf_data, filename)
                 
@@ -183,8 +199,8 @@ Unidad de Árbitros Río Cuarto
             filename = f"{tipo_doc_texto.replace('/', '_')}_{numero_documento.replace('/', '_')}.pdf"
             
             # Decidir método de envío
-            if self.use_sendgrid:
-                return self._send_email_sendgrid(recipient_email, subject, body, pdf_data, filename)
+            if self.use_brevo:
+                return self._send_email_brevo(recipient_email, subject, body, pdf_data, filename)
             else:
                 return self._send_email_smtp(recipient_email, subject, body, pdf_data, filename)
                 
@@ -196,7 +212,7 @@ Unidad de Árbitros Río Cuarto
         """Enviar recibo de cuota por email"""
         try:
             # Obtener número de comprobante
-            numero_recibo = f"C.S.-{cuota.nro_comprobante}"
+            numero_recibo = cuota.comprobante_pago or f"CUOTA-{cuota.id}"
             
             # Generar PDF
             pdf_data = self.generate_cuota_receipt_pdf(db, cuota, numero_recibo)
@@ -204,25 +220,25 @@ Unidad de Árbitros Río Cuarto
             # Preparar email
             subject = f"Recibo de Cuota Societaria #{numero_recibo}"
             body = f"""
-Estimado/a,
+Estimado/a Socio/a,
 
-Adjuntamos el recibo de pago de cuota correspondiente a:
+Adjuntamos el recibo correspondiente al pago de su cuota societaria:
 
 Número de Recibo: {numero_recibo}
 Fecha de Pago: {cuota.fecha_pago.strftime('%d/%m/%Y') if cuota.fecha_pago else 'N/A'}
 Monto Pagado: ${cuota.monto_pagado:.2f}
 
-Gracias por su pago.
+Gracias por mantener su cuota al día.
 
 Saludos cordiales,
 Unidad de Árbitros Río Cuarto
             """
             
-            filename = f"Recibo_Cuota_{numero_recibo}.pdf"
+            filename = f"Recibo_Cuota_{numero_recibo.replace('/', '_')}.pdf"
             
             # Decidir método de envío
-            if self.use_sendgrid:
-                return self._send_email_sendgrid(recipient_email, subject, body, pdf_data, filename)
+            if self.use_brevo:
+                return self._send_email_brevo(recipient_email, subject, body, pdf_data, filename)
             else:
                 return self._send_email_smtp(recipient_email, subject, body, pdf_data, filename)
                 

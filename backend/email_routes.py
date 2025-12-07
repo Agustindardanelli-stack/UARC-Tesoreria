@@ -3,6 +3,9 @@ from fastapi.responses import JSONResponse
 from typing import Optional
 from sqlalchemy.orm import Session
 import smtplib
+import os
+import requests
+import json
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
@@ -147,7 +150,7 @@ def reenviar_recibo_cobranza(
     else:
         return {"success": False, "message": message}
 
-# Endpoint para probar configuración de email
+# Endpoint para probar configuración de email (ACTUALIZADO PARA BREVO)
 @router.post("/email-test", response_class=JSONResponse)
 def test_email(
     email: str, 
@@ -162,34 +165,84 @@ def test_email(
             detail="No hay configuración de email activa"
         )
     
-    try:
-        # Crear mensaje de prueba
-        msg = MIMEMultipart()
-        msg['From'] = email_config.email_from
-        msg['To'] = email
-        msg['Subject'] = "Prueba de Configuración de Email - UARC"
-        
-        body = """
-        Este es un mensaje de prueba para verificar la configuración de email.
-        
-        Si está recibiendo este mensaje, la configuración es correcta.
-        
-        Unidad de Árbitros de Río Cuarto
-        """
-        msg.attach(MIMEText(body, 'plain'))
-        
-        # Enviar email
-        with smtplib.SMTP(email_config.smtp_server, email_config.smtp_port) as server:
-            server.starttls()
-            server.login(email_config.smtp_username, email_config.smtp_password)
-            server.send_message(msg)
-        
-        return {"success": True, "message": "Email de prueba enviado exitosamente"}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
+    # Verificar si usar Brevo API
+    brevo_api_key = os.getenv('BREVO_API_KEY')
+    
+    if brevo_api_key:
+        # Usar Brevo API
+        try:
+            print("✅ Usando Brevo API para envío de email de prueba")
+            
+            url = "https://api.brevo.com/v3/smtp/email"
+            
+            headers = {
+                "accept": "application/json",
+                "api-key": brevo_api_key,
+                "content-type": "application/json"
+            }
+            
+            payload = {
+                "sender": {
+                    "name": "UARC Río Cuarto",
+                    "email": email_config.email_from
+                },
+                "to": [
+                    {
+                        "email": email
+                    }
+                ],
+                "subject": "Prueba de Configuración de Email - UARC",
+                "htmlContent": """
+                <h2>Prueba de Configuración de Email</h2>
+                <p>Este es un mensaje de prueba para verificar la configuración de email.</p>
+                <p>Si está recibiendo este mensaje, la configuración es correcta.</p>
+                <br>
+                <p><strong>Unidad de Árbitros de Río Cuarto</strong></p>
+                """
+            }
+            
+            response = requests.post(url, headers=headers, json=payload)
+            
+            if response.status_code in [200, 201, 202]:
+                print(f"✅ Email de prueba enviado exitosamente a {email}")
+                return {"success": True, "message": "Email de prueba enviado exitosamente"}
+            else:
+                error_msg = response.text
+                print(f"❌ Error al enviar email de prueba: {response.status_code} - {error_msg}")
+                return {"success": False, "message": f"Error al enviar email: {response.status_code}"}
+                
+        except Exception as e:
+            print(f"❌ Excepción al enviar email de prueba: {str(e)}")
+            return {"success": False, "message": str(e)}
+    else:
+        # Fallback a SMTP tradicional (para desarrollo local)
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = email_config.email_from
+            msg['To'] = email
+            msg['Subject'] = "Prueba de Configuración de Email - UARC"
+            
+            body = """
+            Este es un mensaje de prueba para verificar la configuración de email.
+            
+            Si está recibiendo este mensaje, la configuración es correcta.
+            
+            Unidad de Árbitros de Río Cuarto
+            """
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Enviar email
+            with smtplib.SMTP(email_config.smtp_server, email_config.smtp_port) as server:
+                server.starttls()
+                server.login(email_config.smtp_username, email_config.smtp_password)
+                server.send_message(msg)
+            
+            return {"success": True, "message": "Email de prueba enviado exitosamente"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
     
 
-    # Endpoint para reenviar orden de pago
+# Endpoint para reenviar orden de pago
 @router.post("/pagos/{pago_id}/reenviar-orden", response_class=JSONResponse)
 def reenviar_orden_pago_endpoint(
     pago_id: int, 
@@ -252,7 +305,7 @@ def reenviar_orden_pago_endpoint(
     else:
         return {"success": False, "message": message}
     
-# Endpoint en email_routes.py
+# Endpoint para reenviar recibo de cuota
 @router.post("/cuotas/{cuota_id}/reenviar-recibo", response_class=JSONResponse)
 def reenviar_recibo_cuota_endpoint(
     cuota_id: int, 
@@ -319,4 +372,4 @@ def reenviar_recibo_cuota_endpoint(
         db.commit()
         return {"success": True, "message": "Recibo de cuota enviado exitosamente"}
     else:
-        return {"success": False, "message": message}    
+        return {"success": False, "message": message}

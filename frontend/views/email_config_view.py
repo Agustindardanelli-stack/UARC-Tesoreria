@@ -82,21 +82,21 @@ class EmailConfigView(QWidget):
         title_label.setFont(title_font)
         
         # Descripción
-        desc_label = QLabel("El sistema utiliza SendGrid para el envío automático de recibos por email.")
+        desc_label = QLabel("El sistema utiliza Brevo para el envío automático de recibos por email.")
         desc_label.setWordWrap(True)
         
         # Grupo de información del sistema
         info_group = QGroupBox("Estado del Sistema")
         info_layout = QVBoxLayout()
         
-        # Estado SendGrid
-        self.status_label = QLabel("✅ SendGrid API configurada en el servidor")
+        # Estado Brevo
+        self.status_label = QLabel("✅ Brevo API configurada en el servidor")
         self.status_label.setStyleSheet("color: green; font-weight: bold;")
         info_layout.addWidget(self.status_label)
         
         # Información adicional
         info_text = QLabel(
-            "La configuración de SendGrid se gestiona mediante variables de entorno en el servidor.\n"
+            "La configuración de Brevo se gestiona mediante variables de entorno en el servidor.\n"
             "No es necesario configurar SMTP manualmente."
         )
         info_text.setWordWrap(True)
@@ -113,7 +113,7 @@ class EmailConfigView(QWidget):
         self.email_from_edit = QLineEdit()
         self.email_from_edit.setPlaceholderText("unidadarbitrosriocuarto@gmail.com")
         self.email_from_edit.setReadOnly(False)  # Permitir edición
-        form_layout.addRow("Email Remitente (verificado en SendGrid):", self.email_from_edit)
+        form_layout.addRow("Email Remitente (verificado en Brevo):", self.email_from_edit)
         
         # Activo
         self.is_active_check = QCheckBox("Sistema de Email Activo")
@@ -124,8 +124,8 @@ class EmailConfigView(QWidget):
         
         # Nota informativa
         help_label = QLabel(
-            "ℹ️ <b>Nota importante:</b> El email remitente debe estar verificado en SendGrid. "
-            "Los cambios en la API Key de SendGrid se realizan directamente en las variables de entorno del servidor (Render)."
+            "ℹ️ <b>Nota importante:</b> El email remitente debe estar verificado en Brevo. "
+            "Los cambios en la API Key de Brevo se realizan directamente en las variables de entorno del servidor (Render)."
         )
         help_label.setWordWrap(True)
         help_label.setStyleSheet("background-color: #e3f2fd; padding: 10px; border-radius: 5px;")
@@ -205,11 +205,11 @@ class EmailConfigView(QWidget):
             QMessageBox.warning(self, "Error", "Por favor ingrese un email válido")
             return
         
-        # Crear objeto de configuración simplificado para SendGrid
+        # Crear objeto de configuración simplificado para Brevo
         config_data = {
-            "smtp_server": "sendgrid",  # Identificador
+            "smtp_server": "brevo",  # Identificador
             "smtp_port": 587,  # Valor dummy para compatibilidad
-            "smtp_username": "apikey",  # SendGrid usa esto
+            "smtp_username": "apikey",  # Brevo usa esto
             "smtp_password": "configured_in_env",  # La password real está en variables de entorno
             "email_from": email_text,  # Email limpio, sin formato con nombre
             "is_active": self.is_active_check.isChecked()
@@ -232,7 +232,7 @@ class EmailConfigView(QWidget):
                     self, 
                     "Éxito", 
                     "Configuración de email guardada exitosamente.\n\n"
-                    "El sistema utilizará SendGrid para enviar los emails."
+                    "El sistema utilizará Brevo para enviar los emails."
                 )
                 
                 # Actualizar config_id si es una creación
@@ -316,8 +316,8 @@ class EmailConfigView(QWidget):
                     "Error", 
                     f"{error_msg}\n\nStatus code: {response.status_code}\n\n"
                     "Verifica que:\n"
-                    "1. La API Key de SendGrid esté configurada en Render\n"
-                    "2. El email remitente esté verificado en SendGrid"
+                    "1. La API Key de Brevo esté configurada en Render\n"
+                    "2. El email remitente esté verificado en Brevo"
                 )
         except requests.exceptions.Timeout:
             QMessageBox.critical(
