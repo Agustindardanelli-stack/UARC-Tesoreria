@@ -468,6 +468,8 @@ class PagosView(QWidget):
                     self.pagos_usuario_table.setRowCount(0)
                     self.edit_btn.setEnabled(False)
                     self.delete_btn.setEnabled(False)
+                    self.pdf_btn.setEnabled(False)
+                    self.email_btn.setEnabled(False)
                     return
                 
                 # Limpiar la tabla existente
@@ -509,32 +511,18 @@ class PagosView(QWidget):
                         descripcion = "Sin descripción"
                     self.pagos_usuario_table.setItem(row, 4, QTableWidgetItem(descripcion))
                     
-                    # Botón de Ver en la última columna
-                    ver_btn = QPushButton("Ver")
-                    ver_btn.setStyleSheet("""
-                        background-color: #4e73df;
-                        color: white;
-                        border: none;
-                        border-radius: 3px;
-                        padding: 5px 10px;
-                    """)
-                    # Conectar el botón con la función que muestra los detalles
-                    pago_id = pago.get("id")
-                    ver_btn.clicked.connect(lambda checked=False, p_id=pago_id: self.cargar_detalles_pago(p_id))
-                    self.pagos_usuario_table.setCellWidget(row, 5, ver_btn)
-                    
                 # Ajustar el tamaño de las columnas
                 self.pagos_usuario_table.resizeColumnsToContents()
                 
-                # Mostrar un mensaje de éxito con la cantidad de pagos encontrados
-                self.resultado_title.setText(f"Pagos para: {usuario_nombre} ({len(pagos_usuario)})")
-                self.resultado_title.setStyleSheet("color: #2c3e50; font-weight: bold;")
-                self.resultado_title.setVisible(True)
+                # Mostrar mensaje con cantidad de pagos encontrados
+                self.resultado_title.setText(f"📋 Pagos encontrados: {len(pagos_usuario)}")
                 
                 # Ocultar el panel de detalles hasta que se seleccione un pago
                 self.resultado_container.setVisible(False)
                 self.edit_btn.setEnabled(False)
                 self.delete_btn.setEnabled(False)
+                self.pdf_btn.setEnabled(False)
+                self.email_btn.setEnabled(False)
             else:
                 QMessageBox.warning(self, "Error", f"No se pudieron cargar los pagos. Código: {all_response.status_code}")
         except Exception as e:
@@ -544,265 +532,288 @@ class PagosView(QWidget):
             self.resultado_title.setVisible(False)
             self.resultado_container.setVisible(False)
             self.edit_btn.setEnabled(False)
-            self.delete_btn.setEnabled(False)    
+            self.delete_btn.setEnabled(False)
+            self.pdf_btn.setEnabled(False)
+            self.email_btn.setEnabled(False)    
     
     def setup_tab_buscar(self):
         layout = QVBoxLayout(self.tab_buscar)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Estilos
-        label_style = "font-weight: bold; color: black;"
-        input_style = """
+        # ==================== HEADER ====================
+        header_widget = QWidget()
+        header_widget.setFixedHeight(60)
+        header_widget.setStyleSheet("""
+            QWidget {
+                background-color: #667eea;
+                border-radius: 10px;
+            }
+        """)
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(20, 10, 20, 10)
+        
+        header_title = QLabel("🔍  Buscar Pagos")
+        header_title.setStyleSheet("""
+            font-size: 20px;
+            font-weight: bold;
+            color: white;
+        """)
+        header_layout.addWidget(header_title)
+        header_layout.addStretch()
+        
+        layout.addWidget(header_widget)
+        
+        # ==================== BÚSQUEDA ====================
+        search_frame = QFrame()
+        search_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 10px;
+                border: 1px solid #e2e8f0;
+            }
+        """)
+        search_layout = QVBoxLayout(search_frame)
+        search_layout.setContentsMargins(20, 15, 20, 15)
+        search_layout.setSpacing(10)
+        
+        search_title = QLabel("Seleccionar Árbitro")
+        search_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #2d3748;")
+        search_layout.addWidget(search_title)
+        
+        search_row = QHBoxLayout()
+        search_row.setSpacing(15)
+        
+        self.arbitro_combo_buscar = QComboBox()
+        self.arbitro_combo_buscar.setPlaceholderText("👤 Seleccione un árbitro...")
+        self.arbitro_combo_buscar.setStyleSheet("""
             QComboBox {
-                padding: 8px;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                background-color: ;
-                min-width: 250px;
+                padding: 10px 15px;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                background-color: #f8fafc;
+                font-size: 13px;
+                min-width: 300px;
             }
-            QComboBox:focus {
-                border: 1px solid #4e73df;
-                background-color: #fff;
+            QComboBox:hover {
+                border-color: #667eea;
             }
-            /* Estilos para eliminar el hover */
+            QComboBox::drop-down {
+                border: none;
+                padding-right: 10px;
+            }
             QComboBox QAbstractItemView {
-                border: 1px solid #ddd;
+                background-color: white;
+                border: 1px solid #e2e8f0;
+                selection-background-color: #667eea;
+                selection-color: white;
             }
-            QComboBox QAbstractItemView::item:hover {
-                background-color: transparent;
-                color: black;
-            }
-            QComboBox QAbstractItemView::item:selected {
-                background-color: #4e73df;
-                color: black;
-            }
-        """
-
-        button_style = """
+        """)
+        search_row.addWidget(self.arbitro_combo_buscar)
+        
+        self.search_btn = QPushButton("🔍 Buscar")
+        self.search_btn.setCursor(Qt.PointingHandCursor)
+        self.search_btn.clicked.connect(self.on_buscar_pagos_usuario)
+        self.search_btn.setStyleSheet("""
             QPushButton {
-                padding: 8px 15px;
-                border-radius: 4px;
+                background-color: #667eea;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 25px;
+                font-size: 13px;
                 font-weight: bold;
             }
-        """
-
-        search_button_style = button_style + """
-            background-color: #4e73df;
-            color: black;
-        """
-
-        edit_button_style = button_style + """
-            background-color: #f6c23e;
-            color: black;
-            font-weight: bold;
-            border: 2px solid #E68200;
-            border-radius: 5px;
-            padding: 10px 20px;
-            font-size: 14px;
-            min-width: 100px;
-            min-height: 40px;
-        """
-
-        delete_button_style = button_style + """
-            background-color: #e74a3b;
-            color: black;
-            font-weight: bold;
-            border: 2px solid #D81E06;
-            border-radius: 5px;
-            padding: 10px 20px;
-            font-size: 14px;
-            min-width: 100px;
-            min-height: 40px;
-        """
-
-        pdf_button_style = button_style + """
-            background-color: #36b9cc;
-            color: black;
-            font-weight: bold;
-            border: 2px solid #258391;
-            border-radius: 5px;
-            padding: 10px 20px;
-            font-size: 14px;
-            min-width: 120px;
-            min-height: 40px;
-        """
-            
-        # Campo de búsqueda
-        busqueda_layout = QHBoxLayout()
-        busqueda_layout.setContentsMargins(0, 0, 0, 0)
-        busqueda_layout.setSpacing(10)
+            QPushButton:hover {
+                background-color: #5a67d8;
+            }
+            QPushButton:pressed {
+                background-color: #4c51bf;
+            }
+        """)
+        search_row.addWidget(self.search_btn)
+        search_row.addStretch()
         
-        # Etiqueta de búsqueda
-        busqueda_label = QLabel("Seleccionar árbitro:")
-        busqueda_label.setStyleSheet(label_style)
+        search_layout.addLayout(search_row)
+        layout.addWidget(search_frame)
         
-        # Combo para seleccionar árbitro
-        self.arbitro_combo_buscar = QComboBox()
-        self.arbitro_combo_buscar.setStyleSheet(input_style)
-        self.arbitro_combo_buscar.setPlaceholderText("Seleccione un árbitro")
+        # ==================== TABLA ====================
+        table_frame = QFrame()
+        table_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 10px;
+                border: 1px solid #e2e8f0;
+            }
+        """)
+        table_layout = QVBoxLayout(table_frame)
+        table_layout.setContentsMargins(20, 15, 20, 15)
+        table_layout.setSpacing(10)
         
-        # Botón de búsqueda
-        self.search_btn = QPushButton("Buscar")
-        self.search_btn.setIcon(QIcon.fromTheme("search"))
-        self.search_btn.clicked.connect(self.on_buscar_pagos_usuario)
-        self.search_btn.setStyleSheet(search_button_style)
+        table_title = QLabel("📋 Listado de Pagos")
+        table_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #2d3748;")
+        table_layout.addWidget(table_title)
         
-        # Botones de Editar y Eliminar
-        self.edit_btn = QPushButton("Editar")
-        self.edit_btn.clicked.connect(self.on_editar_pago)
-        self.edit_btn.setEnabled(False)
-        self.edit_btn.setStyleSheet(edit_button_style)
-        
-        self.delete_btn = QPushButton("Eliminar")
-        self.delete_btn.clicked.connect(self.on_eliminar_pago)
-        self.delete_btn.setEnabled(False)
-        self.delete_btn.setStyleSheet(delete_button_style)
-        
-        # Botón de Descargar PDF
-        self.pdf_btn = QPushButton("📄 Descargar PDF")
-        self.pdf_btn.clicked.connect(self.on_descargar_pdf)
-        self.pdf_btn.setEnabled(False)
-        self.pdf_btn.setStyleSheet(pdf_button_style)
-        
-        # Agregar widgets al layout
-        busqueda_layout.addWidget(busqueda_label)
-        busqueda_layout.addWidget(self.arbitro_combo_buscar)
-        busqueda_layout.addWidget(self.search_btn)
-        
-        layout.addLayout(busqueda_layout)
-        
-        # Añadir tabla para mostrar todos los pagos del usuario
         self.pagos_usuario_table = QTableWidget()
-        self.pagos_usuario_table.setColumnCount(6)
-        self.pagos_usuario_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Monto", "Descripción", "Acciones"])
+        self.pagos_usuario_table.setColumnCount(5)
+        self.pagos_usuario_table.setHorizontalHeaderLabels(["ID", "Fecha", "Árbitro", "Monto", "Descripción"])
         self.pagos_usuario_table.horizontalHeader().setStretchLastSection(True)
         self.pagos_usuario_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.pagos_usuario_table.setAlternatingRowColors(True)
+        self.pagos_usuario_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.pagos_usuario_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.pagos_usuario_table.verticalHeader().setVisible(False)
         self.pagos_usuario_table.setStyleSheet("""
             QTableWidget {
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                background-color: #fff;
-                gridline-color: #ddd;
+                border: 1px solid #e2e8f0;
+                border-radius: 5px;
+                background-color: white;
+                gridline-color: #edf2f7;
             }
             QHeaderView::section {
-                background-color: #4e73df;
+                background-color: #4a5568;
                 color: white;
                 font-weight: bold;
-                padding: 6px;
+                padding: 10px 8px;
                 border: none;
             }
             QTableWidget::item {
-                padding: 4px;
+                padding: 8px;
             }
             QTableWidget::item:selected {
-                background-color: #bdd7fa;
-                color: #000;
+                background-color: #ebf4ff;
+                color: #2d3748;
+            }
+            QTableWidget::item:alternate {
+                background-color: #f7fafc;
             }
         """)
         self.pagos_usuario_table.itemClicked.connect(self.on_pago_selected)
+        table_layout.addWidget(self.pagos_usuario_table)
         
-        layout.addWidget(self.pagos_usuario_table)
-        
-        # Botones de edición/eliminación
+        # ==================== BOTONES ====================
         botones_layout = QHBoxLayout()
         botones_layout.setSpacing(10)
-        botones_layout.setContentsMargins(0, 15, 0, 15)
+        botones_layout.setContentsMargins(0, 10, 0, 0)
         
-        botones_layout.addWidget(self.edit_btn)
-        botones_layout.addWidget(self.delete_btn)
-        botones_layout.addWidget(self.pdf_btn)
-        botones_layout.addStretch()
-        
-        layout.addLayout(botones_layout)
-        
-        # Título de resultados
-        self.resultado_title = QLabel("Detalles del Pago")
-        resultado_font = QFont()
-        resultado_font.setPointSize(16)
-        resultado_font.setBold(True)
-        self.resultado_title.setFont(resultado_font)
-        self.resultado_title.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
-        self.resultado_title.setVisible(False)
-        layout.addWidget(self.resultado_title)
-        
-        # Contenedor para resultados
-        self.resultado_container = QWidget()
-        self.resultado_container.setStyleSheet("""
-            background-color: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            padding: 15px;
-            margin-top: 15px;
+        # Botón Editar
+        self.edit_btn = QPushButton("✏️ Editar")
+        self.edit_btn.setCursor(Qt.PointingHandCursor)
+        self.edit_btn.clicked.connect(self.on_editar_pago)
+        self.edit_btn.setEnabled(False)
+        self.edit_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ed8936;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 18px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #dd6b20;
+            }
+            QPushButton:disabled {
+                background-color: #cbd5e0;
+                color: #a0aec0;
+            }
         """)
-        self.resultado_layout = QVBoxLayout(self.resultado_container)
-        self.resultado_layout.setContentsMargins(15, 15, 15, 15)
-        self.resultado_layout.setSpacing(10)
+        botones_layout.addWidget(self.edit_btn)
         
-        # Línea separadora
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        separator.setStyleSheet("background-color: #dee2e6;")
-        self.resultado_layout.addWidget(separator)
+        # Botón Eliminar
+        self.delete_btn = QPushButton("🗑️ Eliminar")
+        self.delete_btn.setCursor(Qt.PointingHandCursor)
+        self.delete_btn.clicked.connect(self.on_eliminar_pago)
+        self.delete_btn.setEnabled(False)
+        self.delete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e53e3e;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 18px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #c53030;
+            }
+            QPushButton:disabled {
+                background-color: #cbd5e0;
+                color: #a0aec0;
+            }
+        """)
+        botones_layout.addWidget(self.delete_btn)
         
-        # Detalles en dos columnas
-        detalles_layout = QHBoxLayout()
-        detalles_layout.setContentsMargins(0, 10, 0, 0)
-        detalles_layout.setSpacing(30)
+        # Botón PDF
+        self.pdf_btn = QPushButton("📄 Descargar PDF")
+        self.pdf_btn.setCursor(Qt.PointingHandCursor)
+        self.pdf_btn.clicked.connect(self.on_descargar_pdf)
+        self.pdf_btn.setEnabled(False)
+        self.pdf_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #38b2ac;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 18px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #319795;
+            }
+            QPushButton:disabled {
+                background-color: #cbd5e0;
+                color: #a0aec0;
+            }
+        """)
+        botones_layout.addWidget(self.pdf_btn)
         
-        # Columna 1
-        col1_layout = QVBoxLayout()
-        col1_layout.setSpacing(15)
+        # Botón Email
+        self.email_btn = QPushButton("📧 Enviar Email")
+        self.email_btn.setCursor(Qt.PointingHandCursor)
+        self.email_btn.clicked.connect(self.on_enviar_email_pago)
+        self.email_btn.setEnabled(False)
+        self.email_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #667eea;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 18px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #5a67d8;
+            }
+            QPushButton:disabled {
+                background-color: #cbd5e0;
+                color: #a0aec0;
+            }
+        """)
+        botones_layout.addWidget(self.email_btn)
+        
+        botones_layout.addStretch()
+        table_layout.addLayout(botones_layout)
+        
+        layout.addWidget(table_frame)
+        
+        # Variables para compatibilidad (aunque no se muestran)
+        self.resultado_container = QWidget()
+        self.resultado_container.setVisible(False)
+        self.resultado_title = QLabel()
         self.id_label = QLabel()
         self.fecha_label = QLabel()
-        self.tipo_doc_label = QLabel()  # Nuevo campo
-        self.factura_num_label = QLabel()  # Nuevo campo
+        self.tipo_doc_label = QLabel()
+        self.factura_num_label = QLabel()
         self.monto_label = QLabel()
-        
-        # Aplicar estilos a los labels
-        detail_style = "font-size: 14px; margin-bottom: 5px;"
-        self.id_label.setStyleSheet(detail_style)
-        self.fecha_label.setStyleSheet(detail_style)
-        self.tipo_doc_label.setStyleSheet(detail_style)  # Estilo para nuevo campo
-        self.factura_num_label.setStyleSheet(detail_style)  # Estilo para nuevo campo
-        self.monto_label.setStyleSheet(detail_style)
-        
-        col1_layout.addWidget(self.id_label)
-        col1_layout.addWidget(self.fecha_label)
-        col1_layout.addWidget(self.tipo_doc_label)  # Agregar al layout
-        col1_layout.addWidget(self.factura_num_label)  # Agregar al layout
-        col1_layout.addWidget(self.monto_label)
-        col1_layout.addStretch()
-        
-        # Columna 2
-        col2_layout = QVBoxLayout()
-        col2_layout.setSpacing(15)
         self.arbitro_label = QLabel()
-        self.razon_social_label_display = QLabel()  # Nuevo campo
+        self.razon_social_label_display = QLabel()
         self.descripcion_label = QLabel()
         
-        # Aplicar estilos
-        self.arbitro_label.setStyleSheet(detail_style)
-        self.razon_social_label_display.setStyleSheet(detail_style)  # Estilo para nuevo campo
-        self.descripcion_label.setStyleSheet(detail_style)
-        self.descripcion_label.setWordWrap(True)
-        
-        col2_layout.addWidget(self.arbitro_label)
-        col2_layout.addWidget(self.razon_social_label_display)  # Agregar al layout
-        col2_layout.addWidget(self.descripcion_label)
-        col2_layout.addStretch()
-        
-        detalles_layout.addLayout(col1_layout)
-        detalles_layout.addLayout(col2_layout)
-        
-        self.resultado_layout.addLayout(detalles_layout)
-        
-        layout.addWidget(self.resultado_container)
-        self.resultado_container.setVisible(False)
-        
-        # Agregar un espaciador para empujar todo hacia arriba
         layout.addStretch()
     
     def connect_signals(self):
@@ -849,6 +860,8 @@ class PagosView(QWidget):
                 self.delete_btn.setEnabled(True)
                 self.pdf_btn.setVisible(True)
                 self.pdf_btn.setEnabled(True)
+                self.email_btn.setVisible(True)
+                self.email_btn.setEnabled(True)
                 
                 # Forzar actualización de la interfaz
                 QApplication.processEvents()
@@ -861,62 +874,9 @@ class PagosView(QWidget):
 
 
     def mostrar_detalles_pago(self):
-        """Muestra los detalles del pago actual en el panel de detalles"""
-        # Verificar que tenemos un pago seleccionado
-        if not hasattr(self, 'pago_actual'):
-            return
-        
-        # Mostrar el panel de detalles
-        self.resultado_title.setText("Detalles del Pago")
-        self.resultado_title.setStyleSheet("color: #2c3e50; font-weight: bold;")
-        self.resultado_title.setVisible(True)
-        self.resultado_container.setVisible(True)
-        
-        # Formatear fecha
-        fecha_str = self.pago_actual.get('fecha', '')
-        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y') if fecha_str else 'No disponible'
-        
-        # Obtener información del árbitro
-        arbitro_nombre = "No disponible"
-        if isinstance(self.pago_actual.get('usuario'), dict):
-            usuario_obj = self.pago_actual.get('usuario', {})
-            if 'nombre' in usuario_obj:
-                arbitro_nombre = usuario_obj.get('nombre', 'No disponible')
-        
-        # Obtener tipo de documento y número de factura
-        tipo_doc = "Orden de Pago"
-        if self.pago_actual.get('tipo_documento') == 'factura':
-            tipo_doc = "Factura/Recibo"
-        
-        numero_factura = self.pago_actual.get('numero_factura', 'No disponible')
-        razon_social = self.pago_actual.get('razon_social', 'No disponible')
-        
-        # Obtener monto
-        monto = self.pago_actual.get('monto', 0)
-        
-        # Obtener descripción
-        descripcion = self.pago_actual.get('descripcion', '')
-        if not descripcion:
-            descripcion = "Sin descripción"
-        
-        # Aplicar estilos
-        estilo_titulo = "font-weight: bold; color: #2c3e50;"
-        estilo_valor = "color: #3498db;"
-        
-        # Mostrar la información con estilos
-        self.id_label.setText(f"<span style='{estilo_titulo}'>ID del Pago:</span> <span style='{estilo_valor}'>{self.pago_actual.get('id')}</span>")
-        self.fecha_label.setText(f"<span style='{estilo_titulo}'>Fecha:</span> <span style='{estilo_valor}'>{fecha}</span>")
-        self.tipo_doc_label.setText(f"<span style='{estilo_titulo}'>Tipo de Documento:</span> <span style='{estilo_valor}'>{tipo_doc}</span>")
-        self.factura_num_label.setText(f"<span style='{estilo_titulo}'>Número de Factura:</span> <span style='{estilo_valor}'>{numero_factura}</span>")
-        self.monto_label.setText(f"<span style='{estilo_titulo}'>Monto:</span> <span style='{estilo_valor}'>${monto:,.2f}</span>")
-        self.arbitro_label.setText(f"<span style='{estilo_titulo}'>Árbitro:</span> <span style='{estilo_valor}'>{arbitro_nombre}</span>")
-        self.razon_social_label_display.setText(f"<span style='{estilo_titulo}'>Razón Social:</span> <span style='{estilo_valor}'>{razon_social}</span>")
-        self.descripcion_label.setText(f"<span style='{estilo_titulo}'>Descripción:</span> <span style='{estilo_valor}'>{descripcion}</span>")
-        
-        # Ajustar visibilidad de campos según tipo de documento
-        is_factura = self.pago_actual.get('tipo_documento') == 'factura'
-        self.factura_num_label.setVisible(is_factura)
-        self.razon_social_label_display.setVisible(is_factura)
+        """Muestra los detalles del pago actual (ya no se usa panel visual)"""
+        # El panel de detalles fue removido, esta función solo mantiene compatibilidad
+        pass
 
     def cargar_usuarios(self):
         """Carga la lista de usuarios desde la API y los ordena alfabéticamente"""
@@ -1198,6 +1158,81 @@ class PagosView(QWidget):
                 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al descargar PDF: {str(e)}")
+
+    def on_enviar_email_pago(self):
+        """Envía el comprobante del pago por email"""
+        if not hasattr(self, 'pago_actual'):
+            QMessageBox.warning(self, "Error", "Primero seleccione un pago")
+            return
+        
+        try:
+            pago_id = self.pago_actual['id']
+            
+            # Obtener el email del árbitro
+            arbitro_email = None
+            arbitro_nombre = "el árbitro"
+            
+            if isinstance(self.pago_actual.get('usuario'), dict):
+                usuario_obj = self.pago_actual.get('usuario', {})
+                arbitro_email = usuario_obj.get('email')
+                arbitro_nombre = usuario_obj.get('nombre', 'el árbitro')
+            
+            if not arbitro_email:
+                # Pedir email manualmente
+                from PySide6.QtWidgets import QInputDialog
+                email, ok = QInputDialog.getText(
+                    self, 
+                    "Email del destinatario",
+                    "El árbitro no tiene email registrado.\nIngrese el email de destino:",
+                    text=""
+                )
+                if ok and email:
+                    arbitro_email = email
+                else:
+                    return
+            
+            # Confirmar envío
+            respuesta = QMessageBox.question(
+                self,
+                "Confirmar Envío",
+                f"¿Desea enviar el comprobante al email:\n{arbitro_email}?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if respuesta == QMessageBox.Yes:
+                # Llamar al endpoint para reenviar
+                headers = session.get_headers()
+                url = f"{session.api_url}/pagos/{pago_id}/reenviar-orden"
+                params = {"email": arbitro_email}
+                
+                response = requests.post(url, headers=headers, params=params)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get("success", False):
+                        QMessageBox.information(
+                            self, 
+                            "✅ Éxito", 
+                            f"Comprobante enviado exitosamente a:\n{arbitro_email}"
+                        )
+                    else:
+                        QMessageBox.warning(
+                            self, 
+                            "Advertencia", 
+                            f"No se pudo enviar: {result.get('message', 'Error desconocido')}"
+                        )
+                else:
+                    error_msg = "Error al enviar el email"
+                    try:
+                        error_data = response.json()
+                        if "detail" in error_data:
+                            error_msg = error_data["detail"]
+                    except:
+                        pass
+                    QMessageBox.critical(self, "Error", f"{error_msg}")
+                    
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al enviar email: {str(e)}")
     
     def on_buscar_pagos(self):
         """Busca pagos según los filtros seleccionados"""
