@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from jose import JWTError, jwt
 
+
 import models
 import schemas
 import crud
@@ -409,53 +410,56 @@ def delete_cobranza(
         current_user_id=current_user.id
     )
 
+# ---------------------------------------------------------------------------
 # Rutas de Cuotas
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Rutas de Cuotas
+# ---------------------------------------------------------------------------
+
 @app.post(f"{settings.API_PREFIX}/cuotas", response_model=schemas.Cuota, tags=["Cuotas"])
 def create_cuota(
-    cuota: schemas.CuotaCreate, 
-    no_generar_movimiento: bool = True,  # Agregar este parámetro
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
+    cuota: schemas.CuotaCreate,
+    no_generar_movimiento: bool = False,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(is_tesorero),
 ):
-    # Validar que el usuario exista si se proporciona usuario_id
     if cuota.usuario_id:
-        usuario = crud.get_usuario(db, usuario_id=cuota.usuario_id)
-        if not usuario:
+        if not crud.get_usuario(db, usuario_id=cuota.usuario_id):
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
+
     return crud.create_cuota(
-        db=db, 
-        cuota=cuota, 
+        db=db,
+        cuota=cuota,
         current_user_id=current_user.id,
-        no_generar_movimiento=no_generar_movimiento  # Agregar este parámetro
+        no_generar_movimiento=no_generar_movimiento,
     )
+
 
 @app.get(f"{settings.API_PREFIX}/cuotas", tags=["Cuotas"])
 def read_cuotas(
-    skip: int = 0, 
-    limit: int = 100, 
-    pagado: Optional[bool] = None, 
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(get_current_active_user)
+    skip: int = 0,
+    limit: int = 100,
+    pagado: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(get_current_active_user),
 ):
     cuotas = crud.get_cuotas(db, skip=skip, limit=limit, pagado=pagado)
 
     for cuota in cuotas:
         if not cuota["pagado"]:
             fecha = cuota["fecha"]
-            meses_atraso = (
-                (datetime.now().year - fecha.year) * 12 + 
-                (datetime.now().month - fecha.month)
-            )
+            meses_atraso = (datetime.now().year - fecha.year) * 12 + (datetime.now().month - fecha.month)
             if datetime.now().day < fecha.day:
                 meses_atraso -= 1
             cuota["meses_atraso"] = max(0, meses_atraso)
 
-    cuota_ids = [cuota["id"] for cuota in cuotas]
+    cuota_ids = [c["id"] for c in cuotas]
 
     auditorias = db.query(models.Auditoria)\
         .filter(
-            models.Auditoria.tabla_afectada == 'cuota', 
+            models.Auditoria.tabla_afectada == 'cuota',
             models.Auditoria.registro_id.in_(cuota_ids)
         )\
         .join(models.Usuario, models.Auditoria.usuario_id == models.Usuario.id, isouter=True)\
@@ -468,133 +472,115 @@ def read_cuotas(
             auditoria_map[str(a.registro_id)] = a.usuario.nombre if a.usuario else 'Sin usuario'
 
     for cuota in cuotas:
-        cuota["usuario_auditoria"] = auditoria_map.get(str(cuota["id"]), 'Sin registro')
+        cuota["usuario_auditoria"] = auditoria_map.get(str(cuota["id"]), "Sin registro")
 
     return JSONResponse(content=jsonable_encoder(cuotas))
 
+
 @app.get(f"{settings.API_PREFIX}/cuotas/usuario/{{usuario_id}}", response_model=List[schemas.CuotaDetalle], tags=["Cuotas"])
 def read_cuotas_by_usuario(
-    usuario_id: int, 
-    pagado: Optional[bool] = None, 
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(get_current_active_user)
+    usuario_id: int,
+    pagado: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(get_current_active_user),
 ):
-    # Validar que el usuario exista
-    usuario = crud.get_usuario(db, usuario_id=usuario_id)
-    if not usuario:
+    if not crud.get_usuario(db, usuario_id=usuario_id):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
-    # Obtener cuotas del usuario
+
     cuotas = crud.get_cuotas_by_usuario(db, usuario_id=usuario_id, pagado=pagado)
-    
-    # Calcular meses de atraso para cada cuota no pagada
-    from datetime import datetime
-    
+
     for cuota in cuotas:
         if not cuota.pagado:
-            # Calcular meses de atraso
-            meses_atraso = (
-                (datetime.now().date().year - cuota.fecha.year) * 12 + 
-                (datetime.now().date().month - cuota.fecha.month)
-            )
-            
-            # Ajustar si el día actual es menor que el día de la cuota
+            meses_atraso = (datetime.now().date().year - cuota.fecha.year) * 12 + (datetime.now().date().month - cuota.fecha.month)
             if datetime.now().date().day < cuota.fecha.day:
                 meses_atraso -= 1
-            
-            # Asignar meses de atraso
             cuota.meses_atraso = max(0, meses_atraso)
-    
-    # Obtener registros de auditoría para estas cuotas
-    cuota_ids = [cuota.id for cuota in cuotas]
+
+    cuota_ids = [c.id for c in cuotas]
+
     auditorias = db.query(models.Auditoria)\
         .filter(
-            models.Auditoria.tabla_afectada == 'cuota', 
+            models.Auditoria.tabla_afectada == 'cuota',
             models.Auditoria.registro_id.in_(cuota_ids)
         )\
         .join(models.Usuario, models.Auditoria.usuario_id == models.Usuario.id, isouter=True)\
         .order_by(models.Auditoria.fecha.desc())\
         .all()
-    
-    # Crear un diccionario de mapeo de auditorías (última acción por registro)
+
     auditoria_map = {}
     for a in auditorias:
         if str(a.registro_id) not in auditoria_map:
             auditoria_map[str(a.registro_id)] = a.usuario.nombre if a.usuario else 'Sin usuario'
-    
-    # Añadir información de auditoría a cada cuota
+
     for cuota in cuotas:
-        cuota.usuario_auditoria = auditoria_map.get(str(cuota.id), 'Sin registro')
-    
+        cuota.usuario_auditoria = auditoria_map.get(str(cuota.id), "Sin registro")
+
     return cuotas
+
 
 @app.get(f"{settings.API_PREFIX}/cuotas/{{cuota_id}}", response_model=schemas.CuotaDetalle, tags=["Cuotas"])
 def read_cuota(
-    cuota_id: int, 
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(get_current_active_user)
+    cuota_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(get_current_active_user),
 ):
-    # Obtener cuota
     db_cuota = crud.get_cuota(db, cuota_id=cuota_id)
-    if db_cuota is None:
+    if not db_cuota:
         raise HTTPException(status_code=404, detail="Cuota no encontrada")
-    
-    # Obtener registro de auditoría para esta cuota
+
     auditoria = db.query(models.Auditoria)\
         .filter(
-            models.Auditoria.tabla_afectada == 'cuota', 
+            models.Auditoria.tabla_afectada == 'cuota',
             models.Auditoria.registro_id == cuota_id
         )\
         .join(models.Usuario, models.Auditoria.usuario_id == models.Usuario.id, isouter=True)\
         .order_by(models.Auditoria.fecha.desc())\
         .first()
-    
-    # Añadir información de auditoría a la cuota
+
     db_cuota.usuario_auditoria = auditoria.usuario.nombre if auditoria and auditoria.usuario else 'Sin registro'
-    
+
     return db_cuota
+
+
 @app.put(f"{settings.API_PREFIX}/cuotas/{{cuota_id}}", response_model=schemas.Cuota, tags=["Cuotas"])
 def update_cuota(
-    cuota_id: int, 
-    cuota: schemas.CuotaUpdate, 
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
+    cuota_id: int,
+    cuota: schemas.CuotaUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(is_tesorero),
 ):
     return crud.update_cuota(
-        db=db, 
-        cuota_id=cuota_id, 
-        cuota_update=cuota, 
-        current_user_id=current_user.id
+        db=db,
+        cuota_id=cuota_id,
+        cuota_update=cuota,
+        current_user_id=current_user.id,
     )
+
 
 @app.put(f"{settings.API_PREFIX}/cuotas/{{cuota_id}}/pagar", response_model=schemas.Cuota, tags=["Cuotas"])
 def pagar_cuota(
-    cuota_id: int, 
-    monto_pagado: float, 
-    generar_movimiento: bool = True,  # Agregar este parámetro
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
+    cuota_id: int,
+    monto_pagado: float,
+    generar_movimiento: bool = True,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(is_tesorero),
 ):
     return crud.pagar_cuota(
-        db=db, 
-        cuota_id=cuota_id, 
-        monto_pagado=monto_pagado, 
+        db=db,
+        cuota_id=cuota_id,
+        monto_pagado=monto_pagado,
         current_user_id=current_user.id,
-        generar_movimiento=generar_movimiento  # Agregar este parámetro
+        generar_movimiento=generar_movimiento,
     )
+
 
 @app.delete(f"{settings.API_PREFIX}/cuotas/{{cuota_id}}", tags=["Cuotas"])
 def delete_cuota(
-    cuota_id: int, 
-    db: Session = Depends(get_db), 
-    
+    cuota_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(is_tesorero),
 ):
-    return crud.delete_cuota(
-        db=db, 
-        cuota_id=cuota_id, 
-        
-    )
-
+    return crud.delete_cuota(db=db, cuota_id=cuota_id)
 # Rutas de Partidas
 @app.post(f"{settings.API_PREFIX}/partidas", response_model=schemas.Partida, tags=["Partidas"])
 def create_partida(
@@ -684,6 +670,13 @@ def read_partidas(
 
     return partidas
 
+@app.post(f"{settings.API_PREFIX}/partidas/recalcular-saldos", tags=["Partidas"])
+def recalcular_saldos(
+    db: Session = Depends(get_db), 
+    current_user: models.Usuario = Depends(is_tesorero)
+):
+    """Recalcula los saldos de todas las partidas"""
+    return crud.recalcular_saldos_partidas(db)
 
 
 @app.get(f"{settings.API_PREFIX}/partidas/{{partida_id}}", response_model=schemas.PartidaDetalle, tags=["Partidas"])
@@ -770,116 +763,116 @@ def delete_categoria(
     
     )
 
-# Rutas de Transacciones
-@app.post(f"{settings.API_PREFIX}/transacciones", response_model=schemas.Transaccion, tags=["Transacciones"])
-def create_transaccion(
-    transaccion: schemas.TransaccionCreate, 
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
-):
-    return crud.create_transaccion(
-        db=db, 
-        transaccion=transaccion, 
-        current_user_id=current_user.id
-    )
+# # Rutas de Transacciones
+# @app.post(f"{settings.API_PREFIX}/transacciones", response_model=schemas.Transaccion, tags=["Transacciones"])
+# def create_transaccion(
+#     transaccion: schemas.TransaccionCreate, 
+#     db: Session = Depends(get_db), 
+#     current_user: models.Usuario = Depends(is_tesorero)
+# ):
+#     return crud.create_transaccion(
+#         db=db, 
+#         transaccion=transaccion, 
+#         current_user_id=current_user.id
+#     )
 
-@app.post(f"{settings.API_PREFIX}/transacciones", response_model=schemas.Transaccion, tags=["Transacciones"])
-def create_transaccion(
-    transaccion: schemas.TransaccionCreate, 
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
-):
-    return crud.create_transaccion(
-        db=db, 
-        transaccion=transaccion, 
-        current_user_id=current_user.id
-    )
+# @app.post(f"{settings.API_PREFIX}/transacciones", response_model=schemas.Transaccion, tags=["Transacciones"])
+# def create_transaccion(
+#     transaccion: schemas.TransaccionCreate, 
+#     db: Session = Depends(get_db), 
+#     current_user: models.Usuario = Depends(is_tesorero)
+# ):
+#     return crud.create_transaccion(
+#         db=db, 
+#         transaccion=transaccion, 
+#         current_user_id=current_user.id
+#     )
 
-@app.get(f"{settings.API_PREFIX}/transacciones", response_model=List[schemas.TransaccionDetalle], tags=["Transacciones"])
-def read_transacciones(
-    skip: int = 0, 
-    limit: int = 100, 
-    fecha_desde: Optional[str] = None,
-    fecha_hasta: Optional[str] = None,
-    tipo: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    transacciones = crud.get_transacciones(
-        db, 
-        skip=skip, 
-        limit=limit, 
-        fecha_desde=fecha_desde,
-        fecha_hasta=fecha_hasta,
-        tipo=tipo
-    )
-    return transacciones
+# @app.get(f"{settings.API_PREFIX}/transacciones", response_model=List[schemas.TransaccionDetalle], tags=["Transacciones"])
+# def read_transacciones(
+#     skip: int = 0, 
+#     limit: int = 100, 
+#     fecha_desde: Optional[str] = None,
+#     fecha_hasta: Optional[str] = None,
+#     tipo: Optional[str] = None,
+#     db: Session = Depends(get_db)
+# ):
+#     transacciones = crud.get_transacciones(
+#         db, 
+#         skip=skip, 
+#         limit=limit, 
+#         fecha_desde=fecha_desde,
+#         fecha_hasta=fecha_hasta,
+#         tipo=tipo
+#     )
+#     return transacciones
 
-@app.get(f"{settings.API_PREFIX}/transacciones/{{transaccion_id}}", response_model=schemas.TransaccionDetalle, tags=["Transacciones"])
-def read_transaccion(transaccion_id: int, db: Session = Depends(get_db), current_user: models.Usuario = Depends(get_current_active_user)):
-    db_transaccion = crud.get_transaccion(db, transaccion_id=transaccion_id)
-    if db_transaccion is None:
-        raise HTTPException(status_code=404, detail="Transacción no encontrada")
-    return db_transaccion
+# @app.get(f"{settings.API_PREFIX}/transacciones/{{transaccion_id}}", response_model=schemas.TransaccionDetalle, tags=["Transacciones"])
+# def read_transaccion(transaccion_id: int, db: Session = Depends(get_db), current_user: models.Usuario = Depends(get_current_active_user)):
+#     db_transaccion = crud.get_transaccion(db, transaccion_id=transaccion_id)
+#     if db_transaccion is None:
+#         raise HTTPException(status_code=404, detail="Transacción no encontrada")
+#     return db_transaccion
 
-@app.put(f"{settings.API_PREFIX}/transacciones/{{transaccion_id}}", response_model=schemas.Transaccion, tags=["Transacciones"])
-def update_transaccion(
-    transaccion_id: int, 
-    transaccion: schemas.TransaccionUpdate, 
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
-):
-    return crud.update_transaccion(
-        db=db, 
-        transaccion_id=transaccion_id, 
-        transaccion_update=transaccion, 
-        current_user_id=current_user.id
-    )
+# @app.put(f"{settings.API_PREFIX}/transacciones/{{transaccion_id}}", response_model=schemas.Transaccion, tags=["Transacciones"])
+# def update_transaccion(
+#     transaccion_id: int, 
+#     transaccion: schemas.TransaccionUpdate, 
+#     db: Session = Depends(get_db), 
+#     current_user: models.Usuario = Depends(is_tesorero)
+# ):
+#     return crud.update_transaccion(
+#         db=db, 
+#         transaccion_id=transaccion_id, 
+#         transaccion_update=transaccion, 
+#         current_user_id=current_user.id
+#     )
 
-@app.delete(f"{settings.API_PREFIX}/transacciones/{{transaccion_id}}", tags=["Transacciones"])
-def delete_transaccion(
-    transaccion_id: int, 
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
-):
-    return crud.delete_transaccion(
-        db=db, 
-        transaccion_id=transaccion_id, 
-        current_user_id=current_user.id
-    )
+# @app.delete(f"{settings.API_PREFIX}/transacciones/{{transaccion_id}}", tags=["Transacciones"])
+# def delete_transaccion(
+#     transaccion_id: int, 
+#     db: Session = Depends(get_db), 
+#     current_user: models.Usuario = Depends(is_tesorero)
+# ):
+#     return crud.delete_transaccion(
+#         db=db, 
+#         transaccion_id=transaccion_id, 
+#         current_user_id=current_user.id
+#     )
 
-# Nuevo endpoint para recalcular saldos
-@app.post(f"{settings.API_PREFIX}/transacciones/recalcular-saldos", tags=["Transacciones"])
-def recalcular_saldos(
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
-):
-    """
-    Recalcula los saldos de todas las transacciones
-    """
-    return crud.recalcular_saldos_transacciones(db)
-# Rutas de Auditoría
-@app.get(f"{settings.API_PREFIX}/auditoria", response_model=List[schemas.AuditoriaDetalle], tags=["Auditoría"])
-def read_auditoria(
-    skip: int = 0, 
-    limit: int = 100, 
-    tabla_afectada: Optional[str] = None,
-    usuario_id: Optional[int] = None,
-    fecha_desde: Optional[str] = None,
-    fecha_hasta: Optional[str] = None,
-    db: Session = Depends(get_db), 
-    current_user: models.Usuario = Depends(is_tesorero)
-):
-    auditoria = crud.get_auditoria(
-        db, 
-        skip=skip, 
-        limit=limit, 
-        tabla_afectada=tabla_afectada,
-        usuario_id=usuario_id,
-        fecha_desde=fecha_desde,
-        fecha_hasta=fecha_hasta,
-        create_usuario=current_user.id
-    )
-    return auditoria
+# # Nuevo endpoint para recalcular saldos
+# @app.post(f"{settings.API_PREFIX}/transacciones/recalcular-saldos", tags=["Transacciones"])
+# def recalcular_saldos(
+#     db: Session = Depends(get_db), 
+#     current_user: models.Usuario = Depends(is_tesorero)
+# ):
+#     """
+#     Recalcula los saldos de todas las transacciones
+#     """
+#     return crud.recalcular_saldos_transacciones(db)
+# # Rutas de Auditoría
+# @app.get(f"{settings.API_PREFIX}/auditoria", response_model=List[schemas.AuditoriaDetalle], tags=["Auditoría"])
+# def read_auditoria(
+#     skip: int = 0, 
+#     limit: int = 100, 
+#     tabla_afectada: Optional[str] = None,
+#     usuario_id: Optional[int] = None,
+#     fecha_desde: Optional[str] = None,
+#     fecha_hasta: Optional[str] = None,
+#     db: Session = Depends(get_db), 
+#     current_user: models.Usuario = Depends(is_tesorero)
+# ):
+#     auditoria = crud.get_auditoria(
+#         db, 
+#         skip=skip, 
+#         limit=limit, 
+#         tabla_afectada=tabla_afectada,
+#         usuario_id=usuario_id,
+#         fecha_desde=fecha_desde,
+#         fecha_hasta=fecha_hasta,
+#         create_usuario=current_user.id
+#     )
+#     return auditoria
 
 # Endpoints para reportes y estadísticas
 @app.get(f"{settings.API_PREFIX}/reportes/balance", tags=["Reportes"])
@@ -905,6 +898,133 @@ def get_cuotas_pendientes(
     
 ):
     return crud.get_cuotas_pendientes(db,)
+
+@app.get(f"{settings.API_PREFIX}/reportes/libro-diario-pdf", tags=["Reportes"])
+def generar_libro_diario_pdf(
+    mes: int,
+    anio: int,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(get_current_active_user),
+):
+    from fastapi.responses import Response
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.platypus import Table, TableStyle
+    from io import BytesIO
+
+    MESES = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+        5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+        9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+    }
+
+    partidas = crud.get_partidas_por_mes(db, mes=mes, anio=anio)
+
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=A4)
+    ancho, alto = A4
+
+    # --- Encabezado ---
+    p.setFillColor(colors.HexColor("#1e40af"))
+    p.rect(0, alto - 80, ancho, 80, fill=True, stroke=False)
+
+    p.setFillColor(colors.white)
+    p.setFont("Helvetica-Bold", 18)
+    p.drawString(40, alto - 40, "Unión de Árbitros de Río Cuarto")
+    p.setFont("Helvetica", 11)
+    p.drawString(40, alto - 60, f"Libro Diario — {MESES.get(mes, mes)} {anio}")
+
+    # Fecha de generación
+    p.setFont("Helvetica", 9)
+    p.drawRightString(ancho - 40, alto - 55, f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+
+    # --- Totales del mes ---
+    total_ingresos = sum(float(p2.monto) for p2 in partidas if p2.tipo == "ingreso")
+    total_egresos = sum(float(p2.monto) for p2 in partidas if p2.tipo == "egreso")
+    balance = total_ingresos - total_egresos
+    saldo_final = float(partidas[-1].saldo) if partidas else 0
+
+    y = alto - 110
+    p.setFillColor(colors.HexColor("#f0f9ff"))
+    p.rect(30, y - 10, ancho - 60, 50, fill=True, stroke=False)
+    p.setFillColor(colors.HexColor("#166534"))
+    p.setFont("Helvetica-Bold", 10)
+    p.drawString(50, y + 25, f"Ingresos: ${total_ingresos:,.2f}")
+    p.setFillColor(colors.HexColor("#991b1b"))
+    p.drawString(200, y + 25, f"Egresos: ${total_egresos:,.2f}")
+    p.setFillColor(colors.HexColor("#1e40af") if balance >= 0 else colors.HexColor("#991b1b"))
+    p.drawString(350, y + 25, f"Balance: ${balance:,.2f}")
+    p.setFillColor(colors.HexColor("#374151"))
+    p.drawString(50, y + 8, f"Saldo al cierre del mes: ${saldo_final:,.2f}")
+    p.drawString(350, y + 8, f"Total movimientos: {len(partidas)}")
+
+    # --- Tabla de partidas ---
+    y_tabla = y - 25
+
+    encabezados = ["Fecha", "Detalle", "Comprobante", "Ingreso", "Egreso", "Saldo"]
+    filas = [encabezados]
+
+    for pt in partidas:
+        fecha_str = pt.fecha.strftime("%d/%m/%Y") if hasattr(pt.fecha, "strftime") else str(pt.fecha)
+        ingreso_str = f"${float(pt.ingreso):,.2f}" if pt.tipo == "ingreso" else "-"
+        egreso_str = f"${float(pt.egreso):,.2f}" if pt.tipo == "egreso" else "-"
+        saldo_str = f"${float(pt.saldo):,.2f}" if pt.saldo is not None else "-"
+        detalle = (pt.detalle or "")[:35]
+        comprobante = (pt.recibo_factura or "-")[:18]
+        filas.append([fecha_str, detalle, comprobante, ingreso_str, egreso_str, saldo_str])
+
+    col_widths = [65, 155, 90, 70, 70, 75]
+
+    tabla = Table(filas, colWidths=col_widths, repeatRows=1)
+    tabla.setStyle(TableStyle([
+        # Encabezado
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e40af")),
+        ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",   (0, 0), (-1, 0), 8),
+        ("ALIGN",      (0, 0), (-1, 0), "CENTER"),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ("TOPPADDING",    (0, 0), (-1, 0), 6),
+        # Filas
+        ("FONTNAME",   (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE",   (0, 1), (-1, -1), 8),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+        ("GRID",       (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+        ("ALIGN",      (3, 1), (-1, -1), "RIGHT"),
+        ("TOPPADDING",    (0, 1), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
+        # Colorear ingresos y egresos
+        ("TEXTCOLOR",  (3, 1), (3, -1), colors.HexColor("#166534")),
+        ("TEXTCOLOR",  (4, 1), (4, -1), colors.HexColor("#991b1b")),
+    ]))
+
+    tabla.wrapOn(p, ancho - 60, alto)
+    tabla_alto = tabla._height
+
+    # Si la tabla no entra, nueva página
+    if y_tabla - tabla_alto < 40:
+        p.showPage()
+        y_tabla = alto - 40
+
+    tabla.drawOn(p, 30, y_tabla - tabla_alto)
+
+    # --- Pie de página ---
+    p.setFillColor(colors.HexColor("#6b7280"))
+    p.setFont("Helvetica", 8)
+    p.drawCentredString(ancho / 2, 25, "UARC — Sistema de Tesorería | Documento generado automáticamente")
+
+    p.save()
+    buffer.seek(0)
+
+    nombre_archivo = f"libro_diario_{MESES.get(mes, mes)}_{anio}.pdf"
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={nombre_archivo}"},
+    )
+
+
 
 # email endpoints
 @app.get(f"{settings.API_PREFIX}/email-config/active", response_model=None)
@@ -956,7 +1076,37 @@ async def get_active_email_config(request: Request):
         }
     finally:
         db.close()
+        
+@app.post(f"{settings.API_PREFIX}/email-config/", response_model=None)
+async def create_email_config(request: Request, config: schemas.EmailConfigUpdate):
+    db = SessionLocal()
+    try:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        try:
+            payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+            user_id = payload.get("sub")
+            if user_id is None:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No se pudieron validar las credenciales")
+            current_user = db.query(models.Usuario).filter(models.Usuario.id == user_id).first()
+            if current_user is None:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no encontrado")
+        except JWTError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
 
+        if current_user.rol_id != 1 and current_user.rol_id != 2:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tiene permisos para esta acción")
+
+        new_config = crud.create_email_config(db=db, config_data=config.dict())
+        return {
+            "id": new_config.id,
+            "smtp_server": new_config.smtp_server,
+            "smtp_port": new_config.smtp_port,
+            "smtp_username": new_config.smtp_username,
+            "email_from": new_config.email_from,
+            "is_active": new_config.is_active
+        }
+    finally:
+        db.close()
 @app.put(f"{settings.API_PREFIX}/email-config/{{config_id}}", response_model=None)
 async def update_email_config(request: Request, config_id: int, config: schemas.EmailConfigUpdate):
     db = SessionLocal()

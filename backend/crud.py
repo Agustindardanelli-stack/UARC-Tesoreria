@@ -689,7 +689,8 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
     # Eliminar partida asociada
     if partida:
         db.delete(partida)
-    
+
+    recalcular_saldos_partidas(db)    
     # Eliminar la cobranza
     db.delete(db_cobranza)
     db.commit()
@@ -710,8 +711,7 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
     db.commit()
     db.refresh(partida_eliminacion)
     
-    # Recalcular saldos
-    recalcular_saldos_transacciones(db)
+    
     
     return {"message": "Cobranza eliminada exitosamente"}
 # Funciones CRUD para Cuotas
@@ -1012,74 +1012,7 @@ def create_partida(db: Session, partida: schemas.PartidaCreate, current_user_id:
     db.refresh(db_partida)
     return db_partida
 
-@audit_trail("partidas")
-def get_partida(
-    db: Session, 
-    partida_id: int = None, 
-    skip: int = 0, 
-    limit: int = 100, 
-    fecha_desde: Optional[str] = None,
-    fecha_hasta: Optional[str] = None,
-    tipo: Optional[str] = None,
-    cuenta: Optional[str] = None,
-    current_user_id: int = None
-):
-    # Si se busca una partida específica
-    if partida_id:
-        return db.query(models.Partida).filter(models.Partida.id == partida_id).first()
-    
-    query = db.query(models.Partida)
-    
-    # Aplicar filtros
-    if fecha_desde:
-        query = query.filter(models.Partida.fecha >= fecha_desde)
-    
-    if fecha_hasta:
-        query = query.filter(models.Partida.fecha <= fecha_hasta)
-    
-    if tipo:
-        query = query.filter(models.Partida.tipo == tipo)
-    
-    if cuenta:
-        query = query.filter(models.Partida.cuenta == cuenta)
-    
-    # Ordenar por fecha
-    query = query.order_by(models.Partida.fecha.desc(), models.Partida.id.desc())
-    
-    # Aplicar paginación
-    partidas = query.offset(skip).limit(limit).all()
-    
-    # Obtener el último saldo calculado
-    ultima_partida = db.query(models.Partida).order_by(models.Partida.fecha.desc(), models.Partida.id.desc()).first()
-    saldo_inicial = ultima_partida.saldo if ultima_partida else 0
-    
-    # Calcular saldos acumulativos
-    saldo_acumulado = saldo_inicial
-    for partida in reversed(partidas):
-        # Ajustar saldo antes de asignarlo
-        if partida.tipo == 'ingreso':
-            saldo_acumulado -= partida.monto
-        else:  # egreso
-            saldo_acumulado += partida.monto
-        
-        partida.saldo = saldo_acumulado
-    
-    # Obtener información de auditoría para cada partida
-    for partida in partidas:
-        # Buscar el primer registro de auditoría para esta partida
-        auditoria = db.query(models.Auditoria)\
-            .filter(
-                models.Auditoria.tabla_afectada == 'partidas', 
-                models.Auditoria.registro_id == partida.id
-            )\
-            .join(models.Usuario, models.Auditoria.usuario_id == models.Usuario.id, isouter=True)\
-            .order_by(models.Auditoria.fecha.desc())\
-            .first()
-        
-        # Asignar nombre de usuario de auditoría
-        partida.usuario_auditoria = auditoria.usuario.nombre if auditoria and auditoria.usuario else 'Sin registro'
-    
-    return list(reversed(partidas))
+
 
 @audit_trail("partidas")
 def update_partida(db: Session, partida_id: int, partida_update: schemas.PartidaUpdate, current_user_id: int = None):
@@ -1170,291 +1103,263 @@ from typing import Optional
 import models
 import schemas
 
-def create_transaccion(db: Session, transaccion: schemas.TransaccionCreate, current_user_id: Optional[int] = None):
-    """
-    Crea una nueva transacción y calcula el saldo acumulado
-    """
-    # Crear el diccionario con los datos de la transacción
-    transaccion_data = transaccion.dict()
+# def create_transaccion(db: Session, transaccion: schemas.TransaccionCreate, current_user_id: Optional[int] = None):
+#     """
+#     Crea una nueva transacción y calcula el saldo acumulado
+#     """
+#     # Crear el diccionario con los datos de la transacción
+#     transaccion_data = transaccion.dict()
     
-    # Crear objeto de transacción sin guardar aún (sin el saldo)
-    db_transaccion = models.Transaccion(**transaccion_data)
+#     # Crear objeto de transacción sin guardar aún (sin el saldo)
+#     db_transaccion = models.Transaccion(**transaccion_data)
     
-    # Obtener la última transacción para obtener el último saldo
-    ultima_transaccion = db.query(models.Transaccion).order_by(
-        desc(models.Transaccion.id)
-    ).first()
+#     # Obtener la última transacción para obtener el último saldo
+#     ultima_transaccion = db.query(models.Transaccion).order_by(
+#         desc(models.Transaccion.id)
+#     ).first()
     
-    ultimo_saldo = 0  # Saldo inicial si no hay transacciones previas
+#     ultimo_saldo = 0  # Saldo inicial si no hay transacciones previas
     
-    if ultima_transaccion and hasattr(ultima_transaccion, 'saldo') and ultima_transaccion.saldo is not None:
-        ultimo_saldo = float(ultima_transaccion.saldo)
+#     if ultima_transaccion and hasattr(ultima_transaccion, 'saldo') and ultima_transaccion.saldo is not None:
+#         ultimo_saldo = float(ultima_transaccion.saldo)
     
-    # Calcular nuevo saldo
-    if db_transaccion.tipo == "ingreso":
-        nuevo_saldo = ultimo_saldo + float(db_transaccion.monto)
-    else:  # egreso
-        nuevo_saldo = ultimo_saldo - float(db_transaccion.monto)
+#     # Calcular nuevo saldo
+#     if db_transaccion.tipo == "ingreso":
+#         nuevo_saldo = ultimo_saldo + float(db_transaccion.monto)
+#     else:  # egreso
+#         nuevo_saldo = ultimo_saldo - float(db_transaccion.monto)
     
-    # Asignar el nuevo saldo a la transacción
-    db_transaccion.saldo = nuevo_saldo
+#     # Asignar el nuevo saldo a la transacción
+#     db_transaccion.saldo = nuevo_saldo
     
-    # Guardar en la base de datos
-    db.add(db_transaccion)
-    db.commit()
-    db.refresh(db_transaccion)
+#     # Guardar en la base de datos
+#     db.add(db_transaccion)
+#     db.commit()
+#     db.refresh(db_transaccion)
     
-    # Registrar en auditoría si se proporciona un usuario
-    if current_user_id:
-        auditoria = models.Auditoria(
-            usuario_id=current_user_id,
-            accion="crear",
-            tabla_afectada="transacciones",
-            registro_id=db_transaccion.id,
-            detalles=f"Creación de transacción: {db_transaccion.tipo} por {db_transaccion.monto}"
-        )
-        db.add(auditoria)
-        db.commit()
+#     # Registrar en auditoría si se proporciona un usuario
+#     if current_user_id:
+#         auditoria = models.Auditoria(
+#             usuario_id=current_user_id,
+#             accion="crear",
+#             tabla_afectada="transacciones",
+#             registro_id=db_transaccion.id,
+#             detalles=f"Creación de transacción: {db_transaccion.tipo} por {db_transaccion.monto}"
+#         )
+#         db.add(auditoria)
+#         db.commit()
     
-    return db_transaccion
+#     return db_transaccion
 
-def get_transaccion(db: Session, transaccion_id: int):
-    return db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
+# def get_transaccion(db: Session, transaccion_id: int):
+#     return db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
 
-def get_transacciones(db: Session, skip: int = 0, limit: int = 100, 
-                     fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
-                     tipo: Optional[str] = None):
-    query = db.query(models.Transaccion)
+# def get_transacciones(db: Session, skip: int = 0, limit: int = 100, 
+#                      fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
+#                      tipo: Optional[str] = None):
+#     query = db.query(models.Transaccion)
     
-    # Aplicar filtros
-    if fecha_desde:
-        query = query.filter(models.Transaccion.fecha >= fecha_desde)
+#     # Aplicar filtros
+#     if fecha_desde:
+#         query = query.filter(models.Transaccion.fecha >= fecha_desde)
     
-    if fecha_hasta:
-        query = query.filter(models.Transaccion.fecha <= fecha_hasta)
+#     if fecha_hasta:
+#         query = query.filter(models.Transaccion.fecha <= fecha_hasta)
     
-    if tipo:
-        query = query.filter(models.Transaccion.tipo == tipo)
+#     if tipo:
+#         query = query.filter(models.Transaccion.tipo == tipo)
     
-    return query.order_by(desc(models.Transaccion.fecha)).offset(skip).limit(limit).all()
+#     return query.order_by(desc(models.Transaccion.fecha)).offset(skip).limit(limit).all()
 
-def update_transaccion(db: Session, transaccion_id: int, transaccion_update: schemas.TransaccionUpdate, current_user_id: Optional[int] = None):
-    db_transaccion = db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
-    if not db_transaccion:
-        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+# def update_transaccion(db: Session, transaccion_id: int, transaccion_update: schemas.TransaccionUpdate, current_user_id: Optional[int] = None):
+#     db_transaccion = db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
+#     if not db_transaccion:
+#         raise HTTPException(status_code=404, detail="Transacción no encontrada")
     
-    update_data = transaccion_update.dict(exclude_unset=True)
+#     update_data = transaccion_update.dict(exclude_unset=True)
     
-    # Guardar valores anteriores para registrar en auditoría
-    old_values = {
-        "tipo": db_transaccion.tipo,
-        "monto": float(db_transaccion.monto),
-        "fecha": db_transaccion.fecha
-    }
+#     # Guardar valores anteriores para registrar en auditoría
+#     old_values = {
+#         "tipo": db_transaccion.tipo,
+#         "monto": float(db_transaccion.monto),
+#         "fecha": db_transaccion.fecha
+#     }
     
-    # Si se cambia el tipo o monto, recalcular todos los saldos a partir de esta transacción
-    recalcular_saldos = False
-    if "tipo" in update_data or "monto" in update_data:
-        recalcular_saldos = True
+#     # Si se cambia el tipo o monto, recalcular todos los saldos a partir de esta transacción
+#     recalcular_saldos = False
+#     if "tipo" in update_data or "monto" in update_data:
+#         recalcular_saldos = True
     
-    # Actualizar los campos de la transacción
-    for key, value in update_data.items():
-        setattr(db_transaccion, key, value)
+#     # Actualizar los campos de la transacción
+#     for key, value in update_data.items():
+#         setattr(db_transaccion, key, value)
     
-    # Guardar cambios iniciales
-    db.commit()
-    db.refresh(db_transaccion)
+#     # Guardar cambios iniciales
+#     db.commit()
+#     db.refresh(db_transaccion)
     
-    # Si es necesario recalcular saldos
-    if recalcular_saldos:
-        # Obtener todas las transacciones desde esta en adelante
-        transacciones = db.query(models.Transaccion).filter(
-            models.Transaccion.fecha >= db_transaccion.fecha
-        ).order_by(
-            models.Transaccion.fecha,
-            models.Transaccion.id
-        ).all()
+#     # Si es necesario recalcular saldos
+#     if recalcular_saldos:
+#         # Obtener todas las transacciones desde esta en adelante
+#         transacciones = db.query(models.Transaccion).filter(
+#             models.Transaccion.fecha >= db_transaccion.fecha
+#         ).order_by(
+#             models.Transaccion.fecha,
+#             models.Transaccion.id
+#         ).all()
         
-        # Obtener el saldo anterior a esta transacción
-        transaccion_anterior = db.query(models.Transaccion).filter(
-            models.Transaccion.id < transaccion_id
-        ).order_by(
-            desc(models.Transaccion.id)
-        ).first()
+#         # Obtener el saldo anterior a esta transacción
+#         transaccion_anterior = db.query(models.Transaccion).filter(
+#             models.Transaccion.id < transaccion_id
+#         ).order_by(
+#             desc(models.Transaccion.id)
+#         ).first()
         
-        saldo_actual = 0
-        if transaccion_anterior and hasattr(transaccion_anterior, 'saldo') and transaccion_anterior.saldo is not None:
-            saldo_actual = float(transaccion_anterior.saldo)
+#         saldo_actual = 0
+#         if transaccion_anterior and hasattr(transaccion_anterior, 'saldo') and transaccion_anterior.saldo is not None:
+#             saldo_actual = float(transaccion_anterior.saldo)
         
-        # Recalcular saldos para cada transacción
-        for t in transacciones:
-            if t.tipo == "ingreso":
-                saldo_actual += float(t.monto)
-            else:  # egreso
-                saldo_actual -= float(t.monto)
+#         # Recalcular saldos para cada transacción
+#         for t in transacciones:
+#             if t.tipo == "ingreso":
+#                 saldo_actual += float(t.monto)
+#             else:  # egreso
+#                 saldo_actual -= float(t.monto)
             
-            # Actualizar el saldo
-            t.saldo = saldo_actual
+#             # Actualizar el saldo
+#             t.saldo = saldo_actual
         
-        # Guardar cambios de saldos
-        db.commit()
+#         # Guardar cambios de saldos
+#         db.commit()
     
-    # Registrar en auditoría si se proporciona un usuario
-    if current_user_id:
-        # Crear registro de cambios
-        cambios = []
-        for key, old_value in old_values.items():
-            if key in update_data and update_data[key] != old_value:
-                cambios.append(f"{key}: {old_value} -> {update_data[key]}")
+#     # Registrar en auditoría si se proporciona un usuario
+#     if current_user_id:
+#         # Crear registro de cambios
+#         cambios = []
+#         for key, old_value in old_values.items():
+#             if key in update_data and update_data[key] != old_value:
+#                 cambios.append(f"{key}: {old_value} -> {update_data[key]}")
         
-        cambios_str = ", ".join(cambios) if cambios else "Sin cambios en campos principales"
+#         cambios_str = ", ".join(cambios) if cambios else "Sin cambios en campos principales"
         
-        auditoria = models.Auditoria(
-            usuario_id=current_user_id,
-            accion="actualizar",
-            tabla_afectada="transacciones",
-            registro_id=db_transaccion.id,
-            detalles=f"Actualización de transacción: {cambios_str}"
-        )
-        db.add(auditoria)
-        db.commit()
+#         auditoria = models.Auditoria(
+#             usuario_id=current_user_id,
+#             accion="actualizar",
+#             tabla_afectada="transacciones",
+#             registro_id=db_transaccion.id,
+#             detalles=f"Actualización de transacción: {cambios_str}"
+#         )
+#         db.add(auditoria)
+#         db.commit()
     
-    return db_transaccion
+#     return db_transaccion
 
-def delete_transaccion(db: Session, transaccion_id: int, current_user_id: Optional[int] = None):
-    db_transaccion = db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
-    if not db_transaccion:
-        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+# def delete_transaccion(db: Session, transaccion_id: int, current_user_id: Optional[int] = None):
+#     db_transaccion = db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
+#     if not db_transaccion:
+#         raise HTTPException(status_code=404, detail="Transacción no encontrada")
     
-    # Guardar información de la transacción para el registro de auditoría
-    transaccion_info = {
-        "id": db_transaccion.id,
-        "tipo": db_transaccion.tipo,
-        "monto": float(db_transaccion.monto),
-        "fecha": db_transaccion.fecha
-    }
+#     # Guardar información de la transacción para el registro de auditoría
+#     transaccion_info = {
+#         "id": db_transaccion.id,
+#         "tipo": db_transaccion.tipo,
+#         "monto": float(db_transaccion.monto),
+#         "fecha": db_transaccion.fecha
+#     }
     
-    # Eliminar la transacción
-    db.delete(db_transaccion)
-    db.commit()
+#     # Eliminar la transacción
+#     db.delete(db_transaccion)
+#     db.commit()
     
-    # Recalcular saldos después de eliminar la transacción
-    transacciones = db.query(models.Transaccion).filter(
-        models.Transaccion.fecha >= transaccion_info["fecha"]
-    ).order_by(
-        models.Transaccion.fecha,
-        models.Transaccion.id
-    ).all()
+#     # Recalcular saldos después de eliminar la transacción
+#     transacciones = db.query(models.Transaccion).filter(
+#         models.Transaccion.fecha >= transaccion_info["fecha"]
+#     ).order_by(
+#         models.Transaccion.fecha,
+#         models.Transaccion.id
+#     ).all()
     
-    if transacciones:
-        # Obtener el saldo anterior a la fecha de la transacción eliminada
-        transaccion_anterior = db.query(models.Transaccion).filter(
-            models.Transaccion.fecha < transaccion_info["fecha"]
-        ).order_by(
-            desc(models.Transaccion.fecha),
-            desc(models.Transaccion.id)
-        ).first()
+#     if transacciones:
+#         # Obtener el saldo anterior a la fecha de la transacción eliminada
+#         transaccion_anterior = db.query(models.Transaccion).filter(
+#             models.Transaccion.fecha < transaccion_info["fecha"]
+#         ).order_by(
+#             desc(models.Transaccion.fecha),
+#             desc(models.Transaccion.id)
+#         ).first()
         
-        saldo_actual = 0
-        if transaccion_anterior and hasattr(transaccion_anterior, 'saldo') and transaccion_anterior.saldo is not None:
-            saldo_actual = float(transaccion_anterior.saldo)
+#         saldo_actual = 0
+#         if transaccion_anterior and hasattr(transaccion_anterior, 'saldo') and transaccion_anterior.saldo is not None:
+#             saldo_actual = float(transaccion_anterior.saldo)
         
-        # Recalcular saldos para cada transacción
-        for t in transacciones:
-            if t.tipo == "ingreso":
-                saldo_actual += float(t.monto)
-            else:  # egreso
-                saldo_actual -= float(t.monto)
+#         # Recalcular saldos para cada transacción
+#         for t in transacciones:
+#             if t.tipo == "ingreso":
+#                 saldo_actual += float(t.monto)
+#             else:  # egreso
+#                 saldo_actual -= float(t.monto)
             
-            # Actualizar el saldo
-            t.saldo = saldo_actual
+#             # Actualizar el saldo
+#             t.saldo = saldo_actual
         
-        # Guardar cambios de saldos
-        db.commit()
+#         # Guardar cambios de saldos
+#         db.commit()
     
-    # Registrar en auditoría si se proporciona un usuario
-    if current_user_id:
-        auditoria = models.Auditoria(
-            usuario_id=current_user_id,
-            accion="eliminar",
-            tabla_afectada="transacciones",
-            registro_id=transaccion_info["id"],
-            detalles=f"Eliminación de transacción: {transaccion_info['tipo']} por {transaccion_info['monto']} del {transaccion_info['fecha']}"
-        )
-        db.add(auditoria)
-        db.commit()
+#     # Registrar en auditoría si se proporciona un usuario
+#     if current_user_id:
+#         auditoria = models.Auditoria(
+#             usuario_id=current_user_id,
+#             accion="eliminar",
+#             tabla_afectada="transacciones",
+#             registro_id=transaccion_info["id"],
+#             detalles=f"Eliminación de transacción: {transaccion_info['tipo']} por {transaccion_info['monto']} del {transaccion_info['fecha']}"
+#         )
+#         db.add(auditoria)
+#         db.commit()
     
-    return {"message": "Transacción eliminada exitosamente"}
+#     return {"message": "Transacción eliminada exitosamente"}
 
-def recalcular_saldos_transacciones(db: Session):
-    """
-    Recalcula los saldos de todas las partidas en orden cronológico
-    """
-    # Obtener todas las partidas ordenadas por fecha y luego por ID
-    partidas = db.query(models.Partida).order_by(
-        models.Partida.fecha,
-        models.Partida.id
-    ).all()
+# def recalcular_saldos_transacciones(db: Session):
+#     """
+#     Recalcula los saldos de todas las partidas en orden cronológico
+#     """
+#     # Obtener todas las partidas ordenadas por fecha y luego por ID
+#     partidas = db.query(models.Partida).order_by(
+#         models.Partida.fecha,
+#         models.Partida.id
+#     ).all()
     
-    if not partidas:
-        return {"message": "No hay partidas para recalcular", "transacciones_actualizadas": 0}
+#     if not partidas:
+#         return {"message": "No hay partidas para recalcular", "transacciones_actualizadas": 0}
     
-    saldo_actual = 0
-    partidas_actualizadas = 0
+#     saldo_actual = 0
+#     partidas_actualizadas = 0
     
-    # Recalcular saldos para cada partida
-    for partida in partidas:
-        if partida.tipo == "ingreso":
-            saldo_actual += partida.ingreso
-        elif partida.tipo == "egreso":
-            saldo_actual -= partida.egreso
-        # Si es anulación u otro tipo, podría tener lógica específica aquí
+#     # Recalcular saldos para cada partida
+#     for partida in partidas:
+#         if partida.tipo == "ingreso":
+#             saldo_actual += partida.ingreso
+#         elif partida.tipo == "egreso":
+#             saldo_actual -= partida.egreso
+#         # Si es anulación u otro tipo, podría tener lógica específica aquí
         
-        # Actualizar el saldo
-        partida.saldo = saldo_actual
-        partidas_actualizadas += 1
+#         # Actualizar el saldo
+#         partida.saldo = saldo_actual
+#         partidas_actualizadas += 1
     
-    # Guardar cambios
-    db.commit()
+#     # Guardar cambios
+#     db.commit()
     
-    return {
-        "message": "Saldos recalculados correctamente", 
-        "transacciones_actualizadas": partidas_actualizadas
-    }
+#     return {
+#         "message": "Saldos recalculados correctamente", 
+#         "transacciones_actualizadas": partidas_actualizadas
+#     }
 
-# Funciones para Auditoría
-def get_partida(db: Session, partida_id: int = None, skip: int = 0, limit: int = 100, 
-               fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
-               tipo: Optional[str] = None, cuenta: Optional[str] = None):
-    query = db.query(models.Partida)
-    
-    # Aplicar filtros
-    if fecha_desde:
-        query = query.filter(models.Partida.fecha >= fecha_desde)
-    
-    if fecha_hasta:
-        query = query.filter(models.Partida.fecha <= fecha_hasta)
-    
-    if tipo:
-        query = query.filter(models.Partida.tipo == tipo)
-    
-    if cuenta:
-        query = query.filter(models.Partida.cuenta == cuenta)
-    
-    # Ordenar y paginar
-    query = query.order_by(desc(models.Partida.fecha)).offset(skip).limit(limit)
-    
-    # Obtener resultados
-    return query.all()
-
-# Funciones para Reportes
 def get_balance(db: Session, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):
     query = db.query(models.Partida)
     
-    # Aplicar filtros
     if fecha_desde:
         query = query.filter(models.Partida.fecha >= fecha_desde)
-    
     if fecha_hasta:
         query = query.filter(models.Partida.fecha <= fecha_hasta)
     
@@ -1470,12 +1375,10 @@ def get_balance(db: Session, fecha_desde: Optional[str] = None, fecha_hasta: Opt
         "fecha_desde": fecha_desde,
         "fecha_hasta": fecha_hasta
     }
-
 def get_ingresos_egresos_mensuales(db: Session, anio: Optional[int] = None):
     current_year = datetime.now().year
     year_to_query = anio if anio else current_year
     
-    # Obtener ingresos y egresos por mes
     result = []
     
     for month in range(1, 13):
@@ -1494,19 +1397,93 @@ def get_ingresos_egresos_mensuales(db: Session, anio: Optional[int] = None):
         result.append({
             "mes": month,
             "nombre_mes": get_nombre_mes(month),
-            "ingresos": ingresos,
-            "egresos": egresos,
-            "balance": ingresos - egresos
+            "ingresos": float(ingresos),
+            "egresos": float(egresos),
+            "balance": float(ingresos) - float(egresos),
         })
     
-    return {
-        "anio": year_to_query,
-        "datos": result
-    }
+    return {"anio": year_to_query, "datos": result}
 
-from datetime import datetime, date
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, cast, Date
+
+def get_nombre_mes(month_number: int) -> str:
+    nombres = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+        5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+        9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+    }
+    return nombres.get(month_number, "")
+
+def get_partidas_por_mes(db: Session, mes: int, anio: int):
+    """Devuelve todas las partidas de un mes/año específico ordenadas por fecha."""
+    return (
+        db.query(models.Partida)
+        .filter(
+            extract('month', models.Partida.fecha) == mes,
+            extract('year', models.Partida.fecha) == anio,
+        )
+        .order_by(models.Partida.fecha, models.Partida.id)
+        .all()
+    )
+# Funciones para Auditoría
+@audit_trail("partidas")
+def get_partida(
+    db: Session, 
+    partida_id: int = None, 
+    skip: int = 0, 
+    limit: int = 100, 
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None,
+    tipo: Optional[str] = None,
+    cuenta: Optional[str] = None,
+    current_user_id: int = None
+):
+    if partida_id:
+        return db.query(models.Partida).filter(models.Partida.id == partida_id).first()
+    
+    query = db.query(models.Partida)
+    
+    if fecha_desde:
+        query = query.filter(models.Partida.fecha >= fecha_desde)
+    if fecha_hasta:
+        query = query.filter(models.Partida.fecha <= fecha_hasta)
+    if tipo:
+        query = query.filter(models.Partida.tipo == tipo)
+    if cuenta:
+        query = query.filter(models.Partida.cuenta == cuenta)
+    
+    # Ordenar asc para luego revertir
+    partidas = query.order_by(
+        models.Partida.fecha.asc(), 
+        models.Partida.id.asc()
+    ).offset(skip).limit(limit).all()
+
+    # Auditoría
+    for partida in partidas:
+        auditoria = db.query(models.Auditoria)\
+            .filter(
+                models.Auditoria.tabla_afectada == 'partidas', 
+                models.Auditoria.registro_id == partida.id
+            )\
+            .join(models.Usuario, models.Auditoria.usuario_id == models.Usuario.id, isouter=True)\
+            .order_by(models.Auditoria.fecha.desc())\
+            .first()
+        partida.usuario_auditoria = auditoria.usuario.nombre if auditoria and auditoria.usuario else 'Sin registro'
+    
+    # Más recientes primero
+    return list(reversed(partidas))
+
+@audit_trail("cuota")
+def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate, current_user_id: int = None):
+    db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
+    if not db_cuota:
+        raise HTTPException(status_code=404, detail="Cuota no encontrada")
+    
+    for key, value in cuota_update.dict(exclude_unset=True).items():
+        setattr(db_cuota, key, value)
+    
+    db.commit()
+    db.refresh(db_cuota)
+    return db_cuota
 
 def get_cuotas_pendientes(db: Session):
     try:
@@ -1622,7 +1599,28 @@ def get_nombre_mes(month_number):
         11: "Noviembre",
         12: "Diciembre"
     }
+    
     return nombres_meses.get(month_number, "")
+def recalcular_saldos_partidas(db: Session):
+    """Recalcula los saldos de todas las partidas en orden cronológico"""
+    partidas = db.query(models.Partida).order_by(
+        models.Partida.fecha,
+        models.Partida.id
+    ).all()
+    
+    if not partidas:
+        return {"message": "No hay partidas para recalcular", "partidas_actualizadas": 0}
+    
+    saldo_actual = 0
+    for partida in partidas:
+        if partida.tipo == "ingreso":
+            saldo_actual += float(partida.ingreso or 0)
+        elif partida.tipo == "egreso":
+            saldo_actual -= float(partida.egreso or 0)
+        partida.saldo = saldo_actual
+    
+    db.commit()
+    return {"message": "Saldos recalculados correctamente", "partidas_actualizadas": len(partidas)}
 
 def get_auditoria(db: Session, skip: int = 0, limit: int = 100, 
                 tabla_afectada: Optional[str] = None, usuario_id: Optional[int] = None,
