@@ -1451,10 +1451,10 @@ def get_partida(
     if cuenta:
         query = query.filter(models.Partida.cuenta == cuenta)
     
-    # Ordenar asc para luego revertir
+    # Traer los más recientes primero
     partidas = query.order_by(
-        models.Partida.fecha.asc(), 
-        models.Partida.id.asc()
+        models.Partida.fecha.desc(), 
+        models.Partida.id.desc()
     ).offset(skip).limit(limit).all()
 
     # Auditoría
@@ -1469,8 +1469,7 @@ def get_partida(
             .first()
         partida.usuario_auditoria = auditoria.usuario.nombre if auditoria and auditoria.usuario else 'Sin registro'
     
-    # Más recientes primero
-    return list(reversed(partidas))
+    return partidas
 
 @audit_trail("cuota")
 def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate, current_user_id: int = None):
