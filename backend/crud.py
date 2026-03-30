@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any
 from decimal import Decimal
 
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone, timedelta
 import models
 import schemas
 from audit_middleware import audit_trail
@@ -1468,8 +1468,12 @@ def get_partida(
             .order_by(models.Auditoria.fecha.desc())\
             .first()
         partida.usuario_auditoria = auditoria.usuario.nombre if auditoria and auditoria.usuario else 'Sin registro'
-        # Fix timezone: forzar fecha a string puro sin offset
-        if partida.fecha and hasattr(partida.fecha, 'date'):
+        # Fix timezone: convertir a hora Argentina (UTC-3) antes de tomar la fecha
+        if partida.fecha and hasattr(partida.fecha, 'tzinfo'):
+            tz_arg = timezone(timedelta(hours=-3))
+            fecha_local = partida.fecha.astimezone(tz_arg) if partida.fecha.tzinfo else partida.fecha.replace(tzinfo=timezone.utc).astimezone(tz_arg)
+            partida.fecha = fecha_local.date()
+        elif partida.fecha and hasattr(partida.fecha, 'date'):
             partida.fecha = partida.fecha.date()
     
     return partidas
