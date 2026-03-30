@@ -16,6 +16,19 @@ from io import BytesIO
 from num2words import num2words
 
 
+def monto_a_letras(monto: float) -> str:
+    """Convierte un monto a letras en pesos argentinos."""
+    try:
+        entero = int(monto)
+        centavos = round((monto - entero) * 100)
+        letras = num2words(entero, lang='es').upper()
+        if centavos > 0:
+            return f"{letras} PESOS CON {centavos:02d}/100"
+        return f"{letras} PESOS CON CERO CENTAVOS"
+    except Exception:
+        return ""
+
+
 class EmailService:
     def __init__(self, smtp_server, smtp_port, username, password, sender_email):
         self.smtp_server = smtp_server
@@ -44,7 +57,6 @@ class EmailService:
                 "content-type": "application/json"
             }
             
-            # Preparar el contenido del email
             payload = {
                 "sender": {
                     "name": "UARC Río Cuarto",
@@ -59,7 +71,6 @@ class EmailService:
                 "htmlContent": body.replace('\n', '<br>')
             }
             
-            # Adjuntar PDF si existe
             if pdf_data:
                 pdf_base64 = base64.b64encode(pdf_data).decode('utf-8')
                 payload["attachment"] = [
@@ -69,7 +80,6 @@ class EmailService:
                     }
                 ]
             
-            # Enviar request
             response = requests.post(url, headers=headers, json=payload)
             
             if response.status_code in [200, 201, 202]:
@@ -94,12 +104,10 @@ class EmailService:
             
             msg.attach(MIMEText(body, 'plain'))
             
-            # Adjuntar PDF
             pdf_attachment = MIMEApplication(pdf_data, _subtype='pdf')
             pdf_attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(pdf_attachment)
             
-            # Enviar
             with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
                 server.starttls()
                 server.login(self.username, self.password)
@@ -115,24 +123,19 @@ class EmailService:
     def send_receipt_email(self, db, cobranza, recipient_email):
         """Enviar recibo de cobranza por email"""
         try:
-            # 🔥 SOLUCIÓN: Obtener número de recibo desde la partida asociada
             from models import Partida
             
             partida = db.query(Partida).filter(Partida.cobranza_id == cobranza.id).first()
             
-            # Determinar número de documento según tipo
             if cobranza.tipo_documento == "factura":
                 numero_documento = cobranza.numero_factura or "S/N"
                 tipo_doc_texto = "Factura/Recibo"
             else:
-                # Extraer número de recibo de la partida
                 numero_documento = partida.recibo_factura if partida else f"REC-{cobranza.id}"
                 tipo_doc_texto = "Recibo"
             
-            # Generar PDF
             pdf_data = self.generate_receipt_pdf(db, cobranza, numero_documento, tipo_doc_texto)
             
-            # Preparar email
             subject = f"{tipo_doc_texto} #{numero_documento}"
             body = f"""
 Estimado/a,
@@ -151,7 +154,6 @@ Unidad de Árbitros Río Cuarto
             
             filename = f"{tipo_doc_texto.replace('/', '_')}_{numero_documento.replace('/', '_')}.pdf"
             
-            # Decidir método de envío
             if self.use_brevo:
                 return self._send_email_brevo(recipient_email, subject, body, pdf_data, filename)
             else:
@@ -164,24 +166,19 @@ Unidad de Árbitros Río Cuarto
     def send_payment_receipt_email(self, db, pago, recipient_email):
         """Enviar orden de pago por email"""
         try:
-            # 🔥 SOLUCIÓN: Obtener número desde la partida asociada
             from models import Partida
             
             partida = db.query(Partida).filter(Partida.pago_id == pago.id).first()
             
-            # Determinar número de documento según tipo
             if pago.tipo_documento == "factura":
                 numero_documento = pago.numero_factura or "S/N"
                 tipo_doc_texto = "Factura/Recibo"
             else:
-                # Extraer número de orden de pago de la partida
                 numero_documento = partida.recibo_factura if partida else f"O.P-{pago.id}"
                 tipo_doc_texto = "Orden de Pago"
             
-            # Generar PDF
             pdf_data = self.generate_payment_receipt_pdf(db, pago, numero_documento, tipo_doc_texto)
             
-            # Preparar email
             subject = f"{tipo_doc_texto} #{numero_documento}"
             body = f"""
 Estimado/a,
@@ -198,7 +195,6 @@ Unidad de Árbitros Río Cuarto
             
             filename = f"{tipo_doc_texto.replace('/', '_')}_{numero_documento.replace('/', '_')}.pdf"
             
-            # Decidir método de envío
             if self.use_brevo:
                 return self._send_email_brevo(recipient_email, subject, body, pdf_data, filename)
             else:
@@ -211,13 +207,10 @@ Unidad de Árbitros Río Cuarto
     def send_cuota_receipt_email(self, db, cuota, recipient_email):
         """Enviar recibo de cuota por email"""
         try:
-            # Obtener número de comprobante
             numero_recibo = cuota.comprobante_pago or f"CUOTA-{cuota.id}"
             
-            # Generar PDF
             pdf_data = self.generate_cuota_receipt_pdf(db, cuota, numero_recibo)
             
-            # Preparar email
             subject = f"Recibo de Cuota Societaria #{numero_recibo}"
             body = f"""
 Estimado/a Socio/a,
@@ -236,7 +229,6 @@ Unidad de Árbitros Río Cuarto
             
             filename = f"Recibo_Cuota_{numero_recibo.replace('/', '_')}.pdf"
             
-            # Decidir método de envío
             if self.use_brevo:
                 return self._send_email_brevo(recipient_email, subject, body, pdf_data, filename)
             else:
@@ -253,7 +245,6 @@ Unidad de Árbitros Río Cuarto
         elements = []
         styles = getSampleStyleSheet()
         
-        # Título
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
@@ -265,12 +256,10 @@ Unidad de Árbitros Río Cuarto
         elements.append(Paragraph(tipo_doc_texto.upper(), title_style))
         elements.append(Spacer(1, 0.2*inch))
         
-        # Obtener usuario
         from models import Usuario
         usuario = db.query(Usuario).filter(Usuario.id == cobranza.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "N/A"
         
-        # Información del recibo
         info_data = [
             ['Número:', numero_documento],
             ['Fecha:', cobranza.fecha.strftime('%d/%m/%Y')],
@@ -278,11 +267,9 @@ Unidad de Árbitros Río Cuarto
             ['Monto:', f"${cobranza.monto:.2f}"],
         ]
         
-        # Agregar descripción si existe
         if cobranza.descripcion:
             info_data.append(['Concepto:', cobranza.descripcion])
         
-        # Si es factura, agregar razón social
         if cobranza.tipo_documento == "factura" and cobranza.razon_social:
             info_data.append(['Razón Social:', cobranza.razon_social])
         
@@ -300,12 +287,10 @@ Unidad de Árbitros Río Cuarto
         elements.append(info_table)
         elements.append(Spacer(1, 0.3*inch))
         
-        # Monto en letras
-        try:
-            monto_letras = num2words(float(cobranza.monto), lang='es', to='currency')
-            elements.append(Paragraph(f"<b>Son:</b> {monto_letras.upper()}", styles['Normal']))
-        except:
-            pass
+        # ✅ FIX: pesos argentinos en lugar de euros
+        monto_letras = monto_a_letras(float(cobranza.monto))
+        if monto_letras:
+            elements.append(Paragraph(f"<b>Son:</b> {monto_letras}", styles['Normal']))
         
         doc.build(elements)
         pdf_data = buffer.getvalue()
@@ -320,7 +305,6 @@ Unidad de Árbitros Río Cuarto
         elements = []
         styles = getSampleStyleSheet()
         
-        # Título
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
@@ -332,12 +316,10 @@ Unidad de Árbitros Río Cuarto
         elements.append(Paragraph(tipo_doc_texto.upper(), title_style))
         elements.append(Spacer(1, 0.2*inch))
         
-        # Obtener usuario
         from models import Usuario
         usuario = db.query(Usuario).filter(Usuario.id == pago.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "N/A"
         
-        # Información de la orden
         info_data = [
             ['Número:', numero_documento],
             ['Fecha:', pago.fecha.strftime('%d/%m/%Y')],
@@ -345,11 +327,9 @@ Unidad de Árbitros Río Cuarto
             ['Monto:', f"${pago.monto:.2f}"],
         ]
         
-        # Agregar descripción si existe
         if pago.descripcion:
             info_data.append(['Concepto:', pago.descripcion])
         
-        # Si es factura, agregar razón social
         if pago.tipo_documento == "factura" and pago.razon_social:
             info_data.append(['Razón Social:', pago.razon_social])
         
@@ -366,13 +346,11 @@ Unidad de Árbitros Río Cuarto
         
         elements.append(info_table)
         elements.append(Spacer(1, 0.3*inch))
-        
-        # Monto en letras
-        try:
-            monto_letras = num2words(float(pago.monto), lang='es', to='currency')
-            elements.append(Paragraph(f"<b>Son:</b> {monto_letras.upper()}", styles['Normal']))
-        except:
-            pass
+
+        # ✅ FIX: pesos argentinos en lugar de euros
+        monto_letras = monto_a_letras(float(pago.monto))
+        if monto_letras:
+            elements.append(Paragraph(f"<b>Son:</b> {monto_letras}", styles['Normal']))
         
         doc.build(elements)
         pdf_data = buffer.getvalue()
@@ -387,7 +365,6 @@ Unidad de Árbitros Río Cuarto
         elements = []
         styles = getSampleStyleSheet()
         
-        # Título
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
@@ -399,12 +376,10 @@ Unidad de Árbitros Río Cuarto
         elements.append(Paragraph("RECIBO DE CUOTA SOCIETARIA", title_style))
         elements.append(Spacer(1, 0.2*inch))
         
-        # Obtener usuario
         from models import Usuario
         usuario = db.query(Usuario).filter(Usuario.id == cuota.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "N/A"
         
-        # Información del pago
         info_data = [
             ['Número de Recibo:', numero_recibo],
             ['Socio:', nombre_usuario],
@@ -425,13 +400,11 @@ Unidad de Árbitros Río Cuarto
         
         elements.append(info_table)
         elements.append(Spacer(1, 0.3*inch))
-        
-        # Monto en letras
-        try:
-            monto_letras = num2words(float(cuota.monto_pagado), lang='es', to='currency')
-            elements.append(Paragraph(f"<b>Son:</b> {monto_letras.upper()}", styles['Normal']))
-        except:
-            pass
+
+        # ✅ FIX: pesos argentinos en lugar de euros
+        monto_letras = monto_a_letras(float(cuota.monto_pagado))
+        if monto_letras:
+            elements.append(Paragraph(f"<b>Son:</b> {monto_letras}", styles['Normal']))
         
         doc.build(elements)
         pdf_data = buffer.getvalue()
