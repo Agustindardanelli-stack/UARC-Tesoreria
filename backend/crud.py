@@ -1468,6 +1468,9 @@ def get_partida(
             .order_by(models.Auditoria.fecha.desc())\
             .first()
         partida.usuario_auditoria = auditoria.usuario.nombre if auditoria and auditoria.usuario else 'Sin registro'
+        # Fix timezone: forzar fecha a string puro sin offset
+        if partida.fecha and hasattr(partida.fecha, 'date'):
+            partida.fecha = partida.fecha.date()
     
     return partidas
 
