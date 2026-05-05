@@ -207,7 +207,7 @@ Unidad de Árbitros Río Cuarto
     def send_cuota_receipt_email(self, db, cuota, recipient_email):
         """Enviar recibo de cuota por email"""
         try:
-            numero_recibo = cuota.nro_comprobante or f"CUOTA-{cuota.id}"
+            numero_recibo = str(cuota.nro_comprobante) if cuota.nro_comprobante else f"CUOTA-{cuota.id}"
             
             pdf_data = self.generate_cuota_receipt_pdf(db, cuota, numero_recibo)
             
