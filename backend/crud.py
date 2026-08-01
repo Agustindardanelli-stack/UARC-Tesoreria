@@ -195,11 +195,6 @@ def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
     usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
     nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
     
-    # Obtener la última partida para calcular el saldo
-    ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
-    saldo_anterior = ultima_partida.saldo if ultima_partida else 0
-    nuevo_saldo = saldo_anterior - db_pago.monto
-    
     # NUEVA LÓGICA: Generar número de recibo/factura según tipo de documento
     if db_pago.tipo_documento == "factura":
         # Para facturas, usar el formato FAC-
@@ -231,13 +226,18 @@ def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
         cuenta="CAJA",
         usuario_id=current_user_id,  # Usuario que realiza la acción
         pago_id=db_pago.id,
-        saldo=nuevo_saldo,
+        saldo=0,  # placeholder, se recalcula abajo por fecha real
         ingreso=0,
         egreso=db_pago.monto,
         recibo_factura=recibo_factura  # IMPORTANTE: Asignar el número de comprobante generado
     )
     db.add(partida)
     db.commit()
+
+    # Recalcula TODAS las partidas en orden cronológico real, para que el
+    # saldo por fila siempre coincida con get_balance() (dashboard),
+    # sin importar si la fecha cargada es retroactiva.
+    recalcular_saldos_partidas(db)
     
     # Comprobar si es una orden de pago (no una factura)
     enviar_email = (db_pago.tipo_documento == "orden_pago")
@@ -367,6 +367,7 @@ def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate, curr
     # Actualizar partida asociada
     partida = db.query(models.Partida).filter(models.Partida.pago_id == pago_id).first()
     if partida:
+        fecha_anterior = partida.fecha
         partida.fecha = db_pago.fecha
         
         # Obtener nombre de usuario
@@ -379,26 +380,11 @@ def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate, curr
         partida.usuario_id = db_pago.usuario_id
         db.commit()
         
-        # Si el monto cambió, recalcular los saldos de todas las partidas posteriores
-        if abs(monto_anterior - db_pago.monto) > 0.01:
-            partidas_posteriores = db.query(models.Partida).filter(
-                models.Partida.fecha >= partida.fecha,
-                models.Partida.id != partida.id
-            ).order_by(models.Partida.fecha, models.Partida.id).all()
-            
-            # Obtener saldo actualizado para esta partida
-            saldo_actual = partida.saldo
-            
-            # Actualizar saldos para todas las partidas posteriores
-            for p in partidas_posteriores:
-                if p.tipo == "ingreso":
-                    saldo_actual += p.monto
-                else:  # egreso
-                    saldo_actual -= p.monto
-                
-                p.saldo = saldo_actual
-            
-            db.commit()
+        # Si cambió el monto o la fecha (afecta el orden cronológico),
+        # recalculamos TODAS las partidas de una — evita que la propia
+        # partida editada o alguna del mismo día queden con saldo viejo.
+        if abs(monto_anterior - db_pago.monto) > 0.01 or fecha_anterior != db_pago.fecha:
+            recalcular_saldos_partidas(db)
     
     return db_pago
 @audit_trail("pagos")
@@ -422,31 +408,9 @@ def delete_pago(db: Session, pago_id: int, current_user_id: int = None):
     db.delete(db_pago)
     db.commit()
     
-    # Recalcular saldos de todas las partidas posteriores a la fecha del pago eliminado
-    partidas_posteriores = db.query(models.Partida).filter(
-        models.Partida.fecha >= fecha_pago
-    ).order_by(models.Partida.fecha, models.Partida.id).all()
-    
-    # Si hay partidas posteriores, recalcular saldos
-    if partidas_posteriores:
-        # Obtener el saldo anterior a la partida eliminada
-        partida_anterior = db.query(models.Partida).filter(
-            models.Partida.fecha < fecha_pago
-        ).order_by(models.Partida.fecha.desc(), models.Partida.id.desc()).first()
-        
-        saldo_inicial = partida_anterior.saldo if partida_anterior else 0
-        
-        # Recalcular saldos para todas las partidas posteriores
-        saldo_actual = saldo_inicial
-        for p in partidas_posteriores:
-            if p.tipo == "ingreso":
-                saldo_actual += p.monto
-            else:  # egreso
-                saldo_actual -= p.monto
-            
-            p.saldo = saldo_actual
-        
-        db.commit()
+    # Recalcula TODAS las partidas en orden cronológico real, igual que
+    # delete_cobranza — mismo criterio en toda la app.
+    recalcular_saldos_partidas(db)
     
     return {"message": "Pago eliminado exitosamente"}
 
@@ -516,11 +480,6 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
     db.commit()
     db.refresh(db_cobranza)
     
-    # Obtener la última partida para calcular el saldo
-    ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
-    saldo_anterior = ultima_partida.saldo if ultima_partida else 0
-    nuevo_saldo = saldo_anterior + db_cobranza.monto
-    
     # NUEVA LÓGICA: Generar número de recibo/factura según tipo de documento
     if db_cobranza.tipo_documento == "factura":
         # Para facturas, usar el formato FAC-X
@@ -551,13 +510,17 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
         cuenta="CAJA",
         usuario_id=current_user_id,  # Usuario que REALIZA la acción
         cobranza_id=db_cobranza.id,
-        saldo=nuevo_saldo,
+        saldo=0,  # placeholder, se recalcula abajo por fecha real
         ingreso=db_cobranza.monto,
         egreso=0,
         recibo_factura=recibo_factura  # IMPORTANTE: Asignar el número de comprobante generado
     )
     db.add(partida)
     db.commit()
+
+    # Recalcula TODAS las partidas en orden cronológico real, para que el
+    # saldo por fila siempre coincida con get_balance() (dashboard).
+    recalcular_saldos_partidas(db)
     
     # Comprobar si es un recibo (no una factura)
     enviar_email = (db_cobranza.tipo_documento == "recibo")
@@ -738,11 +701,6 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
         usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
 
-        # Obtener la última partida para calcular el saldo correcto
-        ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
-        saldo_anterior = ultima_partida.saldo if ultima_partida else 0
-        nuevo_saldo = saldo_anterior + db_cuota.monto
-
         partida = models.Partida(
             fecha=db_cuota.fecha,
             detalle=f"Cuota {nombre_usuario}",
@@ -751,12 +709,16 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
             cuenta="CUOTAS",
             usuario_id=current_user_id,
             recibo_factura=f"C.S.-{db_cuota.nro_comprobante}",  # ✅ usar número real
-            saldo=nuevo_saldo,
+            saldo=0,  # placeholder, se recalcula abajo por fecha real
             ingreso=db_cuota.monto,
             egreso=0
         )
         db.add(partida)
         db.commit()
+
+        # Recalcula TODAS las partidas en orden cronológico real, para que
+        # el saldo por fila siempre coincida con get_balance() (dashboard).
+        recalcular_saldos_partidas(db)
 
     return db_cuota
 
@@ -791,26 +753,28 @@ def pagar_cuota(
 
     # Movimiento contable
     if generar_movimiento:
-        ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
-        saldo_anterior = ultima_partida.saldo if ultima_partida else Decimal("0.00")
-        nuevo_saldo = saldo_anterior + Decimal(monto_pagado)
-
         nueva_partida = models.Partida(
             fecha=datetime.now().date(),
             cuenta="INGRESOS",
             detalle=f"Pago de cuota de {cuota.usuario.nombre}" if cuota.usuario else "Pago de cuota",
             ingreso=Decimal(monto_pagado),
             egreso=0,
-            saldo=nuevo_saldo,
+            saldo=0,  # placeholder, se recalcula abajo por fecha real
             usuario_id=current_user_id,
             monto=Decimal(monto_pagado),
             tipo="ingreso",
             recibo_factura=f"C.S.-{cuota.nro_comprobante}",  # ✅ usar nro_comprobante
         )
         db.add(nueva_partida)
+        db.commit()
+
+        # Recalcula TODAS las partidas en orden cronológico real, para que
+        # el saldo por fila siempre coincida con get_balance() (dashboard).
+        recalcular_saldos_partidas(db)
 
         if actualizar_saldo:
-            cuota.saldo_actual = nuevo_saldo
+            db.refresh(nueva_partida)
+            cuota.saldo_actual = nueva_partida.saldo
 
     db.commit()
     db.refresh(cuota)
@@ -989,19 +953,8 @@ def delete_cuota(db: Session, cuota_id: int):
 # Funciones CRUD para Partidas
 @audit_trail("partidas")
 def create_partida(db: Session, partida: schemas.PartidaCreate, current_user_id: int = None):
-    # Obtener la última partida para calcular el saldo
-    ultima_partida = db.query(models.Partida).order_by(models.Partida.id.desc()).first()
-    
-    # Calcular nuevo saldo
-    saldo_anterior = ultima_partida.saldo if ultima_partida else 0
-    
-    if partida.tipo == 'ingreso':
-        nuevo_saldo = saldo_anterior + partida.monto
-    else:  # egreso
-        nuevo_saldo = saldo_anterior - partida.monto
-    
-    # Crear partida con el saldo calculado
-    db_partida = models.Partida(**partida.dict(exclude={'saldo'}), saldo=nuevo_saldo)
+    # Crear partida con saldo placeholder — se recalcula abajo por fecha real
+    db_partida = models.Partida(**partida.dict(exclude={'saldo'}), saldo=0)
     
     # Si se proporciona current_user_id, establecerlo como usuario
     if current_user_id:
@@ -1010,6 +963,12 @@ def create_partida(db: Session, partida: schemas.PartidaCreate, current_user_id:
     db.add(db_partida)
     db.commit()
     db.refresh(db_partida)
+
+    # Recalcula TODAS las partidas en orden cronológico real, para que el
+    # saldo por fila siempre coincida con get_balance() (dashboard).
+    recalcular_saldos_partidas(db)
+    db.refresh(db_partida)
+
     return db_partida
 
 
@@ -1027,6 +986,12 @@ def update_partida(db: Session, partida_id: int, partida_update: schemas.Partida
     
     db.commit()
     db.refresh(db_partida)
+
+    # Cualquier cambio acá (monto, tipo, fecha) puede alterar el orden
+    # cronológico o el balance, así que recalculamos todo por las dudas.
+    recalcular_saldos_partidas(db)
+    db.refresh(db_partida)
+
     return db_partida
 
 @audit_trail("partidas")
@@ -1037,6 +1002,11 @@ def delete_partida(db: Session, partida_id: int, current_user_id: int = None):
     
     db.delete(db_partida)
     db.commit()
+
+    # Recalculamos todo para que el saldo de las partidas restantes
+    # quede coherente con get_balance() (dashboard).
+    recalcular_saldos_partidas(db)
+
     return {"message": "Partida eliminada exitosamente"}
 
 # Funciones CRUD para Categorías
@@ -1615,18 +1585,80 @@ def recalcular_saldos_partidas(db: Session):
     ).all()
     
     if not partidas:
+        print("[recalcular_saldos] No hay partidas para recalcular")
         return {"message": "No hay partidas para recalcular", "partidas_actualizadas": 0}
     
-    saldo_actual = 0
+    print(f"[recalcular_saldos] Arrancando recalculo — {len(partidas)} partidas totales")
+    print(f"{'ID':>6} {'FECHA':>12} {'TIPO':<10} {'MONTO':>14} {'INGRESO':>14} {'EGRESO':>14} {'SALDO ACUM.':>16}")
+    print("-" * 92)
+
+    saldo_actual = 0.0
+    total_ingresos_sumados = 0.0
+    total_egresos_sumados = 0.0
+    tipos_no_reconocidos = {}  # tipo -> cantidad de partidas con ese tipo
+    inconsistencias_monto = []  # partidas donde monto != ingreso/egreso
+
     for partida in partidas:
+        ingreso_val = float(partida.ingreso or 0)
+        egreso_val = float(partida.egreso or 0)
+        monto_val = float(partida.monto or 0)
+
         if partida.tipo == "ingreso":
-            saldo_actual += float(partida.ingreso or 0)
+            saldo_actual += ingreso_val
+            total_ingresos_sumados += ingreso_val
+            if abs(monto_val - ingreso_val) > 0.01:
+                inconsistencias_monto.append(
+                    (partida.id, partida.tipo, monto_val, ingreso_val, egreso_val)
+                )
         elif partida.tipo == "egreso":
-            saldo_actual -= float(partida.egreso or 0)
+            saldo_actual -= egreso_val
+            total_egresos_sumados += egreso_val
+            if abs(monto_val - egreso_val) > 0.01:
+                inconsistencias_monto.append(
+                    (partida.id, partida.tipo, monto_val, ingreso_val, egreso_val)
+                )
+        else:
+            # Cualquier tipo que no sea "ingreso" ni "egreso" (ej "anulacion")
+            # no mueve el saldo — lo registramos para poder verlo en el resumen
+            tipos_no_reconocidos[partida.tipo] = tipos_no_reconocidos.get(partida.tipo, 0) + 1
+
         partida.saldo = saldo_actual
-    
+
+        print(
+            f"{partida.id:>6} {str(partida.fecha):>12} {str(partida.tipo):<10} "
+            f"{monto_val:>14,.2f} {ingreso_val:>14,.2f} {egreso_val:>14,.2f} {saldo_actual:>16,.2f}"
+        )
+
     db.commit()
-    return {"message": "Saldos recalculados correctamente", "partidas_actualizadas": len(partidas)}
+
+    # --- Resumen final, comparable contra get_balance() ---
+    print("-" * 92)
+    print(f"[recalcular_saldos] Total ingresos sumados : ${total_ingresos_sumados:,.2f}")
+    print(f"[recalcular_saldos] Total egresos sumados  : ${total_egresos_sumados:,.2f}")
+    print(f"[recalcular_saldos] Saldo final (ing-egr)  : ${saldo_actual:,.2f}")
+
+    if tipos_no_reconocidos:
+        print(f"[recalcular_saldos] ⚠ Partidas con tipo distinto de ingreso/egreso "
+              f"(no afectan el saldo): {tipos_no_reconocidos}")
+
+    if inconsistencias_monto:
+        print(f"[recalcular_saldos] ⚠ {len(inconsistencias_monto)} partidas con "
+              f"monto != ingreso/egreso (revisar estas manualmente):")
+        for pid, tipo, monto_val, ing, egr in inconsistencias_monto:
+            print(f"    id={pid} tipo={tipo} monto={monto_val:,.2f} "
+                  f"ingreso={ing:,.2f} egreso={egr:,.2f}")
+    else:
+        print("[recalcular_saldos] ✔ Sin inconsistencias monto/ingreso/egreso")
+
+    return {
+        "message": "Saldos recalculados correctamente",
+        "partidas_actualizadas": len(partidas),
+        "total_ingresos": total_ingresos_sumados,
+        "total_egresos": total_egresos_sumados,
+        "saldo_final": saldo_actual,
+        "tipos_no_reconocidos": tipos_no_reconocidos,
+        "inconsistencias_monto": len(inconsistencias_monto),
+    }
 
 def get_auditoria(db: Session, skip: int = 0, limit: int = 100, 
                 tabla_afectada: Optional[str] = None, usuario_id: Optional[int] = None,
