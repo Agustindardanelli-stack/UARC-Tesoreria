@@ -907,10 +907,10 @@ def generar_libro_diario_pdf(
     current_user: models.Usuario = Depends(get_current_active_user),
 ):
     from fastapi.responses import Response
-    from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
-    from reportlab.platypus import Table, TableStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer
     from io import BytesIO
 
     MESES = {
@@ -920,24 +920,8 @@ def generar_libro_diario_pdf(
     }
 
     partidas = crud.get_partidas_por_mes(db, mes=mes, anio=anio)
-
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=A4)
-    ancho, alto = A4
-
-    # --- Encabezado ---
-    p.setFillColor(colors.HexColor("#1e40af"))
-    p.rect(0, alto - 80, ancho, 80, fill=True, stroke=False)
-
-    p.setFillColor(colors.white)
-    p.setFont("Helvetica-Bold", 18)
-    p.drawString(40, alto - 40, "Unión de Árbitros de Río Cuarto")
-    p.setFont("Helvetica", 11)
-    p.drawString(40, alto - 60, f"Libro Diario — {MESES.get(mes, mes)} {anio}")
-
-    # Fecha de generación
-    p.setFont("Helvetica", 9)
-    p.drawRightString(ancho - 40, alto - 55, f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    mes_nombre = MESES.get(mes, mes)
+    generado_str = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     # --- Totales del mes ---
     total_ingresos = sum(float(p2.monto) for p2 in partidas if p2.tipo == "ingreso")
@@ -945,23 +929,76 @@ def generar_libro_diario_pdf(
     balance = total_ingresos - total_egresos
     saldo_final = float(partidas[-1].saldo) if partidas else 0
 
-    y = alto - 110
-    p.setFillColor(colors.HexColor("#f0f9ff"))
-    p.rect(30, y - 10, ancho - 60, 50, fill=True, stroke=False)
-    p.setFillColor(colors.HexColor("#166534"))
-    p.setFont("Helvetica-Bold", 10)
-    p.drawString(50, y + 25, f"Ingresos: ${total_ingresos:,.2f}")
-    p.setFillColor(colors.HexColor("#991b1b"))
-    p.drawString(200, y + 25, f"Egresos: ${total_egresos:,.2f}")
-    p.setFillColor(colors.HexColor("#1e40af") if balance >= 0 else colors.HexColor("#991b1b"))
-    p.drawString(350, y + 25, f"Balance: ${balance:,.2f}")
-    p.setFillColor(colors.HexColor("#374151"))
-    p.drawString(50, y + 8, f"Saldo al cierre del mes: ${saldo_final:,.2f}")
-    p.drawString(350, y + 8, f"Total movimientos: {len(partidas)}")
+    ancho, alto = A4
 
-    # --- Tabla de partidas ---
-    y_tabla = y - 25
+    # --- Header / footer que se repite en TODAS las páginas ---
+    def header_footer(canvas_obj, doc):
+        canvas_obj.saveState()
 
+        # Banner superior
+        canvas_obj.setFillColor(colors.HexColor("#1e40af"))
+        canvas_obj.rect(0, alto - 60, ancho, 60, fill=True, stroke=False)
+        canvas_obj.setFillColor(colors.white)
+        canvas_obj.setFont("Helvetica-Bold", 14)
+        canvas_obj.drawString(30, alto - 28, "Unión de Árbitros de Río Cuarto")
+        canvas_obj.setFont("Helvetica", 10)
+        canvas_obj.drawString(30, alto - 45, f"Libro Diario — {mes_nombre} {anio}")
+        canvas_obj.setFont("Helvetica", 8)
+        canvas_obj.drawRightString(ancho - 30, alto - 28, f"Generado: {generado_str}")
+
+        # Footer
+        canvas_obj.setFillColor(colors.HexColor("#6b7280"))
+        canvas_obj.setFont("Helvetica", 8)
+        canvas_obj.drawCentredString(
+            ancho / 2, 20, "UARC — Sistema de Tesorería | Documento generado automáticamente"
+        )
+        canvas_obj.drawRightString(ancho - 30, 20, f"Página {doc.page}")
+
+        canvas_obj.restoreState()
+
+    # --- Documento con márgenes: dejamos lugar arriba para el banner ---
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        topMargin=95,
+        bottomMargin=40,
+        leftMargin=30,
+        rightMargin=30,
+    )
+
+    elementos = []
+
+    # --- Caja de totales (como un mini-Table de una fila, con color) ---
+    totales_data = [[
+        f"Ingresos: ${total_ingresos:,.2f}",
+        f"Egresos: ${total_egresos:,.2f}",
+        f"Balance: ${balance:,.2f}",
+    ], [
+        f"Saldo al cierre del mes: ${saldo_final:,.2f}",
+        f"Total movimientos: {len(partidas)}",
+        "",
+    ]]
+    tabla_totales = Table(totales_data, colWidths=[(ancho - 60) / 3] * 3)
+    tabla_totales.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f0f9ff")),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TEXTCOLOR", (0, 0), (0, 0), colors.HexColor("#166534")),
+        ("TEXTCOLOR", (1, 0), (1, 0), colors.HexColor("#991b1b")),
+        ("TEXTCOLOR", (2, 0), (2, 0),
+         colors.HexColor("#1e40af") if balance >= 0 else colors.HexColor("#991b1b")),
+        ("TEXTCOLOR", (0, 1), (-1, 1), colors.HexColor("#374151")),
+        ("FONTNAME", (0, 1), (-1, 1), "Helvetica"),
+        ("FONTSIZE", (0, 1), (-1, 1), 8.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+    ]))
+    elementos.append(tabla_totales)
+    elementos.append(Spacer(1, 14))
+
+    # --- Tabla de movimientos ---
     encabezados = ["Fecha", "Detalle", "Comprobante", "Ingreso", "Egreso", "Saldo"]
     filas = [encabezados]
 
@@ -976,54 +1013,39 @@ def generar_libro_diario_pdf(
 
     col_widths = [65, 155, 90, 70, 70, 75]
 
+    # repeatRows=1 -> el encabezado de la tabla se repite en cada página nueva
     tabla = Table(filas, colWidths=col_widths, repeatRows=1)
     tabla.setStyle(TableStyle([
-        # Encabezado
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e40af")),
-        ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
-        ("FONTNAME",   (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE",   (0, 0), (-1, 0), 8),
-        ("ALIGN",      (0, 0), (-1, 0), "CENTER"),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 8),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
         ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-        ("TOPPADDING",    (0, 0), (-1, 0), 6),
-        # Filas
-        ("FONTNAME",   (0, 1), (-1, -1), "Helvetica"),
-        ("FONTSIZE",   (0, 1), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, 0), 6),
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 1), (-1, -1), 8),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
-        ("GRID",       (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
-        ("ALIGN",      (3, 1), (-1, -1), "RIGHT"),
-        ("TOPPADDING",    (0, 1), (-1, -1), 4),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e2e8f0")),
+        ("ALIGN", (3, 1), (-1, -1), "RIGHT"),
+        ("TOPPADDING", (0, 1), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
-        # Colorear ingresos y egresos
-        ("TEXTCOLOR",  (3, 1), (3, -1), colors.HexColor("#166534")),
-        ("TEXTCOLOR",  (4, 1), (4, -1), colors.HexColor("#991b1b")),
+        ("TEXTCOLOR", (3, 1), (3, -1), colors.HexColor("#166534")),
+        ("TEXTCOLOR", (4, 1), (4, -1), colors.HexColor("#991b1b")),
+        # Evita que una fila se corte a la mitad entre dos páginas
+        ("ROWSPLITRANGE", (0, 0), (-1, -1)),
     ]))
+    elementos.append(tabla)
 
-    tabla.wrapOn(p, ancho - 60, alto)
-    tabla_alto = tabla._height
+    doc.build(elementos, onFirstPage=header_footer, onLaterPages=header_footer)
 
-    # Si la tabla no entra, nueva página
-    if y_tabla - tabla_alto < 40:
-        p.showPage()
-        y_tabla = alto - 40
-
-    tabla.drawOn(p, 30, y_tabla - tabla_alto)
-
-    # --- Pie de página ---
-    p.setFillColor(colors.HexColor("#6b7280"))
-    p.setFont("Helvetica", 8)
-    p.drawCentredString(ancho / 2, 25, "UARC — Sistema de Tesorería | Documento generado automáticamente")
-
-    p.save()
     buffer.seek(0)
-
-    nombre_archivo = f"libro_diario_{MESES.get(mes, mes)}_{anio}.pdf"
+    nombre_archivo = f"libro_diario_{mes_nombre}_{anio}.pdf"
     return Response(
         content=buffer.getvalue(),
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={nombre_archivo}"},
     )
-
 
 
 # email endpoints
