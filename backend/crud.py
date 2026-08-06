@@ -1,20 +1,94 @@
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc
-from sqlalchemy import func, extract
-from datetime import datetime
-from typing import Optional
-from fastapi import HTTPException
-from typing import List, Optional, Dict, Any
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException
+from sqlalchemy import Date, and_, cast, desc, extract, func
+from sqlalchemy.orm import Session, joinedload
 
-from datetime import date, datetime, timezone, timedelta
-import models
-import schemas
 from audit_middleware import audit_trail
 from auth import get_password_hash
+from email_service import EmailService
 import models
+import schemas
+
+
+# ==========================================
+# Funciones Auxiliares para Email en Background
+# ==========================================
+def enviar_email_cobranza_background(db_session_factory, cobranza_id: int):
+    """Procesa el envío de email de recibo en segundo plano sin bloquear el POST."""
+    db = db_session_factory()
+    try:
+        db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
+        if not db_cobranza or db_cobranza.tipo_documento != "recibo":
+            return
+
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first()
+        if usuario and usuario.email:
+            email_config = get_active_email_config(db)
+            if email_config:
+                email_service = EmailService(
+                    smtp_server=email_config.smtp_server,
+                    smtp_port=email_config.smtp_port,
+                    username=email_config.smtp_username,
+                    password=email_config.smtp_password,
+                    sender_email=email_config.email_from
+                )
+                success, message = email_service.send_receipt_email(
+                    db=db,
+                    cobranza=db_cobranza, 
+                    recipient_email=usuario.email
+                )
+                if success:
+                    db_cobranza.email_enviado = True
+                    db_cobranza.fecha_envio_email = datetime.now()
+                    db_cobranza.email_destinatario = usuario.email
+                    db.commit()
+    except Exception as e:
+        print(f"Error enviando email de cobranza en segundo plano: {str(e)}")
+    finally:
+        db.close()
+
+
+def enviar_email_pago_background(db_session_factory, pago_id: int):
+    """Procesa el envío de email de orden de pago en segundo plano sin bloquear el POST."""
+    db = db_session_factory()
+    try:
+        db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
+        if not db_pago or db_pago.tipo_documento != "orden_pago":
+            return
+
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
+        if usuario and usuario.email:
+            email_config = get_active_email_config(db)
+            if email_config:
+                email_service = EmailService(
+                    smtp_server=email_config.smtp_server,
+                    smtp_port=email_config.smtp_port,
+                    username=email_config.smtp_username,
+                    password=email_config.smtp_password,
+                    sender_email=email_config.email_from
+                )
+                success, message = email_service.send_payment_receipt_email(
+                    db=db,
+                    pago=db_pago, 
+                    recipient_email=usuario.email
+                )
+                if success:
+                    db_pago.email_enviado = True
+                    db_pago.fecha_envio_email = datetime.now()
+                    db_pago.email_destinatario = usuario.email
+                    db.commit()
+    except Exception as e:
+        print(f"Error enviando email de pago en segundo plano: {str(e)}")
+    finally:
+        db.close()
+
+
+# ==========================================
 # Funciones CRUD para Usuarios
+# ==========================================
 def create_usuario(db: Session, usuario: schemas.UsuarioCreate):
     hashed_password = get_password_hash(usuario.password)
     db_usuario = models.Usuario(
@@ -44,7 +118,7 @@ def update_usuario(db: Session, usuario_id: int, usuario_update: schemas.Usuario
     
     update_data = usuario_update.dict(exclude_unset=True)
     
-    if "password" in update_data and update_data["password"]:
+    if update_data.get("password"):
         update_data["password_hash"] = get_password_hash(update_data.pop("password"))
     
     for key, value in update_data.items():
@@ -63,7 +137,10 @@ def delete_usuario(db: Session, usuario_id: int):
     db.commit()
     return {"message": "Usuario eliminado exitosamente"}
 
+
+# ==========================================
 # Funciones CRUD para Roles
+# ==========================================
 def create_rol(db: Session, rol: schemas.RolCreate):
     db_rol = models.Rol(**rol.dict())
     db.add(db_rol)
@@ -83,7 +160,6 @@ def update_rol(db: Session, rol_id: int, rol_update: schemas.RolUpdate):
         raise HTTPException(status_code=404, detail="Rol no encontrado")
     
     update_data = rol_update.dict(exclude_unset=True)
-    
     for key, value in update_data.items():
         setattr(db_rol, key, value)
     
@@ -96,7 +172,6 @@ def delete_rol(db: Session, rol_id: int):
     if not db_rol:
         raise HTTPException(status_code=404, detail="Rol no encontrado")
     
-    # Verificar si hay usuarios con este rol
     usuarios_con_rol = db.query(models.Usuario).filter(models.Usuario.rol_id == rol_id).count()
     if usuarios_con_rol > 0:
         raise HTTPException(
@@ -109,8 +184,10 @@ def delete_rol(db: Session, rol_id: int):
     return {"message": "Rol eliminado exitosamente"}
 
 
+# ==========================================
 # Funciones CRUD para EmailConfig
-def create_email_config(db: Session, config_data):
+# ==========================================
+def create_email_config(db: Session, config_data: dict):
     db_config = models.EmailConfig(**config_data)
     db.add(db_config)
     db.commit()
@@ -118,9 +195,9 @@ def create_email_config(db: Session, config_data):
     return db_config
 
 def get_active_email_config(db: Session):
-    return db.query(models.EmailConfig).filter(models.EmailConfig.is_active == True).first()
+    return db.query(models.EmailConfig).filter(models.EmailConfig.is_active.is_(True)).first()
 
-def update_email_config(db: Session, config_id: int, config_data):
+def update_email_config(db: Session, config_id: int, config_data: dict):
     db_config = db.query(models.EmailConfig).filter(models.EmailConfig.id == config_id).first()
     if not db_config:
         return None
@@ -133,8 +210,9 @@ def update_email_config(db: Session, config_id: int, config_data):
     return db_config
 
 
-
+# ==========================================
 # Funciones CRUD para Retenciones
+# ==========================================
 def create_retencion(db: Session, retencion: schemas.RetencionCreate):
     db_retencion = models.Retencion(**retencion.dict())
     db.add(db_retencion)
@@ -154,7 +232,6 @@ def update_retencion(db: Session, retencion_id: int, retencion_update: schemas.R
         raise HTTPException(status_code=404, detail="Retención no encontrada")
     
     update_data = retencion_update.dict(exclude_unset=True)
-    
     for key, value in update_data.items():
         setattr(db_retencion, key, value)
     
@@ -167,46 +244,32 @@ def delete_retencion(db: Session, retencion_id: int):
     if not db_retencion:
         raise HTTPException(status_code=404, detail="Retención no encontrada")
     
-    # # Verificar si hay pagos con esta retención
-    # # pagos_con_retencion = db.query(models.Pago).filter(models.Pago.retencion_id == retencion_id).count()
-    # if pagos_con_retencion > 0:
-    #     raise HTTPException(
-    #         status_code=400, 
-    #         detail=f"No se puede eliminar la retención porque hay {pagos_con_retencion} pagos asociados a ella"
-    #     )
-    
     db.delete(db_retencion)
     db.commit()
     return {"message": "Retención eliminada exitosamente"}
 
+
+# ==========================================
 # Funciones CRUD para Pagos
+# ==========================================
 @audit_trail("pagos")
 def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
-    # Imprimir para depuración
-    print(f"Tipo de documento recibido: {pago.tipo_documento}")
-    
-    # Crear el pago
     db_pago = models.Pago(**pago.dict())
     db.add(db_pago)
     db.commit()
     db.refresh(db_pago)
     
-    # Obtener información del usuario para el detalle
     usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
     nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
     
-    # NUEVA LÓGICA: Generar número de recibo/factura según tipo de documento
     if db_pago.tipo_documento == "factura":
-        # Para facturas, usar el formato FAC-
         recibo_factura = f"FAC/REC.A-{db_pago.numero_factura}"
     else:
-        # Para órdenes de pago, buscar la última y generar el siguiente número
         ultima_orden_pago = db.query(models.Partida).filter(
             models.Partida.recibo_factura.like("O.P-%")
         ).order_by(models.Partida.id.desc()).first()
         
         if ultima_orden_pago and ultima_orden_pago.recibo_factura:
-            # Extraer el número de la última orden de pago
             try:
                 ultimo_num = int(ultima_orden_pago.recibo_factura.split('-')[1])
                 nuevo_num = ultimo_num + 1
@@ -217,98 +280,40 @@ def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
         
         recibo_factura = f"O.P-{nuevo_num}"
     
-    # Crear partida asociada al pago (egreso)
     partida = models.Partida(
         fecha=db_pago.fecha,
         detalle=f"Pago {nombre_usuario}",
         monto=db_pago.monto,
         tipo="egreso",
         cuenta="CAJA",
-        usuario_id=current_user_id,  # Usuario que realiza la acción
+        usuario_id=current_user_id,
         pago_id=db_pago.id,
-        saldo=0,  # placeholder, se recalcula abajo por fecha real
+        saldo=0,
         ingreso=0,
         egreso=db_pago.monto,
-        recibo_factura=recibo_factura  # IMPORTANTE: Asignar el número de comprobante generado
+        recibo_factura=recibo_factura
     )
     db.add(partida)
     db.commit()
 
-    # Recalcula TODAS las partidas en orden cronológico real, para que el
-    # saldo por fila siempre coincida con get_balance() (dashboard),
-    # sin importar si la fecha cargada es retroactiva.
     recalcular_saldos_partidas(db)
-    
-    # Comprobar si es una orden de pago (no una factura)
-    enviar_email = (db_pago.tipo_documento == "orden_pago")
-    
-    # Enviar email solo si es una orden de pago
-    if enviar_email:
-        try:
-            # Verificar si hay configuración de email activa y el usuario tiene email
-            if usuario and usuario.email:
-                email_config = get_active_email_config(db)
-                
-                if email_config:
-                    # Importar aquí para evitar problemas de importación circular
-                    from email_service import EmailService
-                    
-                    # Crear servicio de email
-                    email_service = EmailService(
-                        smtp_server=email_config.smtp_server,
-                        smtp_port=email_config.smtp_port,
-                        username=email_config.smtp_username,
-                        password=email_config.smtp_password,
-                        sender_email=email_config.email_from
-                    )
-                    
-                    # Enviar recibo
-                    success, message = email_service.send_payment_receipt_email(
-                        db=db,
-                        pago=db_pago, 
-                        recipient_email=usuario.email
-                    )
-                    
-                    # Actualizar estado del envío
-                    if success:
-                        db_pago.email_enviado = True
-                        db_pago.fecha_envio_email = datetime.now()
-                        db_pago.email_destinatario = usuario.email
-                        db.commit()
-                        db.refresh(db_pago)
-                        print(f"Orden de pago enviada por email a {usuario.email}")
-                    else:
-                        print(f"Error al enviar orden de pago: {message}")
-        except Exception as e:
-            print(f"Error en envío de orden de pago por email: {str(e)}")
-    
     return db_pago
 
-# Añadir función para reenviar órdenes de pago
-def reenviar_orden_pago(db: Session, pago_id: int, email: str = None, current_user_id: int = None):
-    # Obtener el pago
+def reenviar_orden_pago(db: Session, pago_id: int, email: Optional[str] = None, current_user_id: Optional[int] = None):
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not db_pago:
         return {"success": False, "message": "Pago no encontrado"}
     
-    # Obtener usuario
     usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
-    
-    # Determinar el email a usar
-    recipient_email = email if email else (usuario.email if usuario else None)
+    recipient_email = email or (usuario.email if usuario else None)
     
     if not recipient_email:
         return {"success": False, "message": "No hay email destinatario disponible"}
     
-    # Obtener configuración de email
     email_config = get_active_email_config(db)
     if not email_config:
         return {"success": False, "message": "No hay configuración de email activa"}
     
-    # Importar aquí para evitar problemas de importación circular
-    from email_service import EmailService
-    
-    # Enviar la orden de pago
     email_service = EmailService(
         smtp_server=email_config.smtp_server,
         smtp_port=email_config.smtp_port,
@@ -323,7 +328,6 @@ def reenviar_orden_pago(db: Session, pago_id: int, email: str = None, current_us
         recipient_email=recipient_email
     )
     
-    # Actualizar estado
     if success:
         db_pago.email_enviado = True
         db_pago.fecha_envio_email = datetime.now()
@@ -331,31 +335,23 @@ def reenviar_orden_pago(db: Session, pago_id: int, email: str = None, current_us
         db.commit()
         db.refresh(db_pago)
         return {"success": True, "message": "Orden de pago enviada exitosamente"}
-    else:
-        return {"success": False, "message": message}
+    return {"success": False, "message": message}
 
 @audit_trail("pagos")
-def get_pagos(db: Session, skip: int = 0, limit: int = 100,):
-    
-    pagos = db.query(models.Pago).order_by(desc(models.Pago.fecha)).offset(skip).limit(limit).all()
-    
-    return pagos
+def get_pagos(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Pago).order_by(desc(models.Pago.fecha)).offset(skip).limit(limit).all()
 
 @audit_trail("pagos")
-def get_pago(db: Session, pago_id: int, current_user_id: int = None):
-    pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
-    return pago
-
+def get_pago(db: Session, pago_id: int, current_user_id: Optional[int] = None):
+    return db.query(models.Pago).filter(models.Pago.id == pago_id).first()
 
 @audit_trail("pagos")
-def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate, current_user_id: int = None):
+def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate, current_user_id: Optional[int] = None):
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not db_pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
     
-    # Guardar monto anterior para comparar
     monto_anterior = db_pago.monto
-    
     update_data = pago_update.dict(exclude_unset=True)
     
     for key, value in update_data.items():
@@ -364,13 +360,11 @@ def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate, curr
     db.commit()
     db.refresh(db_pago)
     
-    # Actualizar partida asociada
     partida = db.query(models.Partida).filter(models.Partida.pago_id == pago_id).first()
     if partida:
         fecha_anterior = partida.fecha
         partida.fecha = db_pago.fecha
         
-        # Obtener nombre de usuario
         usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
         
@@ -380,65 +374,46 @@ def update_pago(db: Session, pago_id: int, pago_update: schemas.PagoUpdate, curr
         partida.usuario_id = db_pago.usuario_id
         db.commit()
         
-        # Si cambió el monto o la fecha (afecta el orden cronológico),
-        # recalculamos TODAS las partidas de una — evita que la propia
-        # partida editada o alguna del mismo día queden con saldo viejo.
         if abs(monto_anterior - db_pago.monto) > 0.01 or fecha_anterior != db_pago.fecha:
             recalcular_saldos_partidas(db)
     
     return db_pago
+
 @audit_trail("pagos")
-def delete_pago(db: Session, pago_id: int, current_user_id: int = None):
+def delete_pago(db: Session, pago_id: int, current_user_id: Optional[int] = None):
     db_pago = db.query(models.Pago).filter(models.Pago.id == pago_id).first()
     if not db_pago:
         raise HTTPException(status_code=404, detail="Pago no encontrado")
     
-    # Guardar fecha y monto del pago para recalcular saldos después
-    fecha_pago = db_pago.fecha
-    monto_pago = db_pago.monto
-    
-    # Encontrar la partida asociada
     partida = db.query(models.Partida).filter(models.Partida.pago_id == pago_id).first()
-    
-    # Eliminar partida asociada
     if partida:
         db.delete(partida)
     
-    # Eliminar el pago
     db.delete(db_pago)
     db.commit()
     
-    # Recalcula TODAS las partidas en orden cronológico real, igual que
-    # delete_cobranza — mismo criterio en toda la app.
     recalcular_saldos_partidas(db)
-    
     return {"message": "Pago eliminado exitosamente"}
 
-# Añadir función para reenviar recibos
-def reenviar_recibo(db: Session, cobranza_id: int, email: str = None , current_user_id: int = None):
-    # Obtener la cobranza
+
+# ==========================================
+# Funciones CRUD para Cobranza
+# ==========================================
+def reenviar_recibo(db: Session, cobranza_id: int, email: Optional[str] = None, current_user_id: Optional[int] = None):
     db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
     if not db_cobranza:
         return {"success": False, "message": "Cobranza no encontrada"}
     
-    # Obtener usuario
     usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first()
-    
-    # Determinar el email a usar
-    recipient_email = email if email else (usuario.email if usuario else None)
+    recipient_email = email or (usuario.email if usuario else None)
     
     if not recipient_email:
         return {"success": False, "message": "No hay email destinatario disponible"}
     
-    # Obtener configuración de email
     email_config = get_active_email_config(db)
     if not email_config:
         return {"success": False, "message": "No hay configuración de email activa"}
     
-    # Importar aquí para evitar problemas de importación circular
-    from email_service import EmailService
-    
-    # Enviar el recibo
     email_service = EmailService(
         smtp_server=email_config.smtp_server,
         smtp_port=email_config.smtp_port,
@@ -453,7 +428,6 @@ def reenviar_recibo(db: Session, cobranza_id: int, email: str = None , current_u
         recipient_email=recipient_email
     )
     
-    # Actualizar estado
     if success:
         db_cobranza.email_enviado = True
         db_cobranza.fecha_envio_email = datetime.now()
@@ -461,37 +435,28 @@ def reenviar_recibo(db: Session, cobranza_id: int, email: str = None , current_u
         db.commit()
         db.refresh(db_cobranza)
         return {"success": True, "message": "Recibo enviado exitosamente"}
-    else:
-        return {"success": False, "message": message}
+    return {"success": False, "message": message}
 
 @audit_trail("cobranza")
 def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_id: int):
-    # Validar retencion_id si se proporciona
     if cobranza.retencion_id is not None:
         retencion = db.query(models.Retencion).filter(models.Retencion.id == cobranza.retencion_id).first()
         if not retencion:
             raise HTTPException(status_code=404, detail="Retención no encontrada")
-    
-    # Imprimir para depuración
-    print(f"Tipo de documento recibido: {cobranza.tipo_documento}")
     
     db_cobranza = models.Cobranza(**cobranza.dict())
     db.add(db_cobranza)
     db.commit()
     db.refresh(db_cobranza)
     
-    # NUEVA LÓGICA: Generar número de recibo/factura según tipo de documento
     if db_cobranza.tipo_documento == "factura":
-        # Para facturas, usar el formato FAC-X
         recibo_factura = f"FAC/REC.A-{db_cobranza.numero_factura}"
     else:
-        # Para recibos de cobranza, buscar el último y generar el siguiente número
         ultimo_recibo = db.query(models.Partida).filter(
             models.Partida.recibo_factura.like("REC-%")
         ).order_by(models.Partida.id.desc()).first()
         
         if ultimo_recibo and ultimo_recibo.recibo_factura:
-            # Extraer el número del último recibo
             try:
                 ultimo_num = int(ultimo_recibo.recibo_factura.split('-')[1])
                 nuevo_num = ultimo_num + 1
@@ -502,83 +467,35 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
         
         recibo_factura = f"REC-{nuevo_num}"
     
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first()
+    nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
+
     partida = models.Partida(
         fecha=db_cobranza.fecha,
-        detalle=f"Cobranza - {db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first().nombre}",
+        detalle=f"Cobranza - {nombre_usuario}",
         monto=db_cobranza.monto,
         tipo="ingreso",
         cuenta="CAJA",
-        usuario_id=current_user_id,  # Usuario que REALIZA la acción
+        usuario_id=current_user_id,
         cobranza_id=db_cobranza.id,
-        saldo=0,  # placeholder, se recalcula abajo por fecha real
+        saldo=0,
         ingreso=db_cobranza.monto,
         egreso=0,
-        recibo_factura=recibo_factura  # IMPORTANTE: Asignar el número de comprobante generado
+        recibo_factura=recibo_factura
     )
     db.add(partida)
     db.commit()
 
-    # Recalcula TODAS las partidas en orden cronológico real, para que el
-    # saldo por fila siempre coincida con get_balance() (dashboard).
-    recalcular_saldos_partidas(db)
-    
-    # Comprobar si es un recibo (no una factura)
-    enviar_email = (db_cobranza.tipo_documento == "recibo")
-    
-    # Enviar email solo si es un recibo
-    if enviar_email:
-        try:
-            # Obtener usuario para su email
-            usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first()
-            
-            # Verificar si hay configuración de email activa y el usuario tiene email
-            if usuario and usuario.email:
-                email_config = get_active_email_config(db)
-                
-                if email_config:
-                    # Importar aquí para evitar problemas de importación circular
-                    from email_service import EmailService
-                    
-                    # Crear servicio de email
-                    email_service = EmailService(
-                        smtp_server=email_config.smtp_server,
-                        smtp_port=email_config.smtp_port,
-                        username=email_config.smtp_username,
-                        password=email_config.smtp_password,
-                        sender_email=email_config.email_from
-                    )
-                    
-                    # Enviar recibo
-                    success, message = email_service.send_receipt_email(
-                        db=db,
-                        cobranza=db_cobranza, 
-                        recipient_email=usuario.email
-                    )
-                    
-                    # Actualizar estado del envío
-                    if success:
-                        db_cobranza.email_enviado = True
-                        db_cobranza.fecha_envio_email = datetime.now()
-                        db_cobranza.email_destinatario = usuario.email
-                        db.commit()
-                        db.refresh(db_cobranza)
-                        print(f"Recibo enviado por email a {usuario.email}")
-                    else:
-                        print(f"Error al enviar recibo: {message}")
-        except Exception as e:
-            print(f"Error en envío de recibo por email: {str(e)}")
-    
+    # recalcular_saldos_partidas(db)
     return db_cobranza
 
 @audit_trail("cobranza")
-def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.CobranzaUpdate, current_user_id: int = None):
+def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.CobranzaUpdate, current_user_id: Optional[int] = None):
     db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
     if not db_cobranza:
         raise HTTPException(status_code=404, detail="Cobranza no encontrada")
     
-    # Guardar monto anterior para comparar
     monto_anterior = db_cobranza.monto
-    
     update_data = cobranza_update.dict(exclude_unset=True)
     
     for key, value in update_data.items():
@@ -587,12 +504,9 @@ def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.Cobr
     db.commit()
     db.refresh(db_cobranza)
     
-    # Actualizar partida asociada
     partida = db.query(models.Partida).filter(models.Partida.cobranza_id == cobranza_id).first()
     if partida:
         partida.fecha = db_cobranza.fecha
-        
-        # Obtener nombre de usuario
         usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cobranza.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
         
@@ -602,102 +516,72 @@ def update_cobranza(db: Session, cobranza_id: int, cobranza_update: schemas.Cobr
         partida.usuario_id = db_cobranza.usuario_id
         db.commit()
         
-        # Si el monto cambió, recalcular los saldos de todas las partidas posteriores
         if abs(monto_anterior - db_cobranza.monto) > 0.01:
-            partidas_posteriores = db.query(models.Partida).filter(
-                models.Partida.fecha >= partida.fecha,
-                models.Partida.id != partida.id
-            ).order_by(models.Partida.fecha, models.Partida.id).all()
-            
-            # Obtener saldo actualizado para esta partida
-            saldo_actual = partida.saldo
-            
-            # Actualizar saldos para todas las partidas posteriores
-            for p in partidas_posteriores:
-                if p.tipo == "ingreso":
-                    saldo_actual += p.monto
-                else:  # egreso
-                    saldo_actual -= p.monto
-                
-                p.saldo = saldo_actual
-            
-            db.commit()
+            recalcular_saldos_partidas(db)
     
     return db_cobranza
+
 def get_cobranza(db: Session, cobranza_id: int):
     return db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
 
 def get_cobranzas(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Cobranza).order_by(desc(models.Cobranza.fecha)).offset(skip).limit(limit).all()
 
-
 @audit_trail("cobranza")
-def delete_cobranza(db: Session, cobranza_id: int, current_user_id: int = None):
+def delete_cobranza(db: Session, cobranza_id: int, current_user_id: Optional[int] = None):
     db_cobranza = db.query(models.Cobranza).filter(models.Cobranza.id == cobranza_id).first()
     if not db_cobranza:
         raise HTTPException(status_code=404, detail="Cobranza no encontrada")
     
-    # Guardar información relevante antes de eliminar
-    fecha_cobranza = db_cobranza.fecha
     monto_cobranza = db_cobranza.monto
     usuario_id = db_cobranza.usuario_id
-    
-    # Obtener información del usuario para registro
     usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
     nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
     
-    # Encontrar la partida asociada
     partida = db.query(models.Partida).filter(models.Partida.cobranza_id == cobranza_id).first()
-    
-    # Eliminar partida asociada
     if partida:
         db.delete(partida)
 
-    recalcular_saldos_partidas(db)    
-    # Eliminar la cobranza
     db.delete(db_cobranza)
     db.commit()
     
-    # Crear partida/movimiento que registre la eliminación
+    recalcular_saldos_partidas(db)
+    
     partida_eliminacion = models.Partida(
         fecha=func.now(),
         detalle=f"ELIMINACIÓN Cobranza - {nombre_usuario} (ID: {cobranza_id})",
         monto=monto_cobranza,
-        tipo="anulacion",  # Nuevo tipo para identificar eliminaciones
+        tipo="anulacion",
         cuenta="CAJA",
-        usuario_id=current_user_id,  # Usuario que realizó la eliminación
+        usuario_id=current_user_id,
         ingreso=0,
-        egreso=0,  # No afecta el balance nuevamente
-        saldo=0  # Se calculará después
+        egreso=0,
+        saldo=0
     )
     db.add(partida_eliminacion)
     db.commit()
-    db.refresh(partida_eliminacion)
-    
-    
     
     return {"message": "Cobranza eliminada exitosamente"}
-# Funciones CRUD para Cuotas
 
+
+# ==========================================
+# Funciones CRUD para Cuotas
+# ==========================================
 @audit_trail("cuota")
 def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, no_generar_movimiento: bool = False):
-    # Obtener el último número de comprobante
     ultimo = db.query(func.max(models.Cuota.nro_comprobante)).scalar() or 42
     nro_comprobante = ultimo + 1
 
-    # Crear la cuota con información del usuario que la creó
     cuota_data = cuota.dict()
     cuota_data['creado_por_usuario_id'] = current_user_id
-    cuota_data['nro_comprobante'] = nro_comprobante  # ✅ Asignar número único
+    cuota_data['nro_comprobante'] = nro_comprobante
 
     db_cuota = models.Cuota(**cuota_data)
     db.add(db_cuota)
     db.commit()
     db.refresh(db_cuota)
 
-    # Solo crear partida si no_generar_movimiento es False
     if not no_generar_movimiento:
-        # Obtener información del usuario para el detalle
         usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
         nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
 
@@ -708,20 +592,16 @@ def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, 
             tipo="ingreso",
             cuenta="CUOTAS",
             usuario_id=current_user_id,
-            recibo_factura=f"C.S.-{db_cuota.nro_comprobante}",  # ✅ usar número real
-            saldo=0,  # placeholder, se recalcula abajo por fecha real
+            recibo_factura=f"C.S.-{db_cuota.nro_comprobante}",
+            saldo=0,
             ingreso=db_cuota.monto,
             egreso=0
         )
         db.add(partida)
         db.commit()
-
-        # Recalcula TODAS las partidas en orden cronológico real, para que
-        # el saldo por fila siempre coincida con get_balance() (dashboard).
         recalcular_saldos_partidas(db)
 
     return db_cuota
-
 
 @audit_trail("cuota")
 def pagar_cuota(
@@ -730,13 +610,12 @@ def pagar_cuota(
     monto_pagado: float,
     generar_movimiento: bool = True,
     actualizar_saldo: bool = True,
-    current_user_id: int = None,
+    current_user_id: Optional[int] = None,
 ):
     cuota = db.query(models.Cuota).options(joinedload(models.Cuota.usuario)).filter(models.Cuota.id == cuota_id).first()
 
     if not cuota:
         raise ValueError("No se encontró la cuota")
-
     if cuota.pagado:
         raise ValueError("La cuota ya está pagada")
 
@@ -745,13 +624,11 @@ def pagar_cuota(
     cuota.pagado_por_usuario_id = current_user_id
     cuota.fecha_pago = datetime.now()
 
-    # Limpiar campos de deuda acumulada
     cuota.monto_total_pendiente = None
     cuota.cuotas_pendientes = None
     cuota.fecha_primera_deuda = None
     cuota.meses_atraso = None
 
-    # Movimiento contable
     if generar_movimiento:
         nueva_partida = models.Partida(
             fecha=datetime.now().date(),
@@ -759,17 +636,15 @@ def pagar_cuota(
             detalle=f"Pago de cuota de {cuota.usuario.nombre}" if cuota.usuario else "Pago de cuota",
             ingreso=Decimal(monto_pagado),
             egreso=0,
-            saldo=0,  # placeholder, se recalcula abajo por fecha real
+            saldo=0,
             usuario_id=current_user_id,
             monto=Decimal(monto_pagado),
             tipo="ingreso",
-            recibo_factura=f"C.S.-{cuota.nro_comprobante}",  # ✅ usar nro_comprobante
+            recibo_factura=f"C.S.-{cuota.nro_comprobante}",
         )
         db.add(nueva_partida)
         db.commit()
 
-        # Recalcula TODAS las partidas en orden cronológico real, para que
-        # el saldo por fila siempre coincida con get_balance() (dashboard).
         recalcular_saldos_partidas(db)
 
         if actualizar_saldo:
@@ -780,8 +655,6 @@ def pagar_cuota(
     db.refresh(cuota)
 
     return cuota
-
-
 
 def get_cuota(db: Session, cuota_id: int):
     return db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
@@ -826,7 +699,6 @@ def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bo
             "usuario": {
                 "id": cuota.usuario.id,
                 "nombre": str(cuota.usuario.nombre)
-
             } if cuota.usuario else None,
             "meses_atraso": meses_atraso if not cuota.pagado else None,
             "cuotas_pendientes": len(info_usuario.get('cuotas', [])) if not cuota.pagado else None,
@@ -838,32 +710,20 @@ def get_cuotas(db: Session, skip: int = 0, limit: int = 100, pagado: Optional[bo
     return cuotas_procesadas
 
 def get_cuotas_by_usuario(db: Session, usuario_id: int, pagado: Optional[bool] = None):
-    # Consulta base de cuotas para un usuario específico
     query = db.query(models.Cuota).filter(models.Cuota.usuario_id == usuario_id)
     
-    # Filtrar por estado de pago si se especifica
     if pagado is not None:
         query = query.filter(models.Cuota.pagado == pagado)
     
-    # Ordenar por fecha, más recientes primero
     cuotas = query.order_by(desc(models.Cuota.fecha)).all()
-    
-    # Procesar cuotas no pagadas
     cuotas_pendientes = [cuota for cuota in cuotas if not cuota.pagado]
     fecha_actual = datetime.now().date()
     
-    # Si hay cuotas pendientes, añadir información de deuda
     if cuotas_pendientes:
-        # Calcular monto total de cuotas pendientes
         monto_total_pendiente = sum(cuota.monto for cuota in cuotas_pendientes)
-        
-        # Encontrar la fecha de la primera cuota pendiente
         fecha_primera_deuda = min(cuota.fecha for cuota in cuotas_pendientes)
-        
-        # Calcular meses de atraso
         meses_atraso = (fecha_actual.year - fecha_primera_deuda.year) * 12 + (fecha_actual.month - fecha_primera_deuda.month)
         
-        # Añadir información a cada cuota pendiente
         for cuota in cuotas_pendientes:
             cuota.monto_total_pendiente = float(monto_total_pendiente)
             cuota.cuotas_pendientes = len(cuotas_pendientes)
@@ -873,22 +733,19 @@ def get_cuotas_by_usuario(db: Session, usuario_id: int, pagado: Optional[bool] =
     return cuotas
 
 @audit_trail("cuota")
-def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate):
+def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate, current_user_id: Optional[int] = None):
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
     if not db_cuota:
         raise HTTPException(status_code=404, detail="Cuota no encontrada")
     
-    update_data = cuota_update.dict(exclude_unset=True)
-    
-    for key, value in update_data.items():
+    for key, value in cuota_update.dict(exclude_unset=True).items():
         setattr(db_cuota, key, value)
     
     db.commit()
     db.refresh(db_cuota)
     return db_cuota
 
-def reenviar_recibo_cuota(db: Session, cuota_id: int, email: str = None , current_user_id: int = None):
-    # Obtener la cuota
+def reenviar_recibo_cuota(db: Session, cuota_id: int, email: Optional[str] = None, current_user_id: Optional[int] = None):
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
     if not db_cuota:
         return {"success": False, "message": "Cuota no encontrada"}
@@ -896,24 +753,16 @@ def reenviar_recibo_cuota(db: Session, cuota_id: int, email: str = None , curren
     if not db_cuota.pagado:
         return {"success": False, "message": "La cuota no ha sido pagada aún"}
     
-    # Obtener usuario
     usuario = db.query(models.Usuario).filter(models.Usuario.id == db_cuota.usuario_id).first()
-    
-    # Determinar el email a usar
-    recipient_email = email if email else (usuario.email if usuario else None)
+    recipient_email = email or (usuario.email if usuario else None)
     
     if not recipient_email:
         return {"success": False, "message": "No hay email destinatario disponible"}
     
-    # Obtener configuración de email
     email_config = get_active_email_config(db)
     if not email_config:
         return {"success": False, "message": "No hay configuración de email activa"}
     
-    # Importar aquí para evitar problemas de importación circular
-    from email_service import EmailService
-    
-    # Enviar el recibo
     email_service = EmailService(
         smtp_server=email_config.smtp_server,
         smtp_port=email_config.smtp_port,
@@ -928,7 +777,6 @@ def reenviar_recibo_cuota(db: Session, cuota_id: int, email: str = None , curren
         recipient_email=recipient_email
     )
     
-    # Actualizar estado
     if success:
         db_cuota.email_enviado = True
         db_cuota.fecha_envio_email = datetime.now()
@@ -936,8 +784,7 @@ def reenviar_recibo_cuota(db: Session, cuota_id: int, email: str = None , curren
         db.commit()
         db.refresh(db_cuota)
         return {"success": True, "message": "Recibo de cuota enviado exitosamente"}
-    else:
-        return {"success": False, "message": message}
+    return {"success": False, "message": message}
 
 def delete_cuota(db: Session, cuota_id: int):
     db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
@@ -950,13 +797,15 @@ def delete_cuota(db: Session, cuota_id: int):
     db.delete(db_cuota)
     db.commit()
     return {"message": "Cuota eliminada exitosamente"}
+
+
+# ==========================================
 # Funciones CRUD para Partidas
+# ==========================================
 @audit_trail("partidas")
-def create_partida(db: Session, partida: schemas.PartidaCreate, current_user_id: int = None):
-    # Crear partida con saldo placeholder — se recalcula abajo por fecha real
+def create_partida(db: Session, partida: schemas.PartidaCreate, current_user_id: Optional[int] = None):
     db_partida = models.Partida(**partida.dict(exclude={'saldo'}), saldo=0)
     
-    # Si se proporciona current_user_id, establecerlo como usuario
     if current_user_id:
         db_partida.usuario_id = current_user_id
     
@@ -964,38 +813,31 @@ def create_partida(db: Session, partida: schemas.PartidaCreate, current_user_id:
     db.commit()
     db.refresh(db_partida)
 
-    # Recalcula TODAS las partidas en orden cronológico real, para que el
-    # saldo por fila siempre coincida con get_balance() (dashboard).
     recalcular_saldos_partidas(db)
     db.refresh(db_partida)
 
     return db_partida
 
-
-
 @audit_trail("partidas")
-def update_partida(db: Session, partida_id: int, partida_update: schemas.PartidaUpdate, current_user_id: int = None):
+def update_partida(db: Session, partida_id: int, partida_update: schemas.PartidaUpdate, current_user_id: Optional[int] = None):
     db_partida = db.query(models.Partida).filter(models.Partida.id == partida_id).first()
     if not db_partida:
         raise HTTPException(status_code=404, detail="Partida no encontrada")
     
     update_data = partida_update.dict(exclude_unset=True)
-    
     for key, value in update_data.items():
         setattr(db_partida, key, value)
     
     db.commit()
     db.refresh(db_partida)
 
-    # Cualquier cambio acá (monto, tipo, fecha) puede alterar el orden
-    # cronológico o el balance, así que recalculamos todo por las dudas.
     recalcular_saldos_partidas(db)
     db.refresh(db_partida)
 
     return db_partida
 
 @audit_trail("partidas")
-def delete_partida(db: Session, partida_id: int, current_user_id: int = None):
+def delete_partida(db: Session, partida_id: int, current_user_id: Optional[int] = None):
     db_partida = db.query(models.Partida).filter(models.Partida.id == partida_id).first()
     if not db_partida:
         raise HTTPException(status_code=404, detail="Partida no encontrada")
@@ -1003,23 +845,19 @@ def delete_partida(db: Session, partida_id: int, current_user_id: int = None):
     db.delete(db_partida)
     db.commit()
 
-    # Recalculamos todo para que el saldo de las partidas restantes
-    # quede coherente con get_balance() (dashboard).
     recalcular_saldos_partidas(db)
-
     return {"message": "Partida eliminada exitosamente"}
 
+
+# ==========================================
 # Funciones CRUD para Categorías
+# ==========================================
 def create_categoria(db: Session, categoria: schemas.CategoriaCreate):
-    # Obtener el mayor ID existente
     max_id = db.query(func.max(models.Categoria.id)).scalar() or 0
-    
-    # Crear objeto de categoria con un ID nuevo
     db_categoria = models.Categoria(
-        id=max_id + 1,  # Asignar un ID mayor que el máximo existente
+        id=max_id + 1,
         nombre=categoria.nombre
     )
-    
     db.add(db_categoria)
     db.commit()
     db.refresh(db_categoria)
@@ -1037,7 +875,6 @@ def update_categoria(db: Session, categoria_id: int, categoria_update: schemas.C
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     
     update_data = categoria_update.dict(exclude_unset=True)
-    
     for key, value in update_data.items():
         setattr(db_categoria, key, value)
     
@@ -1050,7 +887,6 @@ def delete_categoria(db: Session, categoria_id: int):
     if not db_categoria:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     
-    # Verificar si hay divisiones con esta categoría en lugar de transacciones
     divisiones_con_categoria = db.query(models.RetencionDivision).filter(
         models.RetencionDivision.categoria_id == categoria_id
     ).count()
@@ -1065,266 +901,10 @@ def delete_categoria(db: Session, categoria_id: int):
     db.commit()
     return {"message": "Categoría eliminada exitosamente"}
 
-# Funciones CRUD para Transacciones
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from fastapi import HTTPException
-from typing import Optional
-import models
-import schemas
 
-# def create_transaccion(db: Session, transaccion: schemas.TransaccionCreate, current_user_id: Optional[int] = None):
-#     """
-#     Crea una nueva transacción y calcula el saldo acumulado
-#     """
-#     # Crear el diccionario con los datos de la transacción
-#     transaccion_data = transaccion.dict()
-    
-#     # Crear objeto de transacción sin guardar aún (sin el saldo)
-#     db_transaccion = models.Transaccion(**transaccion_data)
-    
-#     # Obtener la última transacción para obtener el último saldo
-#     ultima_transaccion = db.query(models.Transaccion).order_by(
-#         desc(models.Transaccion.id)
-#     ).first()
-    
-#     ultimo_saldo = 0  # Saldo inicial si no hay transacciones previas
-    
-#     if ultima_transaccion and hasattr(ultima_transaccion, 'saldo') and ultima_transaccion.saldo is not None:
-#         ultimo_saldo = float(ultima_transaccion.saldo)
-    
-#     # Calcular nuevo saldo
-#     if db_transaccion.tipo == "ingreso":
-#         nuevo_saldo = ultimo_saldo + float(db_transaccion.monto)
-#     else:  # egreso
-#         nuevo_saldo = ultimo_saldo - float(db_transaccion.monto)
-    
-#     # Asignar el nuevo saldo a la transacción
-#     db_transaccion.saldo = nuevo_saldo
-    
-#     # Guardar en la base de datos
-#     db.add(db_transaccion)
-#     db.commit()
-#     db.refresh(db_transaccion)
-    
-#     # Registrar en auditoría si se proporciona un usuario
-#     if current_user_id:
-#         auditoria = models.Auditoria(
-#             usuario_id=current_user_id,
-#             accion="crear",
-#             tabla_afectada="transacciones",
-#             registro_id=db_transaccion.id,
-#             detalles=f"Creación de transacción: {db_transaccion.tipo} por {db_transaccion.monto}"
-#         )
-#         db.add(auditoria)
-#         db.commit()
-    
-#     return db_transaccion
-
-# def get_transaccion(db: Session, transaccion_id: int):
-#     return db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
-
-# def get_transacciones(db: Session, skip: int = 0, limit: int = 100, 
-#                      fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
-#                      tipo: Optional[str] = None):
-#     query = db.query(models.Transaccion)
-    
-#     # Aplicar filtros
-#     if fecha_desde:
-#         query = query.filter(models.Transaccion.fecha >= fecha_desde)
-    
-#     if fecha_hasta:
-#         query = query.filter(models.Transaccion.fecha <= fecha_hasta)
-    
-#     if tipo:
-#         query = query.filter(models.Transaccion.tipo == tipo)
-    
-#     return query.order_by(desc(models.Transaccion.fecha)).offset(skip).limit(limit).all()
-
-# def update_transaccion(db: Session, transaccion_id: int, transaccion_update: schemas.TransaccionUpdate, current_user_id: Optional[int] = None):
-#     db_transaccion = db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
-#     if not db_transaccion:
-#         raise HTTPException(status_code=404, detail="Transacción no encontrada")
-    
-#     update_data = transaccion_update.dict(exclude_unset=True)
-    
-#     # Guardar valores anteriores para registrar en auditoría
-#     old_values = {
-#         "tipo": db_transaccion.tipo,
-#         "monto": float(db_transaccion.monto),
-#         "fecha": db_transaccion.fecha
-#     }
-    
-#     # Si se cambia el tipo o monto, recalcular todos los saldos a partir de esta transacción
-#     recalcular_saldos = False
-#     if "tipo" in update_data or "monto" in update_data:
-#         recalcular_saldos = True
-    
-#     # Actualizar los campos de la transacción
-#     for key, value in update_data.items():
-#         setattr(db_transaccion, key, value)
-    
-#     # Guardar cambios iniciales
-#     db.commit()
-#     db.refresh(db_transaccion)
-    
-#     # Si es necesario recalcular saldos
-#     if recalcular_saldos:
-#         # Obtener todas las transacciones desde esta en adelante
-#         transacciones = db.query(models.Transaccion).filter(
-#             models.Transaccion.fecha >= db_transaccion.fecha
-#         ).order_by(
-#             models.Transaccion.fecha,
-#             models.Transaccion.id
-#         ).all()
-        
-#         # Obtener el saldo anterior a esta transacción
-#         transaccion_anterior = db.query(models.Transaccion).filter(
-#             models.Transaccion.id < transaccion_id
-#         ).order_by(
-#             desc(models.Transaccion.id)
-#         ).first()
-        
-#         saldo_actual = 0
-#         if transaccion_anterior and hasattr(transaccion_anterior, 'saldo') and transaccion_anterior.saldo is not None:
-#             saldo_actual = float(transaccion_anterior.saldo)
-        
-#         # Recalcular saldos para cada transacción
-#         for t in transacciones:
-#             if t.tipo == "ingreso":
-#                 saldo_actual += float(t.monto)
-#             else:  # egreso
-#                 saldo_actual -= float(t.monto)
-            
-#             # Actualizar el saldo
-#             t.saldo = saldo_actual
-        
-#         # Guardar cambios de saldos
-#         db.commit()
-    
-#     # Registrar en auditoría si se proporciona un usuario
-#     if current_user_id:
-#         # Crear registro de cambios
-#         cambios = []
-#         for key, old_value in old_values.items():
-#             if key in update_data and update_data[key] != old_value:
-#                 cambios.append(f"{key}: {old_value} -> {update_data[key]}")
-        
-#         cambios_str = ", ".join(cambios) if cambios else "Sin cambios en campos principales"
-        
-#         auditoria = models.Auditoria(
-#             usuario_id=current_user_id,
-#             accion="actualizar",
-#             tabla_afectada="transacciones",
-#             registro_id=db_transaccion.id,
-#             detalles=f"Actualización de transacción: {cambios_str}"
-#         )
-#         db.add(auditoria)
-#         db.commit()
-    
-#     return db_transaccion
-
-# def delete_transaccion(db: Session, transaccion_id: int, current_user_id: Optional[int] = None):
-#     db_transaccion = db.query(models.Transaccion).filter(models.Transaccion.id == transaccion_id).first()
-#     if not db_transaccion:
-#         raise HTTPException(status_code=404, detail="Transacción no encontrada")
-    
-#     # Guardar información de la transacción para el registro de auditoría
-#     transaccion_info = {
-#         "id": db_transaccion.id,
-#         "tipo": db_transaccion.tipo,
-#         "monto": float(db_transaccion.monto),
-#         "fecha": db_transaccion.fecha
-#     }
-    
-#     # Eliminar la transacción
-#     db.delete(db_transaccion)
-#     db.commit()
-    
-#     # Recalcular saldos después de eliminar la transacción
-#     transacciones = db.query(models.Transaccion).filter(
-#         models.Transaccion.fecha >= transaccion_info["fecha"]
-#     ).order_by(
-#         models.Transaccion.fecha,
-#         models.Transaccion.id
-#     ).all()
-    
-#     if transacciones:
-#         # Obtener el saldo anterior a la fecha de la transacción eliminada
-#         transaccion_anterior = db.query(models.Transaccion).filter(
-#             models.Transaccion.fecha < transaccion_info["fecha"]
-#         ).order_by(
-#             desc(models.Transaccion.fecha),
-#             desc(models.Transaccion.id)
-#         ).first()
-        
-#         saldo_actual = 0
-#         if transaccion_anterior and hasattr(transaccion_anterior, 'saldo') and transaccion_anterior.saldo is not None:
-#             saldo_actual = float(transaccion_anterior.saldo)
-        
-#         # Recalcular saldos para cada transacción
-#         for t in transacciones:
-#             if t.tipo == "ingreso":
-#                 saldo_actual += float(t.monto)
-#             else:  # egreso
-#                 saldo_actual -= float(t.monto)
-            
-#             # Actualizar el saldo
-#             t.saldo = saldo_actual
-        
-#         # Guardar cambios de saldos
-#         db.commit()
-    
-#     # Registrar en auditoría si se proporciona un usuario
-#     if current_user_id:
-#         auditoria = models.Auditoria(
-#             usuario_id=current_user_id,
-#             accion="eliminar",
-#             tabla_afectada="transacciones",
-#             registro_id=transaccion_info["id"],
-#             detalles=f"Eliminación de transacción: {transaccion_info['tipo']} por {transaccion_info['monto']} del {transaccion_info['fecha']}"
-#         )
-#         db.add(auditoria)
-#         db.commit()
-    
-#     return {"message": "Transacción eliminada exitosamente"}
-
-# def recalcular_saldos_transacciones(db: Session):
-#     """
-#     Recalcula los saldos de todas las partidas en orden cronológico
-#     """
-#     # Obtener todas las partidas ordenadas por fecha y luego por ID
-#     partidas = db.query(models.Partida).order_by(
-#         models.Partida.fecha,
-#         models.Partida.id
-#     ).all()
-    
-#     if not partidas:
-#         return {"message": "No hay partidas para recalcular", "transacciones_actualizadas": 0}
-    
-#     saldo_actual = 0
-#     partidas_actualizadas = 0
-    
-#     # Recalcular saldos para cada partida
-#     for partida in partidas:
-#         if partida.tipo == "ingreso":
-#             saldo_actual += partida.ingreso
-#         elif partida.tipo == "egreso":
-#             saldo_actual -= partida.egreso
-#         # Si es anulación u otro tipo, podría tener lógica específica aquí
-        
-#         # Actualizar el saldo
-#         partida.saldo = saldo_actual
-#         partidas_actualizadas += 1
-    
-#     # Guardar cambios
-#     db.commit()
-    
-#     return {
-#         "message": "Saldos recalculados correctamente", 
-#         "transacciones_actualizadas": partidas_actualizadas
-#     }
-
+# ==========================================
+# Consultas Financieras y Reportes
+# ==========================================
 def get_balance(db: Session, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):
     query = db.query(models.Partida)
     
@@ -1345,10 +925,10 @@ def get_balance(db: Session, fecha_desde: Optional[str] = None, fecha_hasta: Opt
         "fecha_desde": fecha_desde,
         "fecha_hasta": fecha_hasta
     }
+
 def get_ingresos_egresos_mensuales(db: Session, anio: Optional[int] = None):
     current_year = datetime.now().year
     year_to_query = anio if anio else current_year
-    
     result = []
     
     for month in range(1, 13):
@@ -1374,7 +954,6 @@ def get_ingresos_egresos_mensuales(db: Session, anio: Optional[int] = None):
     
     return {"anio": year_to_query, "datos": result}
 
-
 def get_nombre_mes(month_number: int) -> str:
     nombres = {
         1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
@@ -1384,7 +963,6 @@ def get_nombre_mes(month_number: int) -> str:
     return nombres.get(month_number, "")
 
 def get_partidas_por_mes(db: Session, mes: int, anio: int):
-    """Devuelve todas las partidas de un mes/año específico ordenadas por fecha."""
     return (
         db.query(models.Partida)
         .filter(
@@ -1394,18 +972,22 @@ def get_partidas_por_mes(db: Session, mes: int, anio: int):
         .order_by(models.Partida.fecha, models.Partida.id)
         .all()
     )
-# Funciones para Auditoría
+
+
+# ==========================================
+# Auditoría y Auxiliares
+# ==========================================
 @audit_trail("partidas")
 def get_partida(
     db: Session, 
-    partida_id: int = None, 
+    partida_id: Optional[int] = None, 
     skip: int = 0, 
     limit: int = 100, 
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
     tipo: Optional[str] = None,
     cuenta: Optional[str] = None,
-    current_user_id: int = None
+    current_user_id: Optional[int] = None
 ):
     if partida_id:
         return db.query(models.Partida).filter(models.Partida.id == partida_id).first()
@@ -1421,13 +1003,11 @@ def get_partida(
     if cuenta:
         query = query.filter(models.Partida.cuenta == cuenta)
     
-    # Traer los más recientes primero
     partidas = query.order_by(
         models.Partida.fecha.desc(), 
         models.Partida.id.desc()
     ).offset(skip).limit(limit).all()
 
-    # Auditoría
     for partida in partidas:
         auditoria = db.query(models.Auditoria)\
             .filter(
@@ -1437,8 +1017,9 @@ def get_partida(
             .join(models.Usuario, models.Auditoria.usuario_id == models.Usuario.id, isouter=True)\
             .order_by(models.Auditoria.fecha.desc())\
             .first()
+        
         partida.usuario_auditoria = auditoria.usuario.nombre if auditoria and auditoria.usuario else 'Sin registro'
-        # Fix timezone: convertir a hora Argentina (UTC-3) antes de tomar la fecha
+        
         if partida.fecha and hasattr(partida.fecha, 'tzinfo'):
             tz_arg = timezone(timedelta(hours=-3))
             fecha_local = partida.fecha.astimezone(tz_arg) if partida.fecha.tzinfo else partida.fecha.replace(tzinfo=timezone.utc).astimezone(tz_arg)
@@ -1448,25 +1029,9 @@ def get_partida(
     
     return partidas
 
-@audit_trail("cuota")
-def update_cuota(db: Session, cuota_id: int, cuota_update: schemas.CuotaUpdate, current_user_id: int = None):
-    db_cuota = db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()
-    if not db_cuota:
-        raise HTTPException(status_code=404, detail="Cuota no encontrada")
-    
-    for key, value in cuota_update.dict(exclude_unset=True).items():
-        setattr(db_cuota, key, value)
-    
-    db.commit()
-    db.refresh(db_cuota)
-    return db_cuota
-
 def get_cuotas_pendientes(db: Session):
     try:
-        # Usar date.today() en lugar de func.now() para evitar problemas de tipo
         today = date.today()
-        
-        # Versión optimizada con JOIN (recomendada)
         query_result = db.query(
             models.Cuota.id.label('cuota_id'),
             models.Usuario.id.label('usuario_id'),
@@ -1477,15 +1042,13 @@ def get_cuotas_pendientes(db: Session):
             models.Usuario, models.Cuota.usuario_id == models.Usuario.id
         ).filter(
             and_(
-                models.Cuota.pagado == False,
+                models.Cuota.pagado.is_(False),
                 cast(models.Cuota.fecha, Date) < today
             )
         ).all()
         
         result = []
-        
         for row in query_result:
-            # Asegurar que fecha sea un objeto date para la comparación
             fecha_cuota = row.fecha
             if isinstance(fecha_cuota, datetime):
                 fecha_cuota = fecha_cuota.date()
@@ -1502,153 +1065,41 @@ def get_cuotas_pendientes(db: Session):
                 "fecha": fecha_cuota.strftime("%Y-%m-%d"),
                 "dias_vencido": dias_vencido
             })
-        
         return result
-        
     except Exception as e:
         print(f"Error en get_cuotas_pendientes: {e}")
         return []
 
-# Versión alternativa sin JOIN (si la anterior falla)
-def get_cuotas_pendientes_alternative(db: Session):
-    from datetime import datetime, date
-    
-    try:
-        today = date.today()
-        
-        cuotas_pendientes = db.query(models.Cuota).filter(
-            and_(
-                models.Cuota.pagado == False,
-                cast(models.Cuota.fecha, Date) < today
-            )
-        ).all()
-        
-        result = []
-        
-        for cuota in cuotas_pendientes:
-            try:
-                usuario = db.query(models.Usuario).filter(
-                    models.Usuario.id == cuota.usuario_id
-                ).first()
-                
-                if usuario:
-                    # Manejo seguro de la fecha
-                    fecha_cuota = cuota.fecha
-                    if isinstance(fecha_cuota, datetime):
-                        fecha_cuota = fecha_cuota.date()
-                    elif isinstance(fecha_cuota, str):
-                        fecha_cuota = datetime.strptime(fecha_cuota, "%Y-%m-%d").date()
-                    
-                    dias_vencido = (today - fecha_cuota).days
-                    
-                    result.append({
-                        "cuota_id": cuota.id,
-                        "usuario_id": usuario.id,
-                        "nombre_usuario": str(usuario.nombre),
-                        "monto": float(cuota.monto) if cuota.monto else 0.0,
-                        "fecha": fecha_cuota.strftime("%Y-%m-%d"),
-                        "dias_vencido": dias_vencido
-                    })
-            except Exception as inner_e:
-                print(f"Error procesando cuota {cuota.id}: {inner_e}")
-                continue
-        
-        return result
-        
-    except Exception as e:
-        print(f"Error en get_cuotas_pendientes_alternative: {e}")
-        return []
-
-# Función auxiliar para obtener el nombre del mes
-def get_nombre_mes(month_number):
-    nombres_meses = {
-        1: "Enero",
-        2: "Febrero",
-        3: "Marzo",
-        4: "Abril",
-        5: "Mayo",
-        6: "Junio",
-        7: "Julio",
-        8: "Agosto",
-        9: "Septiembre",
-        10: "Octubre",
-        11: "Noviembre",
-        12: "Diciembre"
-    }
-    
-    return nombres_meses.get(month_number, "")
 def recalcular_saldos_partidas(db: Session):
-    """Recalcula los saldos de todas las partidas en orden cronológico"""
+    """Recalcula los saldos de todas las partidas en orden cronológico de forma rápida"""
     partidas = db.query(models.Partida).order_by(
         models.Partida.fecha,
         models.Partida.id
     ).all()
     
     if not partidas:
-        print("[recalcular_saldos] No hay partidas para recalcular")
         return {"message": "No hay partidas para recalcular", "partidas_actualizadas": 0}
-    
-    print(f"[recalcular_saldos] Arrancando recalculo — {len(partidas)} partidas totales")
-    print(f"{'ID':>6} {'FECHA':>12} {'TIPO':<10} {'MONTO':>14} {'INGRESO':>14} {'EGRESO':>14} {'SALDO ACUM.':>16}")
-    print("-" * 92)
 
     saldo_actual = 0.0
     total_ingresos_sumados = 0.0
     total_egresos_sumados = 0.0
-    tipos_no_reconocidos = {}  # tipo -> cantidad de partidas con ese tipo
-    inconsistencias_monto = []  # partidas donde monto != ingreso/egreso
 
+    # Actualizar saldos en la sesión local sin hacer commit por cada iteración
     for partida in partidas:
         ingreso_val = float(partida.ingreso or 0)
         egreso_val = float(partida.egreso or 0)
-        monto_val = float(partida.monto or 0)
 
         if partida.tipo == "ingreso":
             saldo_actual += ingreso_val
             total_ingresos_sumados += ingreso_val
-            if abs(monto_val - ingreso_val) > 0.01:
-                inconsistencias_monto.append(
-                    (partida.id, partida.tipo, monto_val, ingreso_val, egreso_val)
-                )
         elif partida.tipo == "egreso":
             saldo_actual -= egreso_val
             total_egresos_sumados += egreso_val
-            if abs(monto_val - egreso_val) > 0.01:
-                inconsistencias_monto.append(
-                    (partida.id, partida.tipo, monto_val, ingreso_val, egreso_val)
-                )
-        else:
-            # Cualquier tipo que no sea "ingreso" ni "egreso" (ej "anulacion")
-            # no mueve el saldo — lo registramos para poder verlo en el resumen
-            tipos_no_reconocidos[partida.tipo] = tipos_no_reconocidos.get(partida.tipo, 0) + 1
 
         partida.saldo = saldo_actual
 
-        print(
-            f"{partida.id:>6} {str(partida.fecha):>12} {str(partida.tipo):<10} "
-            f"{monto_val:>14,.2f} {ingreso_val:>14,.2f} {egreso_val:>14,.2f} {saldo_actual:>16,.2f}"
-        )
-
+    # UN SOLO commit para persistir todos los cambios de un solo golpe
     db.commit()
-
-    # --- Resumen final, comparable contra get_balance() ---
-    print("-" * 92)
-    print(f"[recalcular_saldos] Total ingresos sumados : ${total_ingresos_sumados:,.2f}")
-    print(f"[recalcular_saldos] Total egresos sumados  : ${total_egresos_sumados:,.2f}")
-    print(f"[recalcular_saldos] Saldo final (ing-egr)  : ${saldo_actual:,.2f}")
-
-    if tipos_no_reconocidos:
-        print(f"[recalcular_saldos] ⚠ Partidas con tipo distinto de ingreso/egreso "
-              f"(no afectan el saldo): {tipos_no_reconocidos}")
-
-    if inconsistencias_monto:
-        print(f"[recalcular_saldos] ⚠ {len(inconsistencias_monto)} partidas con "
-              f"monto != ingreso/egreso (revisar estas manualmente):")
-        for pid, tipo, monto_val, ing, egr in inconsistencias_monto:
-            print(f"    id={pid} tipo={tipo} monto={monto_val:,.2f} "
-                  f"ingreso={ing:,.2f} egreso={egr:,.2f}")
-    else:
-        print("[recalcular_saldos] ✔ Sin inconsistencias monto/ingreso/egreso")
 
     return {
         "message": "Saldos recalculados correctamente",
@@ -1656,28 +1107,26 @@ def recalcular_saldos_partidas(db: Session):
         "total_ingresos": total_ingresos_sumados,
         "total_egresos": total_egresos_sumados,
         "saldo_final": saldo_actual,
-        "tipos_no_reconocidos": tipos_no_reconocidos,
-        "inconsistencias_monto": len(inconsistencias_monto),
     }
 
-def get_auditoria(db: Session, skip: int = 0, limit: int = 100, 
-                tabla_afectada: Optional[str] = None, usuario_id: Optional[int] = None,
-                fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
-                create_usuario: int = None):
+def get_auditoria(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 100, 
+    tabla_afectada: Optional[str] = None, 
+    usuario_id: Optional[int] = None,
+    fecha_desde: Optional[str] = None, 
+    fecha_hasta: Optional[str] = None
+):
     query = db.query(models.Auditoria)
     
-    # Aplicar filtros
     if tabla_afectada:
         query = query.filter(models.Auditoria.tabla_afectada == tabla_afectada)
-    
     if usuario_id:
         query = query.filter(models.Auditoria.usuario_id == usuario_id)
-    
     if fecha_desde:
         query = query.filter(models.Auditoria.fecha >= fecha_desde)
-    
     if fecha_hasta:
         query = query.filter(models.Auditoria.fecha <= fecha_hasta)
     
-    # Ordenar y paginar
     return query.order_by(desc(models.Auditoria.fecha)).offset(skip).limit(limit).all()

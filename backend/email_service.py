@@ -108,7 +108,7 @@ class EmailService:
             pdf_attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(pdf_attachment)
             
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+            with smtplib.SMTP(self.smtp_server, self.smtp_portm, timeout=10) as server:
                 server.starttls()
                 server.login(self.username, self.password)
                 server.send_message(msg)

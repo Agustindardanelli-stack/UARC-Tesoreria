@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import BackgroundTasks # Asegúrate de tener esta importación arriba
+from database import SessionLocal
 
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
@@ -311,6 +313,7 @@ def delete_pago(
 @app.post(f"{settings.API_PREFIX}/cobranzas", response_model=schemas.Cobranza, tags=["Cobranzas"])
 def create_cobranza(
     cobranza: schemas.CobranzaCreate, 
+    background_tasks: BackgroundTasks, # 1. Inyectamos BackgroundTasks
     db: Session = Depends(get_db), 
     current_user: models.Usuario = Depends(is_tesorero)
 ):
@@ -319,11 +322,21 @@ def create_cobranza(
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
-    return crud.create_cobranza(
+    # 2. Guardar la cobranza en la base de datos (rápido)
+    nueva_cobranza = crud.create_cobranza(
         db=db, 
         cobranza=cobranza, 
         current_user_id=current_user.id
     )
+    
+    # 3. Disparar el envío de email en segundo plano
+    background_tasks.add_task(
+        crud.enviar_email_cobranza_background, 
+        SessionLocal, 
+        nueva_cobranza.id
+    )
+
+    return nueva_cobranza
 
 @app.get(f"{settings.API_PREFIX}/cobranzas", response_model=List[schemas.CobranzaDetalle], tags=["Cobranzas"])
 def read_cobranzas(
