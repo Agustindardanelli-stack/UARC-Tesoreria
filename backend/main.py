@@ -6,6 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import BackgroundTasks # Asegúrate de tener esta importación arriba
 from database import SessionLocal
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
 from typing import List, Optional
@@ -30,6 +31,21 @@ from config import settings
 
 # Crear tablas en la base de datos
 models.Base.metadata.create_all(bind=engine)
+
+# Secuencia para nro_comprobante de cuotas (evita UniqueViolation del MAX+1).
+# Se alinea con el máximo existente sin retroceder nunca la secuencia; 42 como mínimo.
+with engine.begin() as conn:
+    conn.execute(text("CREATE SEQUENCE IF NOT EXISTS cuota_nro_comprobante_seq"))
+    conn.execute(text("""
+        SELECT setval(
+            'cuota_nro_comprobante_seq',
+            GREATEST(
+                (SELECT COALESCE(MAX(nro_comprobante), 42) FROM cuota),
+                (SELECT last_value FROM cuota_nro_comprobante_seq),
+                42
+            )
+        )
+    """))
 
 # Crear la aplicación FastAPI
 app = FastAPI(
@@ -448,6 +464,30 @@ def create_cuota(
         current_user_id=current_user.id,
         no_generar_movimiento=no_generar_movimiento,
     )
+
+
+@app.post(f"{settings.API_PREFIX}/cuotas/cobro-mensual", tags=["Cuotas"])
+def cobro_mensual(
+    payload: schemas.CobroMensualRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: models.Usuario = Depends(is_tesorero),
+):
+    resultado = crud.cobro_mensual(
+        db=db,
+        fecha=payload.fecha,
+        items=payload.items,
+        current_user_id=current_user.id,
+    )
+
+    if resultado["para_email"]:
+        background_tasks.add_task(
+            crud.enviar_emails_cuotas_background,
+            SessionLocal,
+            resultado["para_email"],
+        )
+
+    return {"ok": resultado["ok"], "errores": resultado["errores"]}
 
 
 @app.get(f"{settings.API_PREFIX}/cuotas", tags=["Cuotas"])

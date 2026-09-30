@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
-from sqlalchemy import Date, and_, cast, desc, extract, func
+from sqlalchemy import Date, and_, cast, desc, extract, func, text
 from sqlalchemy.orm import Session, joinedload
 
 from audit_middleware import audit_trail
@@ -82,6 +82,42 @@ def enviar_email_pago_background(db_session_factory, pago_id: int):
                     db.commit()
     except Exception as e:
         print(f"Error enviando email de pago en segundo plano: {str(e)}")
+    finally:
+        db.close()
+
+
+def enviar_emails_cuotas_background(db_session_factory, para_email: List[Dict[str, Any]]):
+    """Envía los recibos de cuotas en segundo plano, con su propia sesión de DB."""
+    db = db_session_factory()
+    try:
+        email_config = get_active_email_config(db)
+        if not email_config:
+            return
+        email_service = EmailService(
+            smtp_server=email_config.smtp_server,
+            smtp_port=email_config.smtp_port,
+            username=email_config.smtp_username,
+            password=email_config.smtp_password,
+            sender_email=email_config.email_from
+        )
+        for item in para_email:
+            try:
+                db_cuota = db.query(models.Cuota).filter(models.Cuota.id == item["cuota_id"]).first()
+                if not db_cuota:
+                    continue
+                success, message = email_service.send_cuota_receipt_email(
+                    db=db,
+                    cuota=db_cuota,
+                    recipient_email=item["email"]
+                )
+                if success:
+                    db_cuota.email_enviado = True
+                    db_cuota.fecha_envio_email = datetime.now()
+                    db_cuota.email_destinatario = item["email"]
+                    db.commit()
+            except Exception as e:
+                db.rollback()
+                print(f"Error enviando recibo de cuota {item.get('cuota_id')}: {str(e)}")
     finally:
         db.close()
 
@@ -567,10 +603,14 @@ def delete_cobranza(db: Session, cobranza_id: int, current_user_id: Optional[int
 # ==========================================
 # Funciones CRUD para Cuotas
 # ==========================================
+def siguiente_nro_comprobante(db: Session) -> int:
+    """Obtiene el próximo nro_comprobante de la secuencia (atómico, sin carreras)."""
+    return db.execute(text("SELECT nextval('cuota_nro_comprobante_seq')")).scalar()
+
+
 @audit_trail("cuota")
 def create_cuota(db: Session, cuota: schemas.CuotaCreate, current_user_id: int, no_generar_movimiento: bool = False):
-    ultimo = db.query(func.max(models.Cuota.nro_comprobante)).scalar() or 42
-    nro_comprobante = ultimo + 1
+    nro_comprobante = siguiente_nro_comprobante(db)
 
     cuota_data = cuota.dict()
     cuota_data['creado_por_usuario_id'] = current_user_id
@@ -655,6 +695,98 @@ def pagar_cuota(
     db.refresh(cuota)
 
     return cuota
+
+def cobro_mensual(db: Session, fecha: date, items: List[schemas.CobroMensualItem], current_user_id: int):
+    """
+    Registra el cobro del mes para varios árbitros en una sola transacción.
+    Cada árbitro va en su propio SAVEPOINT: si uno falla, no afecta al resto.
+    Los saldos se recalculan una sola vez al final.
+    """
+    ok: List[Dict[str, Any]] = []
+    errores: List[Dict[str, Any]] = []
+    para_email: List[Dict[str, Any]] = []
+
+    for item in items:
+        usuario = db.query(models.Usuario).filter(models.Usuario.id == item.usuario_id).first()
+        nombre = usuario.nombre if usuario else f"Usuario {item.usuario_id}"
+
+        if not usuario:
+            errores.append({"usuario_id": item.usuario_id, "nombre": nombre, "error": "Usuario no encontrado"})
+            continue
+        if not item.monto or item.monto <= 0:
+            errores.append({"usuario_id": item.usuario_id, "nombre": nombre, "error": "Monto inválido"})
+            continue
+
+        try:
+            with db.begin_nested():
+                cuota = db.query(models.Cuota).filter(
+                    models.Cuota.usuario_id == item.usuario_id,
+                    extract('year', models.Cuota.fecha) == fecha.year,
+                    extract('month', models.Cuota.fecha) == fecha.month,
+                ).first()
+
+                if cuota and cuota.pagado:
+                    raise ValueError("La cuota del mes ya está pagada")
+
+                if not cuota:
+                    cuota = models.Cuota(
+                        usuario_id=item.usuario_id,
+                        fecha=fecha,
+                        monto=Decimal(str(item.monto)),
+                        pagado=False,
+                        monto_pagado=0,
+                        nro_comprobante=siguiente_nro_comprobante(db),
+                        creado_por_usuario_id=current_user_id,
+                    )
+                    db.add(cuota)
+                    db.flush()
+                    db.add(models.Auditoria(
+                        usuario_id=current_user_id,
+                        accion="crear",
+                        tabla_afectada="cuota",
+                        registro_id=cuota.id,
+                        fecha=datetime.now(),
+                        detalles="Creación de registro en cuota (cobro mensual)",
+                    ))
+
+                monto = Decimal(str(item.monto))
+                cuota.pagado = True
+                cuota.monto_pagado = monto
+                cuota.pagado_por_usuario_id = current_user_id
+                cuota.fecha_pago = datetime.now()
+                cuota.monto_total_pendiente = None
+                cuota.cuotas_pendientes = None
+                cuota.fecha_primera_deuda = None
+                cuota.meses_atraso = None
+
+                db.add(models.Partida(
+                    fecha=datetime.now().date(),
+                    cuenta="INGRESOS",
+                    detalle=f"Pago de cuota de {nombre}",
+                    ingreso=monto,
+                    egreso=0,
+                    saldo=0,
+                    usuario_id=current_user_id,
+                    monto=monto,
+                    tipo="ingreso",
+                    recibo_factura=f"C.S.-{cuota.nro_comprobante}",
+                ))
+                db.flush()
+
+            ok.append({"usuario_id": item.usuario_id, "nombre": nombre, "cuota_id": cuota.id})
+            if usuario.email:
+                para_email.append({"cuota_id": cuota.id, "email": usuario.email})
+        except Exception as e:
+            errores.append({"usuario_id": item.usuario_id, "nombre": nombre, "error": str(e)})
+
+    # Recalcula saldos UNA sola vez y hace el commit final de toda la transacción
+    if ok:
+        recalcular_saldos_partidas(db)
+    else:
+        db.commit()
+
+    return {"ok": ok, "errores": errores, "para_email": para_email}
+
 
 def get_cuota(db: Session, cuota_id: int):
     return db.query(models.Cuota).filter(models.Cuota.id == cuota_id).first()

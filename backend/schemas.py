@@ -328,6 +328,14 @@ class Cuota(CuotaBase):
     class Config:
         orm_mode = True
 
+class CobroMensualItem(BaseModel):
+    usuario_id: int
+    monto: float
+
+class CobroMensualRequest(BaseModel):
+    fecha: date
+    items: List[CobroMensualItem]
+
 class CuotaDetalle(Cuota):
     usuario: Optional[Usuario] = None
     usuario_auditoria: Optional[str] = None
