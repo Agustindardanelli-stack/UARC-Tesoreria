@@ -46,6 +46,10 @@ with engine.begin() as conn:
             )
         )
     """))
+    # Índices para las consultas más usadas (recalculo de saldos, auditoría, cuota del mes)
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_partidas_fecha_id ON partidas (fecha, id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_auditoria_tabla_registro ON auditoria (tabla_afectada, registro_id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cuota_usuario_fecha ON cuota (usuario_id, fecha)"))
 
 # Crear la aplicación FastAPI
 app = FastAPI(

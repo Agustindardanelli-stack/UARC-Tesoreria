@@ -292,8 +292,7 @@ def delete_retencion(db: Session, retencion_id: int):
 def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
     db_pago = models.Pago(**pago.dict())
     db.add(db_pago)
-    db.commit()
-    db.refresh(db_pago)
+    db.flush()
     
     usuario = db.query(models.Usuario).filter(models.Usuario.id == db_pago.usuario_id).first()
     nombre_usuario = usuario.nombre if usuario else "Usuario desconocido"
@@ -330,7 +329,6 @@ def create_pago(db: Session, pago: schemas.PagoCreate, current_user_id: int):
         recibo_factura=recibo_factura
     )
     db.add(partida)
-    db.commit()
 
     recalcular_saldos_partidas(db)
     return db_pago
@@ -482,8 +480,7 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
     
     db_cobranza = models.Cobranza(**cobranza.dict())
     db.add(db_cobranza)
-    db.commit()
-    db.refresh(db_cobranza)
+    db.flush()
     
     if db_cobranza.tipo_documento == "factura":
         recibo_factura = f"FAC/REC.A-{db_cobranza.numero_factura}"
@@ -520,9 +517,8 @@ def create_cobranza(db: Session, cobranza: schemas.CobranzaCreate, current_user_
         recibo_factura=recibo_factura
     )
     db.add(partida)
-    db.commit()
 
-    # recalcular_saldos_partidas(db)
+    recalcular_saldos_partidas(db)
     return db_cobranza
 
 @audit_trail("cobranza")
@@ -683,8 +679,6 @@ def pagar_cuota(
             recibo_factura=f"C.S.-{cuota.nro_comprobante}",
         )
         db.add(nueva_partida)
-        db.commit()
-
         recalcular_saldos_partidas(db)
 
         if actualizar_saldo:
@@ -1203,42 +1197,51 @@ def get_cuotas_pendientes(db: Session):
         return []
 
 def recalcular_saldos_partidas(db: Session):
-    """Recalcula los saldos de todas las partidas en orden cronológico de forma rápida"""
-    partidas = db.query(models.Partida).order_by(
-        models.Partida.fecha,
-        models.Partida.id
-    ).all()
-    
-    if not partidas:
-        return {"message": "No hay partidas para recalcular", "partidas_actualizadas": 0}
+    """
+    Recalcula el saldo acumulado de todas las partidas (orden fecha, id) en un solo
+    UPDATE con función ventana. Sólo escribe las filas cuyo saldo cambió y trabaja
+    en NUMERIC, sin el arrastre de error de float.
+    """
+    db.flush()
 
-    saldo_actual = 0.0
-    total_ingresos_sumados = 0.0
-    total_egresos_sumados = 0.0
+    actualizadas = db.execute(text("""
+        UPDATE partidas p
+        SET saldo = s.saldo_calc
+        FROM (
+            SELECT id,
+                   SUM(CASE
+                           WHEN tipo = 'ingreso' THEN COALESCE(ingreso, 0)
+                           WHEN tipo = 'egreso'  THEN -COALESCE(egreso, 0)
+                           ELSE 0
+                       END) OVER (ORDER BY fecha, id) AS saldo_calc
+            FROM partidas
+        ) s
+        WHERE p.id = s.id
+          AND p.saldo IS DISTINCT FROM s.saldo_calc
+    """)).rowcount
 
-    # Actualizar saldos en la sesión local sin hacer commit por cada iteración
-    for partida in partidas:
-        ingreso_val = float(partida.ingreso or 0)
-        egreso_val = float(partida.egreso or 0)
+    total, total_ingresos, total_egresos = db.execute(text("""
+        SELECT COUNT(*),
+               COALESCE(SUM(CASE WHEN tipo = 'ingreso' THEN ingreso ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN tipo = 'egreso'  THEN egreso  ELSE 0 END), 0)
+        FROM partidas
+    """)).one()
 
-        if partida.tipo == "ingreso":
-            saldo_actual += ingreso_val
-            total_ingresos_sumados += ingreso_val
-        elif partida.tipo == "egreso":
-            saldo_actual -= egreso_val
-            total_egresos_sumados += egreso_val
+    saldo_final = db.execute(text(
+        "SELECT saldo FROM partidas ORDER BY fecha DESC, id DESC LIMIT 1"
+    )).scalar()
 
-        partida.saldo = saldo_actual
-
-    # UN SOLO commit para persistir todos los cambios de un solo golpe
     db.commit()
+
+    if not total:
+        return {"message": "No hay partidas para recalcular", "partidas_actualizadas": 0}
 
     return {
         "message": "Saldos recalculados correctamente",
-        "partidas_actualizadas": len(partidas),
-        "total_ingresos": total_ingresos_sumados,
-        "total_egresos": total_egresos_sumados,
-        "saldo_final": saldo_actual,
+        "partidas_actualizadas": actualizadas,
+        "total_ingresos": float(total_ingresos),
+        "total_egresos": float(total_egresos),
+        "saldo_final": float(saldo_final or 0),
     }
 
 def get_auditoria(
